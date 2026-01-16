@@ -39,6 +39,7 @@ interface TMDbVideoResult {
   name: string;
   site: string;
   type: string;
+  official: boolean;
 }
 
 const GENRE_MAP: Record<number, string> = {
@@ -160,21 +161,37 @@ export async function getMovieTrailer(tmdbId: number): Promise<string | null> {
   try {
     const data = await tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`);
 
-    const trailer = data.results.find(
-      (v) =>
-        v.site === "YouTube" &&
-        (v.type === "Trailer" || v.type === "Teaser" || v.type === "Official" || v.type === "Clip")
+    const youtubeVideos = data.results.filter((v) => v.site === "YouTube");
+
+    // Priority 1: Official trailer
+    const officialTrailer = youtubeVideos.find(
+      (v) => v.type === "Trailer" && v.official === true
     );
-
-    if (trailer) {
-      return `https://www.youtube.com/embed/${trailer.key}`;
+    if (officialTrailer) {
+      return `https://www.youtube.com/embed/${officialTrailer.key}`;
     }
 
-    const anyYouTube = data.results.find((v) => v.site === "YouTube");
-    if (anyYouTube) {
-      return `https://www.youtube.com/embed/${anyYouTube.key}`;
+    // Priority 2: Any trailer (may not be marked as official)
+    const anyTrailer = youtubeVideos.find((v) => v.type === "Trailer");
+    if (anyTrailer) {
+      return `https://www.youtube.com/embed/${anyTrailer.key}`;
     }
 
+    // Priority 3: Official teaser
+    const officialTeaser = youtubeVideos.find(
+      (v) => v.type === "Teaser" && v.official === true
+    );
+    if (officialTeaser) {
+      return `https://www.youtube.com/embed/${officialTeaser.key}`;
+    }
+
+    // Priority 4: Any teaser
+    const anyTeaser = youtubeVideos.find((v) => v.type === "Teaser");
+    if (anyTeaser) {
+      return `https://www.youtube.com/embed/${anyTeaser.key}`;
+    }
+
+    // No trailer or teaser found - don't fall back to clips/scenes
     return null;
   } catch (error) {
     console.error(`Failed to get trailer for ${tmdbId}:`, error);
