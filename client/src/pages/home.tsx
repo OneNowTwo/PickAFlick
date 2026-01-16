@@ -83,9 +83,9 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background w-full">
       <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-16 items-center justify-between px-4">
+        <div className="w-full max-w-7xl mx-auto flex h-16 items-center justify-between px-4">
           <div className="flex items-center gap-2">
             <Clapperboard className="w-6 h-6 text-primary" />
             <h1 className="text-xl font-bold text-foreground">PickAFlick</h1>
@@ -93,9 +93,9 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="container py-8">
+      <main className="w-full max-w-7xl mx-auto py-8 px-4">
         {gameState === "start" && (
-          <div className="flex flex-col items-center justify-center gap-8 min-h-[70vh] text-center px-4">
+          <div className="flex flex-col items-center justify-center gap-8 min-h-[70vh] text-center">
             <div className="space-y-4">
               <h2 className="text-4xl md:text-5xl font-bold text-foreground">
                 Find Your Perfect Movie
