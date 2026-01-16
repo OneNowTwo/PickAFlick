@@ -49,10 +49,14 @@ PickAFlick is a comparison-based movie picker where users complete 7 rounds of c
 5. ls005747458 - Critically Acclaimed
 
 ## Design
-- Dark theme with minimalist styling
-- Side-by-side movie cards with selection indicator
+- Dark cinema theme (very dark background ~4% lightness for immersive feel)
+- Side-by-side movie posters with click-to-select animation (chosen scales up, unchosen fades)
+- No confirm button - clicking a poster auto-advances to next round for frictionless flow
 - Progress bar showing round completion
-- Clean results screen with trailer embeds
+- Results page shows one recommendation at a time with carousel navigation
+- Like/Maybe/Back/Next controls to rate each recommendation
+- Preference profile cards display full text without truncation
+- Trailer auto-plays (muted) for each recommendation
 - Uses Inter font family for clean modern look
 
 ## Development
