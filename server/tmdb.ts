@@ -103,6 +103,12 @@ export async function searchMovie(title: string, year?: number): Promise<TMDbSea
   return data.results[0];
 }
 
+// Alias for AI recommender - returns just id for lookup
+export async function searchMovieByTitle(title: string, year?: number): Promise<{ id: number } | null> {
+  const result = await searchMovie(title, year);
+  return result ? { id: result.id } : null;
+}
+
 export async function getMovieDetails(tmdbId: number): Promise<Movie | null> {
   try {
     const data = await tmdbFetch<TMDbMovieDetails>(

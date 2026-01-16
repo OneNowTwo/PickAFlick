@@ -43,7 +43,7 @@ async function buildCatalogue(): Promise<void> {
   const allMovies: Movie[] = [];
   const grouped: Record<string, Movie[]> = {};
 
-  for (const [listName, items] of imdbMovies.entries()) {
+  for (const [listName, items] of Array.from(imdbMovies.entries())) {
     console.log(`Processing ${listName}: ${items.length} movies`);
     const listMovies: Movie[] = [];
 
@@ -130,4 +130,20 @@ export async function initCatalogue(): Promise<void> {
 
 export function isCatalogueReady(): boolean {
   return cache.allMovies.length > 0;
+}
+
+export function getAllMovies(): Movie[] {
+  return cache.allMovies;
+}
+
+// Get a random pair of movies for a round
+export function getRandomMoviePair(excludeIds: Set<number> = new Set()): [Movie, Movie] | null {
+  const available = cache.allMovies.filter((m) => !excludeIds.has(m.id));
+  
+  if (available.length < 2) {
+    return null;
+  }
+
+  const shuffled = shuffleArray(available);
+  return [shuffled[0], shuffled[1]];
 }
