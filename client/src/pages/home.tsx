@@ -1,62 +1,86 @@
 import { useState, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
-import type { CatalogueResponse, RecResponse, TrailerResponse } from "@shared/schema";
-import { CardStack } from "@/components/card-stack";
-import { TrailerSection } from "@/components/trailer-section";
-import { Clapperboard } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import type { StartSessionResponse, RoundPairResponse, ChoiceResponse, RecommendationsResponse } from "@shared/schema";
+import { RoundPicker } from "@/components/round-picker";
+import { ResultsScreen } from "@/components/results-screen";
+import { Button } from "@/components/ui/button";
+import { Clapperboard, Loader2 } from "lucide-react";
+
+type GameState = "start" | "playing" | "loading-recommendations" | "results";
 
 export default function Home() {
-  const [rerollToken, setRerollToken] = useState(0);
+  const [gameState, setGameState] = useState<GameState>("start");
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [recommendations, setRecommendations] = useState<RecommendationsResponse | null>(null);
 
-  const catalogueQuery = useQuery<CatalogueResponse>({
-    queryKey: ["/api/catalogue", rerollToken],
-    queryFn: async () => {
-      const res = await fetch("/api/catalogue", {
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error("Failed to fetch catalogue");
-      return res.json();
+  // Start session mutation
+  const startSessionMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/session/start");
+      return res.json() as Promise<StartSessionResponse>;
     },
-    staleTime: 0,
-    retry: 3,
-    retryDelay: (attemptIndex) => Math.min(2000 * 2 ** attemptIndex, 10000),
+    onSuccess: (data) => {
+      setSessionId(data.sessionId);
+      setGameState("playing");
+    },
   });
 
-  const recsQuery = useQuery<RecResponse>({
-    queryKey: ["/api/recs", rerollToken],
+  // Get current round query
+  const roundQuery = useQuery<RoundPairResponse>({
+    queryKey: ["/api/session", sessionId, "round"],
     queryFn: async () => {
-      const res = await fetch("/api/recs?limit=6", {
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error("Failed to fetch recommendations");
+      const res = await fetch(`/api/session/${sessionId}/round`);
+      if (!res.ok) throw new Error("Failed to get round");
       return res.json();
     },
+    enabled: gameState === "playing" && !!sessionId,
     staleTime: 0,
-    retry: 3,
-    retryDelay: (attemptIndex) => Math.min(2000 * 2 ** attemptIndex, 10000),
+    refetchOnWindowFocus: false,
   });
 
-  const recIds = recsQuery.data?.movies.map((m) => m.id).join(",") || "";
-
-  const trailersQuery = useQuery<TrailerResponse>({
-    queryKey: ["/api/trailers", recIds, rerollToken],
-    queryFn: async () => {
-      if (!recIds) return {};
-      const res = await fetch(`/api/trailers?ids=${recIds}`, {
-        cache: "no-store",
+  // Submit choice mutation
+  const choiceMutation = useMutation({
+    mutationFn: async (chosenMovieId: number) => {
+      const res = await apiRequest("POST", `/api/session/${sessionId}/choose`, {
+        chosenMovieId,
       });
-      if (!res.ok) throw new Error("Failed to fetch trailers");
-      return res.json();
+      return res.json() as Promise<ChoiceResponse>;
     },
-    enabled: !!recIds,
-    staleTime: 0,
+    onSuccess: async (data) => {
+      if (data.isComplete) {
+        setGameState("loading-recommendations");
+        // Fetch recommendations
+        try {
+          const res = await fetch(`/api/session/${sessionId}/recommendations`);
+          if (res.ok) {
+            const recs = await res.json() as RecommendationsResponse;
+            setRecommendations(recs);
+          }
+        } catch (error) {
+          console.error("Failed to get recommendations:", error);
+        }
+        setGameState("results");
+      } else {
+        // Refetch to get next round
+        roundQuery.refetch();
+      }
+    },
   });
 
-  const handleShuffle = useCallback(() => {
-    setRerollToken((prev) => prev + 1);
+  const handleStart = useCallback(() => {
+    startSessionMutation.mutate();
+  }, [startSessionMutation]);
+
+  const handleChoice = useCallback((chosenMovieId: number) => {
+    choiceMutation.mutate(chosenMovieId);
+  }, [choiceMutation]);
+
+  const handlePlayAgain = useCallback(() => {
+    setSessionId(null);
+    setRecommendations(null);
+    setGameState("start");
   }, []);
-
-  const isShuffling = catalogueQuery.isFetching || recsQuery.isFetching;
 
   return (
     <div className="min-h-screen bg-background">
@@ -70,22 +94,76 @@ export default function Home() {
       </header>
 
       <main className="container py-8">
-        <section className="mb-12">
-          <CardStack
-            movies={catalogueQuery.data?.movies || []}
-            isLoading={catalogueQuery.isLoading}
-            isError={catalogueQuery.isError}
-            onShuffle={handleShuffle}
-            isShuffling={isShuffling}
-          />
-        </section>
+        {gameState === "start" && (
+          <div className="flex flex-col items-center justify-center gap-8 min-h-[70vh] text-center px-4">
+            <div className="space-y-4">
+              <h2 className="text-4xl md:text-5xl font-bold text-foreground">
+                Find Your Perfect Movie
+              </h2>
+              <p className="text-xl text-muted-foreground max-w-lg mx-auto">
+                Make 7 quick choices between movie pairs, and our AI will recommend the perfect films for your taste.
+              </p>
+            </div>
 
-        <TrailerSection
-          movies={recsQuery.data?.movies || []}
-          trailers={trailersQuery.data || {}}
-          isLoading={recsQuery.isLoading || trailersQuery.isLoading}
-          rerollToken={rerollToken}
-        />
+            <Button
+              size="lg"
+              onClick={handleStart}
+              disabled={startSessionMutation.isPending}
+              className="text-lg px-8 py-6"
+              data-testid="button-start-game"
+            >
+              {startSessionMutation.isPending ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  Starting...
+                </>
+              ) : (
+                "Start Picking"
+              )}
+            </Button>
+
+            {startSessionMutation.isError && (
+              <p className="text-destructive">
+                Movies are still loading. Please wait a moment and try again.
+              </p>
+            )}
+          </div>
+        )}
+
+        {gameState === "playing" && roundQuery.data && !roundQuery.data.isComplete && (
+          <RoundPicker
+            round={roundQuery.data.round}
+            totalRounds={roundQuery.data.totalRounds}
+            leftMovie={roundQuery.data.leftMovie}
+            rightMovie={roundQuery.data.rightMovie}
+            onChoice={handleChoice}
+            isSubmitting={choiceMutation.isPending}
+          />
+        )}
+
+        {gameState === "playing" && roundQuery.isLoading && (
+          <div className="flex flex-col items-center justify-center gap-4 min-h-[60vh]">
+            <Loader2 className="w-10 h-10 animate-spin text-primary" />
+            <p className="text-muted-foreground">Loading next round...</p>
+          </div>
+        )}
+
+        {gameState === "playing" && roundQuery.isError && (
+          <div className="flex flex-col items-center justify-center gap-4 min-h-[60vh]">
+            <p className="text-muted-foreground">Failed to load round. Please try again.</p>
+            <Button onClick={() => roundQuery.refetch()} data-testid="button-retry-round">
+              Retry
+            </Button>
+          </div>
+        )}
+
+        {(gameState === "loading-recommendations" || gameState === "results") && (
+          <ResultsScreen
+            recommendations={recommendations}
+            isLoading={gameState === "loading-recommendations"}
+            onPlayAgain={handlePlayAgain}
+          />
+        )}
       </main>
     </div>
   );
