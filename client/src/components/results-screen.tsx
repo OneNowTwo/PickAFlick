@@ -219,7 +219,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
         <div className="aspect-video relative">
           {currentRec.trailerUrl && autoPlayTrailer ? (
             <iframe
-              src={`${currentRec.trailerUrl}?autoplay=1&mute=1`}
+              src={`${currentRec.trailerUrl}?autoplay=1`}
               className="w-full h-full"
               allow="autoplay; encrypted-media"
               allowFullScreen

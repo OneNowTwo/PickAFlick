@@ -51,7 +51,7 @@ export async function generateRecommendations(
     rating: m.rating,
   }));
 
-  const prompt = `You are an expert film analyst and recommendation engine. A user has been shown pairs of movies and chose the following 7 movies as their preferences:
+  const prompt = `You are an expert film analyst and recommendation engine. A user has been shown pairs of movies and chose the following 7 movies as your preferences:
 
 ${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}, ${m.era})
    Director: ${m.director}
@@ -60,33 +60,35 @@ ${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}, ${m.era})
    Keywords/Themes: ${m.keywords.length > 0 ? m.keywords.join(", ") : "N/A"}
    Synopsis: ${m.overview || "No synopsis available"}`).join("\n\n")}
 
-Analyze the user's choices deeply. Consider:
-1. **Genres & Themes**: What genres and narrative themes do they prefer?
-2. **Era Preference**: Do they favor classic cinema, modern blockbusters, or a specific decade?
-3. **Director Style**: Look for patterns in directors they chose (auteur films, commercial directors, indie filmmakers)
-4. **Visual Style & Feel**: Based on the movies, what cinematographic style appeals to them? (gritty, polished, atmospheric, colorful, noir, etc.)
-5. **Mood & Tone**: Are they drawn to dark/serious films, feel-good movies, thrilling suspense, or quirky indie vibes?
-6. **Cast Patterns**: Do they seem to follow certain actors or types of performances?
+Analyze your choices deeply. Consider:
+1. **Genres & Themes**: What genres and narrative themes do you prefer?
+2. **Era Preference**: Do you favor classic cinema, modern blockbusters, or a specific decade?
+3. **Director Style**: Look for patterns in directors you chose (auteur films, commercial directors, indie filmmakers)
+4. **Visual Style & Feel**: Based on the movies, what cinematographic style appeals to you? (gritty, polished, atmospheric, colorful, noir, etc.)
+5. **Mood & Tone**: Are you drawn to dark/serious films, feel-good movies, thrilling suspense, or quirky indie vibes?
+6. **Cast Patterns**: Do you seem to follow certain actors or types of performances?
 
-Based on this deep analysis, recommend 5 movies they would love.
+Based on this deep analysis, recommend 5 movies you would love.
 
 IMPORTANT RULES:
 1. DO NOT recommend any movie the user already chose
-2. Recommend well-known movies that exist on TMDb with trailers
-3. Match their taste across all dimensions: genre, era, director style, visual feel, mood
-4. Provide a personalized reason explaining WHY this matches their preferences
-5. Be specific - mention what elements connect the recommendation to their choices
+2. Recommend movies that exist on TMDb with trailers - but AVOID overused recommendations like Fight Club, Prisoners, Se7en, Shawshank Redemption, Inception, The Dark Knight, Interstellar
+3. ENSURE DIVERSITY: Include at least one movie from a different era than the majority of choices, and ensure variety across genres
+4. Match your taste across all dimensions: genre, era, director style, visual feel, mood
+5. Provide a personalized reason explaining WHY this matches your preferences - always use "you" and "your", never "they" or "their"
+6. Be specific - mention what elements connect the recommendation to your choices
+7. Think outside the box - suggest hidden gems and lesser-known films that match the taste profile
 
 Respond in this exact JSON format:
 {
   "topGenres": ["genre1", "genre2", "genre3"],
   "themes": ["theme1", "theme2", "theme3"],
   "preferredEras": ["era1", "era2"],
-  "visualStyle": "Brief description of their preferred visual/cinematographic style",
-  "mood": "Brief description of the overall mood/tone they prefer",
+  "visualStyle": "Brief description of your preferred visual/cinematographic style (use 'you' not 'they')",
+  "mood": "Brief description of the overall mood/tone you prefer (use 'you' not 'they')",
   "recommendations": [
-    {"title": "Movie Title", "year": 2020, "reason": "Personalized reason connecting to their preferences"},
-    {"title": "Movie Title 2", "year": 2018, "reason": "Personalized reason connecting to their preferences"}
+    {"title": "Movie Title", "year": 2020, "reason": "Personalized reason connecting to your preferences"},
+    {"title": "Movie Title 2", "year": 2018, "reason": "Personalized reason connecting to your preferences"}
   ]
 }`;
 
@@ -139,6 +141,28 @@ Respond in this exact JSON format:
         console.error(`Failed to resolve recommendation "${rec.title}":`, error);
         continue;
       }
+    }
+
+    // Add a "wildcard" random pick from the catalogue for variety
+    const allMovies = getAllMovies();
+    const usedTmdbIds = new Set([
+      ...Array.from(chosenTmdbIds),
+      ...recommendations.map((r) => r.movie.tmdbId),
+    ]);
+    
+    const eligibleWildcards = allMovies.filter(
+      (m) => !usedTmdbIds.has(m.tmdbId) && m.rating && m.rating >= 7.0
+    );
+    
+    if (eligibleWildcards.length > 0) {
+      const wildcardMovie = shuffleArray([...eligibleWildcards])[0];
+      const wildcardTrailer = await getMovieTrailer(wildcardMovie.tmdbId);
+      
+      recommendations.push({
+        movie: { ...wildcardMovie, listSource: "wildcard" },
+        trailerUrl: wildcardTrailer,
+        reason: `A surprise pick from our curated collection! This ${wildcardMovie.genres.slice(0, 2).join("/")} gem from ${wildcardMovie.year} might just become your next favorite.`,
+      });
     }
 
     return {
