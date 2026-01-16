@@ -89,6 +89,9 @@ export const recommendationsResponseSchema = z.object({
   preferenceProfile: z.object({
     topGenres: z.array(z.string()),
     themes: z.array(z.string()),
+    preferredEras: z.array(z.string()).optional(),
+    visualStyle: z.string().optional(),
+    mood: z.string().optional(),
   }),
 });
 

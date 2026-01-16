@@ -146,6 +146,9 @@ Respond in this exact JSON format:
       preferenceProfile: {
         topGenres: analysis.topGenres || [],
         themes: analysis.themes || [],
+        preferredEras: analysis.preferredEras || [],
+        visualStyle: analysis.visualStyle || "",
+        mood: analysis.mood || "",
       },
     };
   } catch (error) {
