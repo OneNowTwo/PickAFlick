@@ -1,33 +1,37 @@
 # PickAFlick - Movie Picker App
 
 ## Overview
-PickAFlick is a Tinder-style movie picker web app. Users swipe through curated movie posters to decide what to watch, with Pass/Like controls and a shuffle feature. The app sources movies from 5 specific IMDb lists and uses TMDb for movie data, posters, and trailers.
+PickAFlick is a comparison-based movie picker where users complete 7 rounds of choosing between two movie posters. After all rounds, AI analyzes their choices and recommends 5 personalized movies with trailers. The app sources movies from 5 curated IMDb lists and uses TMDb for movie data, posters, and trailers.
 
 ## Current State
-- **Frontend**: Fully implemented with swipeable card stack, Pass/Like/Shuffle controls, trailer carousel
-- **Backend**: IMDb list scraping, TMDb integration, caching layer, all API endpoints working
-- **Integration**: Frontend connected to backend APIs with retry logic and error handling
+- **Frontend**: 7-round head-to-head movie picker with side-by-side cards, progress bar, AI recommendations results screen
+- **Backend**: Session-based game state, IMDb list scraping, TMDb integration, OpenAI-powered preference analysis and recommendations
+- **Integration**: Full flow from game start through AI recommendations with trailer playback
 
 ## Architecture
 
 ### Frontend (React + Vite + TypeScript)
-- `/client/src/pages/home.tsx` - Main page with card stack and trailer section
-- `/client/src/components/movie-card.tsx` - Swipeable movie card with drag gestures
-- `/client/src/components/card-stack.tsx` - Card stack manager with swipe logic
-- `/client/src/components/swipe-controls.tsx` - Pass/Like/Shuffle buttons
-- `/client/src/components/trailer-section.tsx` - Trailer carousel container
-- `/client/src/components/trailer-card.tsx` - Individual trailer card with YouTube embed
+- `/client/src/pages/home.tsx` - Main page managing game state (start → playing → loading → results)
+- `/client/src/components/round-picker.tsx` - Side-by-side movie comparison with round counter and progress
+- `/client/src/components/movie-choice-card.tsx` - Clickable movie poster with selection indicator
+- `/client/src/components/results-screen.tsx` - AI recommendations display with embedded trailers
 
 ### Backend (Node.js + Express + TypeScript)
 - `/server/routes.ts` - API endpoints (/api/catalogue, /api/recs, /api/trailers, /api/catalogue-all)
 - `/server/catalogue.ts` - Movie catalogue service with caching
 - `/server/tmdb.ts` - TMDb API integration for movie details and trailers
 - `/server/imdb-scraper.ts` - IMDb list scraping
+- `/server/session-storage.ts` - In-memory session storage for game state
+- `/server/ai-recommender.ts` - OpenAI-powered preference analysis and recommendations
 
 ### Shared
 - `/shared/schema.ts` - TypeScript types for Movie, CatalogueResponse, etc.
 
 ## API Endpoints
+- `POST /api/session/start` - Creates new game session, returns sessionId and totalRounds
+- `GET /api/session/:sessionId/round` - Returns current round's movie pair
+- `POST /api/session/:sessionId/choose` - Submit movie choice for current round
+- `GET /api/session/:sessionId/recommendations` - Get AI-powered movie recommendations
 - `GET /api/catalogue` - Returns 75 random movies (15 from each of 5 IMDb lists)
 - `GET /api/recs?limit=6` - Returns random recommendations from the rec pool
 - `GET /api/trailers?ids=1,2,3` - Returns YouTube trailer URLs for given movie IDs
@@ -46,9 +50,9 @@ PickAFlick is a Tinder-style movie picker web app. Users swipe through curated m
 
 ## Design
 - Dark theme with minimalist styling
-- Swipeable cards with rotation and slide animations
-- Large circular Pass (red) and Like (green) buttons
-- Trailer carousel with horizontal scroll on mobile, grid on desktop
+- Side-by-side movie cards with selection indicator
+- Progress bar showing round completion
+- Clean results screen with trailer embeds
 - Uses Inter font family for clean modern look
 
 ## Development
@@ -56,3 +60,7 @@ PickAFlick is a Tinder-style movie picker web app. Users swipe through curated m
 - Frontend: Vite on port 5000
 - Backend: Express on port 5000
 - Catalogue builds on startup (takes ~1-2 minutes)
+
+## Notes
+- OpenAI integration uses Replit AI Integrations (no user API key required)
+- Legacy endpoints (/api/catalogue, /api/recs, /api/trailers) kept for backwards compatibility
