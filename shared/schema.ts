@@ -12,6 +12,11 @@ export const movieSchema = z.object({
   genres: z.array(z.string()),
   rating: z.number().nullable(),
   listSource: z.string(),
+  // Extended metadata for AI analysis
+  director: z.string().nullable().optional(),
+  cast: z.array(z.string()).optional(),
+  runtime: z.number().nullable().optional(),
+  keywords: z.array(z.string()).optional(),
 });
 
 export type Movie = z.infer<typeof movieSchema>;

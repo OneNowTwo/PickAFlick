@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { Movie, Recommendation, RecommendationsResponse } from "@shared/schema";
-import { searchMovieByTitle, getMovieTrailer } from "./tmdb";
+import { searchMovieByTitle, getMovieTrailer, getMovieDetails } from "./tmdb";
 import { getAllMovies } from "./catalogue";
 
 const openai = new OpenAI({
@@ -17,40 +17,76 @@ interface AIRecommendationResult {
 interface AIAnalysis {
   topGenres: string[];
   themes: string[];
+  preferredEras: string[];
+  visualStyle: string;
+  mood: string;
   recommendations: AIRecommendationResult[];
+}
+
+function getEra(year: number | null): string {
+  if (!year) return "unknown";
+  if (year >= 2020) return "2020s";
+  if (year >= 2010) return "2010s";
+  if (year >= 2000) return "2000s";
+  if (year >= 1990) return "90s";
+  if (year >= 1980) return "80s";
+  if (year >= 1970) return "70s";
+  if (year >= 1960) return "60s";
+  return "pre-60s classic";
 }
 
 export async function generateRecommendations(
   chosenMovies: Movie[]
 ): Promise<RecommendationsResponse> {
-  // Build a profile of what the user chose
+  // Build a rich profile of what the user chose with extended metadata
   const movieDescriptions = chosenMovies.map((m) => ({
     title: m.title,
     year: m.year,
+    era: getEra(m.year),
     genres: m.genres,
     overview: m.overview,
+    director: m.director || "Unknown",
+    cast: m.cast?.slice(0, 3) || [],
+    keywords: m.keywords?.slice(0, 5) || [],
+    rating: m.rating,
   }));
 
-  const prompt = `You are a movie recommendation expert. A user has been shown pairs of movies and chose the following 7 movies as their preferences:
+  const prompt = `You are an expert film analyst and recommendation engine. A user has been shown pairs of movies and chose the following 7 movies as their preferences:
 
-${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}) - Genres: ${m.genres.join(", ")}
+${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}, ${m.era})
+   Director: ${m.director}
+   Cast: ${m.cast.length > 0 ? m.cast.join(", ") : "Unknown"}
+   Genres: ${m.genres.join(", ")}
+   Keywords/Themes: ${m.keywords.length > 0 ? m.keywords.join(", ") : "N/A"}
    Synopsis: ${m.overview || "No synopsis available"}`).join("\n\n")}
 
-Based on these choices, analyze what the user likes and recommend 5 movies they would enjoy.
+Analyze the user's choices deeply. Consider:
+1. **Genres & Themes**: What genres and narrative themes do they prefer?
+2. **Era Preference**: Do they favor classic cinema, modern blockbusters, or a specific decade?
+3. **Director Style**: Look for patterns in directors they chose (auteur films, commercial directors, indie filmmakers)
+4. **Visual Style & Feel**: Based on the movies, what cinematographic style appeals to them? (gritty, polished, atmospheric, colorful, noir, etc.)
+5. **Mood & Tone**: Are they drawn to dark/serious films, feel-good movies, thrilling suspense, or quirky indie vibes?
+6. **Cast Patterns**: Do they seem to follow certain actors or types of performances?
+
+Based on this deep analysis, recommend 5 movies they would love.
 
 IMPORTANT RULES:
 1. DO NOT recommend any movie the user already chose
-2. Recommend well-known movies that are likely to be found on TMDb
-3. Match the user's apparent taste in genres, themes, tone, and era
-4. Provide a brief, personalized reason for each recommendation
+2. Recommend well-known movies that exist on TMDb with trailers
+3. Match their taste across all dimensions: genre, era, director style, visual feel, mood
+4. Provide a personalized reason explaining WHY this matches their preferences
+5. Be specific - mention what elements connect the recommendation to their choices
 
 Respond in this exact JSON format:
 {
   "topGenres": ["genre1", "genre2", "genre3"],
-  "themes": ["theme1", "theme2"],
+  "themes": ["theme1", "theme2", "theme3"],
+  "preferredEras": ["era1", "era2"],
+  "visualStyle": "Brief description of their preferred visual/cinematographic style",
+  "mood": "Brief description of the overall mood/tone they prefer",
   "recommendations": [
-    {"title": "Movie Title", "year": 2020, "reason": "Brief reason why they'd like it"},
-    {"title": "Movie Title 2", "year": 2018, "reason": "Brief reason why they'd like it"}
+    {"title": "Movie Title", "year": 2020, "reason": "Personalized reason connecting to their preferences"},
+    {"title": "Movie Title 2", "year": 2018, "reason": "Personalized reason connecting to their preferences"}
   ]
 }`;
 
@@ -59,13 +95,13 @@ Respond in this exact JSON format:
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
-      max_tokens: 1024,
+      max_tokens: 1500,
     });
 
     const content = response.choices[0]?.message?.content || "{}";
     const analysis: AIAnalysis = JSON.parse(content);
 
-    // Resolve recommended movies through TMDb
+    // Resolve recommended movies through TMDb with FULL DETAILS
     const recommendations: Recommendation[] = [];
     const chosenTmdbIds = new Set(chosenMovies.map((m) => m.tmdbId));
 
@@ -78,35 +114,21 @@ Respond in this exact JSON format:
           continue; // Skip if not found or already chosen
         }
 
+        // Get FULL movie details from TMDb (this gets poster, overview, etc.)
+        const movieDetails = await getMovieDetails(searchResult.id);
+        
+        if (!movieDetails) {
+          continue; // Skip if we couldn't get details
+        }
+
         // Get trailer
         const trailerUrl = await getMovieTrailer(searchResult.id);
 
-        // Build a simple movie object from the recommendation
-        const movie: Movie = {
-          id: searchResult.id,
-          tmdbId: searchResult.id,
-          title: rec.title,
-          year: rec.year || null,
-          posterPath: null, // Will be fetched below
-          backdropPath: null,
-          overview: null,
-          genres: [],
-          rating: null,
-          listSource: "ai-recommendation",
-        };
-
-        // Try to find this movie in our catalogue for poster/details
-        const catalogueMatch = getAllMovies().find((m) => m.tmdbId === searchResult.id);
-        if (catalogueMatch) {
-          movie.posterPath = catalogueMatch.posterPath;
-          movie.backdropPath = catalogueMatch.backdropPath;
-          movie.overview = catalogueMatch.overview;
-          movie.genres = catalogueMatch.genres;
-          movie.rating = catalogueMatch.rating;
-        }
+        // Set the list source
+        movieDetails.listSource = "ai-recommendation";
 
         recommendations.push({
-          movie,
+          movie: movieDetails,
           trailerUrl,
           reason: rec.reason,
         });

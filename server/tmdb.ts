@@ -22,10 +22,14 @@ interface TMDbMovieDetails {
   backdrop_path: string | null;
   overview: string | null;
   vote_average: number;
+  runtime: number | null;
   genres: { id: number; name: string }[];
   credits?: {
-    cast: { id: number; name: string; character: string }[];
+    cast: { id: number; name: string; character: string; order: number }[];
     crew: { id: number; name: string; job: string }[];
+  };
+  keywords?: {
+    keywords: { id: number; name: string }[];
   };
 }
 
@@ -113,10 +117,22 @@ export async function getMovieDetails(tmdbId: number): Promise<Movie | null> {
   try {
     const data = await tmdbFetch<TMDbMovieDetails>(
       `/movie/${tmdbId}`,
-      { append_to_response: "credits" }
+      { append_to_response: "credits,keywords" }
     );
 
     const year = data.release_date ? parseInt(data.release_date.split("-")[0]) : null;
+    
+    // Extract director from crew
+    const director = data.credits?.crew?.find((c) => c.job === "Director")?.name || null;
+    
+    // Extract top 5 cast members
+    const cast = data.credits?.cast
+      ?.sort((a, b) => a.order - b.order)
+      ?.slice(0, 5)
+      ?.map((c) => c.name) || [];
+    
+    // Extract keywords
+    const keywords = data.keywords?.keywords?.slice(0, 10)?.map((k) => k.name) || [];
 
     return {
       id: data.id,
@@ -129,6 +145,10 @@ export async function getMovieDetails(tmdbId: number): Promise<Movie | null> {
       genres: data.genres.map((g) => g.name),
       rating: data.vote_average || null,
       listSource: "",
+      director,
+      cast,
+      runtime: data.runtime || null,
+      keywords,
     };
   } catch (error) {
     console.error(`Failed to get movie details for ${tmdbId}:`, error);
