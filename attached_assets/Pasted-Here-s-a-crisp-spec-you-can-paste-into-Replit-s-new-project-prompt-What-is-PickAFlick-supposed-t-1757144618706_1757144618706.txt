@@ -1,0 +1,91 @@
+Here’s a crisp spec you can paste into Replit’s “new project” prompt.
+
+What is PickAFlick supposed to do?
+
+A simple movie picker web app. It shows:
+
+75 posters: exactly 15 random movies per IMDb list (from the five lists below).
+
+6 trailer recommendations: randomly chosen from all remaining movies (i.e., cannot be any of the 75 poster picks).
+
+Only these IMDb lists are used (no fallbacks, no legacy sources):
+
+https://www.imdb.com/list/ls094921320/
+
+https://www.imdb.com/list/ls003501243/
+
+https://www.imdb.com/list/ls002065120/
+
+https://www.imdb.com/list/ls000873904/
+
+https://www.imdb.com/list/ls005747458/
+
+All artwork and trailers come from TMDb (posters/backdrops via path; trailers via /movie/{id}/videos → YouTube).
+
+What features should it have?
+
+Data ingest/build (server)
+
+Scrape each of the 5 IMDb lists (all items).
+
+Resolve each title + year to TMDb id via /search/movie.
+
+Hydrate details via /movie/{id}?append_to_response=credits to get reliable genres, poster/backdrop.
+
+Randomly sample 15 per list for the Posters section (75 total).
+
+Build a Rec Pool = All Movies − Posters (75).
+
+API endpoints
+
+GET /api/catalogue → returns the 75 posters (flat).
+
+Optional ?grouped=1 → 15-per-list grouped response.
+
+GET /api/recs?limit=6 → returns 6 random items from the Rec Pool (no overlap with posters).
+
+GET /api/trailers?ids=1,2,3 → { [id]: "https://www.youtube.com/embed/…" | null } (match Trailer/Teaser/Official/Clip).
+
+GET /api/catalogue-all → simple health snapshot (counts).
+
+Set no-store headers on recs/trailers/catalogue to avoid caching bugs.
+
+Client (React)
+
+On load: fetch the 75 posters and render the existing poster grid.
+
+Fetch 6 recs, then fetch trailers for those ids and render the trailer strip (show “Trailer unavailable” if null—don’t filter them out).
+
+Optional “Shuffle” button to re-roll posters and recs (simply refetch).
+
+Config/ops
+
+Secrets: TMDB_API_KEY (required).
+
+Optional: CATALOGUE_TTL_HOURS=24 to rebuild cache once a day.
+
+Prod scripts: "build": "tsc -b && vite build", "start:prod": "NODE_ENV=production node dist/server/index.js".
+
+Mount /api before static and catch-all routes.
+
+What type of application?
+
+A web app:
+
+Server: Node.js + Express (TypeScript).
+
+Client: React + Vite (TypeScript).
+
+Deployment: Replit. app.listen(Number(process.env.PORT||3000), "0.0.0.0").
+
+Design preferences / requirements
+
+Do not change the current UI layout (keep poster grid + trailer iframe strip).
+
+Dark, minimalist styling; clean, responsive poster grid; simple trailer carousel/strip.
+
+Posters from TMDb images; trailers are YouTube embeds from TMDb videos.
+
+Keep iframes stable; if you use React keys, include a simple reroll token so trailers remount on shuffle.
+
+No user auth, no A/B testing, no learning—pure random V1.
