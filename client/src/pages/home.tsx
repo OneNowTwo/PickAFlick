@@ -86,10 +86,14 @@ export default function Home() {
     <div className="min-h-screen bg-background w-full">
       <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="w-full max-w-7xl mx-auto flex h-16 items-center justify-between px-4">
-          <div className="flex items-center gap-2">
+          <button 
+            onClick={handlePlayAgain}
+            className="flex items-center gap-2 hover-elevate rounded-md px-2 py-1 -ml-2 transition-colors"
+            data-testid="button-logo-home"
+          >
             <Clapperboard className="w-6 h-6 text-primary" />
             <h1 className="text-xl font-bold text-foreground">PickAFlick</h1>
-          </div>
+          </button>
         </div>
       </header>
 
@@ -102,6 +106,9 @@ export default function Home() {
               </h2>
               <p className="text-xl text-muted-foreground max-w-lg mx-auto">
                 Make 7 quick choices between movie pairs, and our AI will recommend the perfect films for your taste.
+              </p>
+              <p className="text-base text-muted-foreground italic max-w-md mx-auto">
+                "Because choosing your movie, shouldn't take longer than watching it."
               </p>
             </div>
 

@@ -284,46 +284,56 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
       </div>
 
       {/* Navigation Controls */}
-      <div className="flex items-center justify-center gap-3 w-full max-w-md">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={handleBack}
-          disabled={currentIndex === 0}
-          data-testid="button-back"
-        >
-          <ChevronLeft className="w-5 h-5" />
-        </Button>
+      <div className="flex flex-col items-center gap-4 w-full max-w-lg">
+        {/* Back / Next Row - More prominent */}
+        <div className="flex items-center justify-between w-full gap-4">
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={handleBack}
+            disabled={currentIndex === 0}
+            className="flex-1 gap-2"
+            data-testid="button-back"
+          >
+            <ChevronLeft className="w-5 h-5" />
+            Back
+          </Button>
 
-        <Button
-          variant={isMaybe ? "default" : "outline"}
-          onClick={handleMaybe}
-          className={`flex-1 gap-2 ${isMaybe ? "bg-yellow-600 hover:bg-yellow-700 border-yellow-600" : ""}`}
-          data-testid="button-maybe"
-        >
-          <Bookmark className="w-4 h-4" />
-          Maybe
-        </Button>
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={handleNext}
+            disabled={currentIndex === totalRecs - 1}
+            className="flex-1 gap-2"
+            data-testid="button-next"
+          >
+            Next
+            <ChevronRight className="w-5 h-5" />
+          </Button>
+        </div>
 
-        <Button
-          variant={isLiked ? "default" : "outline"}
-          onClick={handleLike}
-          className={`flex-1 gap-2 ${isLiked ? "bg-green-600 hover:bg-green-700 border-green-600" : ""}`}
-          data-testid="button-like"
-        >
-          <ThumbsUp className="w-4 h-4" />
-          Like
-        </Button>
+        {/* Like / Maybe Row */}
+        <div className="flex items-center justify-center gap-3 w-full">
+          <Button
+            variant={isMaybe ? "default" : "outline"}
+            onClick={handleMaybe}
+            className={`flex-1 gap-2 ${isMaybe ? "bg-yellow-600 hover:bg-yellow-700 border-yellow-600" : ""}`}
+            data-testid="button-maybe"
+          >
+            <Bookmark className="w-4 h-4" />
+            Maybe
+          </Button>
 
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={handleNext}
-          disabled={currentIndex === totalRecs - 1}
-          data-testid="button-next"
-        >
-          <ChevronRight className="w-5 h-5" />
-        </Button>
+          <Button
+            variant={isLiked ? "default" : "outline"}
+            onClick={handleLike}
+            className={`flex-1 gap-2 ${isLiked ? "bg-green-600 hover:bg-green-700 border-green-600" : ""}`}
+            data-testid="button-like"
+          >
+            <ThumbsUp className="w-4 h-4" />
+            Like
+          </Button>
+        </div>
       </div>
 
       {/* Summary of liked/maybe */}
