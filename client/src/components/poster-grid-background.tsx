@@ -1,7 +1,7 @@
 export function PosterGridBackground() {
   return (
     <div 
-      className="fixed inset-0 overflow-hidden pointer-events-none -z-10"
+      className="fixed inset-0 overflow-hidden pointer-events-none z-0"
       aria-hidden="true"
     >
       <div 
