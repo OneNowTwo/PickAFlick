@@ -50,20 +50,42 @@ export function PosterGridBackground() {
       <div 
         className="absolute"
         style={{
-          width: '50vw',
-          height: '60vh',
-          left: '25%',
-          top: '20%',
+          width: '55vw',
+          height: '65vh',
+          left: '20%',
+          top: '15%',
           background: `
             radial-gradient(ellipse at center,
-              hsl(350 80% 55% / 0.5) 0%,
-              hsl(350 75% 45% / 0.3) 30%,
-              hsl(350 70% 35% / 0.1) 60%,
-              transparent 80%
+              hsl(350 85% 65% / 0.9) 0%,
+              hsl(350 80% 55% / 0.6) 25%,
+              hsl(350 75% 45% / 0.3) 50%,
+              hsl(350 70% 35% / 0.1) 70%,
+              transparent 90%
             )
           `,
           animation: 'spotlight-drift-1 15s ease-in-out infinite',
-          filter: 'blur(30px)',
+          filter: 'blur(40px)',
+        }}
+      />
+
+      <div 
+        className="absolute"
+        style={{
+          width: '45vw',
+          height: '55vh',
+          left: '40%',
+          top: '25%',
+          background: `
+            radial-gradient(ellipse at center,
+              hsl(350 85% 60% / 0.7) 0%,
+              hsl(350 80% 50% / 0.45) 25%,
+              hsl(350 75% 40% / 0.2) 50%,
+              hsl(350 70% 30% / 0.08) 70%,
+              transparent 90%
+            )
+          `,
+          animation: 'spotlight-drift-2 18s ease-in-out infinite',
+          filter: 'blur(35px)',
         }}
       />
 
@@ -72,38 +94,19 @@ export function PosterGridBackground() {
         style={{
           width: '40vw',
           height: '50vh',
-          left: '45%',
+          left: '10%',
           top: '30%',
           background: `
             radial-gradient(ellipse at center,
-              hsl(350 80% 50% / 0.4) 0%,
-              hsl(350 75% 40% / 0.25) 30%,
-              hsl(350 70% 30% / 0.08) 60%,
-              transparent 80%
-            )
-          `,
-          animation: 'spotlight-drift-2 18s ease-in-out infinite',
-          filter: 'blur(25px)',
-        }}
-      />
-
-      <div 
-        className="absolute"
-        style={{
-          width: '35vw',
-          height: '45vh',
-          left: '15%',
-          top: '35%',
-          background: `
-            radial-gradient(ellipse at center,
-              hsl(350 80% 52% / 0.35) 0%,
-              hsl(350 75% 42% / 0.2) 30%,
-              hsl(350 70% 32% / 0.06) 60%,
-              transparent 80%
+              hsl(350 85% 62% / 0.6) 0%,
+              hsl(350 80% 52% / 0.4) 25%,
+              hsl(350 75% 42% / 0.18) 50%,
+              hsl(350 70% 32% / 0.06) 70%,
+              transparent 90%
             )
           `,
           animation: 'spotlight-drift-3 20s ease-in-out infinite',
-          filter: 'blur(28px)',
+          filter: 'blur(38px)',
         }}
       />
     </div>
