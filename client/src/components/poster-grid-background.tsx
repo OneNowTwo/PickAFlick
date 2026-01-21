@@ -66,16 +66,36 @@ export function PosterGridBackground() {
         style={{
           background: `
             conic-gradient(
-              from 0deg at 35% 30%,
+              from 0deg at 30% 40%,
               transparent 0deg,
-              hsl(45 80% 90% / 0.08) 6deg,
-              hsl(45 70% 85% / 0.04) 12deg,
+              hsl(45 100% 95% / 0.25) 4deg,
+              hsl(45 100% 90% / 0.15) 8deg,
+              hsl(45 90% 85% / 0.05) 15deg,
+              transparent 25deg,
+              transparent 360deg
+            )
+          `,
+          animation: 'spotlight-sweep-1 8s ease-in-out infinite',
+          filter: 'blur(15px)',
+        }}
+      />
+
+      <div 
+        className="absolute w-[200%] h-[200%] -left-1/2 -top-1/2"
+        style={{
+          background: `
+            conic-gradient(
+              from 180deg at 70% 45%,
+              transparent 0deg,
+              hsl(45 100% 95% / 0.20) 3deg,
+              hsl(45 100% 90% / 0.12) 7deg,
+              hsl(45 90% 85% / 0.04) 12deg,
               transparent 20deg,
               transparent 360deg
             )
           `,
-          animation: 'spotlight-sweep-1 12s ease-in-out infinite',
-          filter: 'blur(20px)',
+          animation: 'spotlight-sweep-2 10s ease-in-out infinite',
+          filter: 'blur(18px)',
         }}
       />
 
@@ -84,34 +104,17 @@ export function PosterGridBackground() {
         style={{
           background: `
             conic-gradient(
-              from 180deg at 65% 35%,
+              from 270deg at 50% 35%,
               transparent 0deg,
-              hsl(45 80% 90% / 0.06) 5deg,
-              hsl(45 70% 85% / 0.03) 10deg,
+              hsl(45 100% 95% / 0.18) 3deg,
+              hsl(45 100% 90% / 0.10) 6deg,
+              hsl(45 90% 85% / 0.03) 12deg,
               transparent 18deg,
               transparent 360deg
             )
           `,
-          animation: 'spotlight-sweep-2 15s ease-in-out infinite',
-          filter: 'blur(25px)',
-        }}
-      />
-
-      <div 
-        className="absolute w-[200%] h-[200%] -left-1/2 -top-1/2"
-        style={{
-          background: `
-            conic-gradient(
-              from 90deg at 50% 25%,
-              transparent 0deg,
-              hsl(45 80% 90% / 0.05) 4deg,
-              hsl(45 70% 85% / 0.02) 8deg,
-              transparent 15deg,
-              transparent 360deg
-            )
-          `,
-          animation: 'spotlight-sweep-3 18s ease-in-out infinite',
-          filter: 'blur(30px)',
+          animation: 'spotlight-sweep-3 12s ease-in-out infinite',
+          filter: 'blur(20px)',
         }}
       />
     </div>
