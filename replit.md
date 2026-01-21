@@ -47,6 +47,9 @@ PickAFlick is a comparison-based movie picker where users complete 7 rounds of c
 - `PATCH /api/watchlist/:id/watched` - Toggle watched status
 - `GET /api/watchlist/check/:tmdbId` - Check if movie is in watchlist
 
+### Watch Providers
+- `GET /api/watch-providers/:tmdbId` - Get streaming/rent/buy options for a movie (Australia region)
+
 ### Legacy
 - `GET /api/catalogue` - Returns 75 random movies (15 from each of 5 IMDb lists)
 - `GET /api/recs?limit=6` - Returns random recommendations from the rec pool

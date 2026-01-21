@@ -24,7 +24,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
   const currentTmdbId = recommendations?.recommendations[currentIndex]?.movie.tmdbId;
 
   const { data: watchProviders, isLoading: isLoadingProviders } = useQuery<WatchProvidersResponse>({
-    queryKey: ["/api/watch-providers", currentTmdbId],
+    queryKey: [`/api/watch-providers/${currentTmdbId}`],
     enabled: showWatchProviders && !!currentTmdbId,
   });
 
@@ -363,7 +363,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
           <Button
             variant={isMaybe ? "default" : "outline"}
             onClick={handleMaybe}
-            className={`flex-1 gap-2 ${isMaybe ? "bg-yellow-600 hover:bg-yellow-700 border-yellow-600" : ""}`}
+            className={`flex-1 gap-2 toggle-elevate ${isMaybe ? "toggle-elevated bg-yellow-600 border-yellow-600" : ""}`}
             data-testid="button-maybe"
           >
             <Bookmark className="w-4 h-4" />
@@ -373,7 +373,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
           <Button
             variant={isLiked ? "default" : "outline"}
             onClick={handleLike}
-            className={`flex-1 gap-2 ${isLiked ? "bg-green-600 hover:bg-green-700 border-green-600" : ""}`}
+            className={`flex-1 gap-2 toggle-elevate ${isLiked ? "toggle-elevated bg-green-600 border-green-600" : ""}`}
             data-testid="button-like"
           >
             <ThumbsUp className="w-4 h-4" />
