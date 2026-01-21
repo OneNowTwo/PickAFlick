@@ -4,7 +4,10 @@ import { getCatalogue, getRecommendations, getHealth, initCatalogue, isCatalogue
 import { getMovieTrailer } from "./tmdb";
 import { sessionStorage } from "./session-storage";
 import { generateRecommendations } from "./ai-recommender";
+import { storage } from "./storage";
 import type { RoundPairResponse, ChoiceResponse } from "@shared/schema";
+import { insertWatchlistSchema } from "@shared/schema";
+import { z } from "zod";
 
 const NO_CACHE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
@@ -312,6 +315,115 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching health:", error);
       res.status(500).json({ error: "Failed to fetch health status" });
+    }
+  });
+
+  // ===== WATCHLIST ENDPOINTS =====
+
+  // Get all watchlist items
+  app.get("/api/watchlist", async (_req: Request, res: Response) => {
+    try {
+      const items = await storage.getWatchlist();
+      res.json(items);
+    } catch (error) {
+      console.error("Error fetching watchlist:", error);
+      res.status(500).json({ error: "Failed to fetch watchlist" });
+    }
+  });
+
+  // Add movie to watchlist
+  app.post("/api/watchlist", async (req: Request, res: Response) => {
+    try {
+      const parseResult = insertWatchlistSchema.safeParse({
+        tmdbId: req.body.tmdbId,
+        title: req.body.title,
+        year: req.body.year || null,
+        posterPath: req.body.posterPath || null,
+        genres: req.body.genres || [],
+        rating: req.body.rating ? Math.round(req.body.rating * 10) : null,
+        watched: false,
+      });
+
+      if (!parseResult.success) {
+        res.status(400).json({ error: "Invalid request body", details: parseResult.error.flatten() });
+        return;
+      }
+
+      // Check if already in watchlist
+      const existing = await storage.getWatchlistByTmdbId(parseResult.data.tmdbId);
+      if (existing) {
+        res.json(existing);
+        return;
+      }
+
+      const item = await storage.addToWatchlist(parseResult.data);
+      res.status(201).json(item);
+    } catch (error) {
+      console.error("Error adding to watchlist:", error);
+      res.status(500).json({ error: "Failed to add to watchlist" });
+    }
+  });
+
+  // Remove movie from watchlist
+  app.delete("/api/watchlist/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+
+      await storage.removeFromWatchlist(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error removing from watchlist:", error);
+      res.status(500).json({ error: "Failed to remove from watchlist" });
+    }
+  });
+
+  // Toggle watched status
+  app.patch("/api/watchlist/:id/watched", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { watched } = req.body;
+
+      if (isNaN(id)) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+
+      if (typeof watched !== "boolean") {
+        res.status(400).json({ error: "watched must be a boolean" });
+        return;
+      }
+
+      const item = await storage.toggleWatched(id, watched);
+      if (!item) {
+        res.status(404).json({ error: "Item not found" });
+        return;
+      }
+
+      res.json(item);
+    } catch (error) {
+      console.error("Error toggling watched:", error);
+      res.status(500).json({ error: "Failed to toggle watched status" });
+    }
+  });
+
+  // Check if movie is in watchlist
+  app.get("/api/watchlist/check/:tmdbId", async (req: Request, res: Response) => {
+    try {
+      const tmdbId = parseInt(req.params.tmdbId);
+      if (isNaN(tmdbId)) {
+        res.status(400).json({ error: "Invalid tmdbId" });
+        return;
+      }
+
+      const item = await storage.getWatchlistByTmdbId(tmdbId);
+      res.json({ inWatchlist: !!item, item: item || null });
+    } catch (error) {
+      console.error("Error checking watchlist:", error);
+      res.status(500).json({ error: "Failed to check watchlist" });
     }
   });
 

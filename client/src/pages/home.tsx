@@ -5,7 +5,8 @@ import type { StartSessionResponse, RoundPairResponse, ChoiceResponse, Recommend
 import { RoundPicker } from "@/components/round-picker";
 import { ResultsScreen } from "@/components/results-screen";
 import { Button } from "@/components/ui/button";
-import { Clapperboard, Loader2 } from "lucide-react";
+import { Clapperboard, Loader2, Bookmark } from "lucide-react";
+import { Link } from "wouter";
 
 type GameState = "start" | "playing" | "loading-recommendations" | "results";
 
@@ -94,6 +95,12 @@ export default function Home() {
             <Clapperboard className="w-6 h-6 text-primary" />
             <h1 className="text-xl font-bold text-foreground">PickAFlick</h1>
           </button>
+          <Link href="/watchlist">
+            <Button variant="ghost" className="gap-2" data-testid="button-watchlist">
+              <Bookmark className="w-4 h-4" />
+              <span className="hidden sm:inline">My Watchlist</span>
+            </Button>
+          </Link>
         </div>
       </header>
 

@@ -2,6 +2,9 @@ import type { RecommendationsResponse } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Loader2, Play, RefreshCw, Film, Palette, Heart, Calendar, Sparkles, ChevronLeft, ChevronRight, ThumbsUp, Bookmark } from "lucide-react";
 import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface ResultsScreenProps {
   recommendations: RecommendationsResponse | null;
@@ -14,6 +17,21 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
   const [likedMovies, setLikedMovies] = useState<Set<number>>(new Set());
   const [maybeMovies, setMaybeMovies] = useState<Set<number>>(new Set());
   const [autoPlayTrailer, setAutoPlayTrailer] = useState(true);
+  const { toast } = useToast();
+
+  const addToWatchlistMutation = useMutation({
+    mutationFn: async (movie: { tmdbId: number; title: string; year: number | null; posterPath: string | null; genres: string[]; rating: number | null }) => {
+      const res = await apiRequest("POST", "/api/watchlist", movie);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/watchlist"] });
+      toast({
+        title: "Added to watchlist",
+        description: "Movie saved to your watchlist!",
+      });
+    },
+  });
 
   if (isLoading) {
     return (
@@ -64,7 +82,8 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
   };
 
   const handleLike = () => {
-    const movieId = currentRec.movie.id;
+    const movie = currentRec.movie;
+    const movieId = movie.id;
     const newLiked = new Set(likedMovies);
     if (newLiked.has(movieId)) {
       newLiked.delete(movieId);
@@ -72,6 +91,14 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
       newLiked.add(movieId);
       maybeMovies.delete(movieId);
       setMaybeMovies(new Set(maybeMovies));
+      addToWatchlistMutation.mutate({
+        tmdbId: movie.tmdbId,
+        title: movie.title,
+        year: movie.year,
+        posterPath: movie.posterPath,
+        genres: movie.genres,
+        rating: movie.rating,
+      });
     }
     setLikedMovies(newLiked);
   };
