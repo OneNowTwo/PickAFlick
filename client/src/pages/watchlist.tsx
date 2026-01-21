@@ -1,15 +1,30 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Loader2, Trash2, Check, Film, Clapperboard, Bookmark } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Loader2, Trash2, Check, Film, Clapperboard, Bookmark, Tv } from "lucide-react";
 import { Link } from "wouter";
-import type { WatchlistItem } from "@shared/schema";
+import type { WatchlistItem, WatchProvidersResponse } from "@shared/schema";
 
 export default function Watchlist() {
+  const [selectedTmdbId, setSelectedTmdbId] = useState<number | null>(null);
+  const [showWatchProviders, setShowWatchProviders] = useState(false);
+
   const { data: watchlist, isLoading } = useQuery<WatchlistItem[]>({
     queryKey: ["/api/watchlist"],
   });
+
+  const { data: watchProviders, isLoading: isLoadingProviders } = useQuery<WatchProvidersResponse>({
+    queryKey: [`/api/watch-providers/${selectedTmdbId}`],
+    enabled: showWatchProviders && !!selectedTmdbId,
+  });
+
+  const handleWatchNow = (tmdbId: number) => {
+    setSelectedTmdbId(tmdbId);
+    setShowWatchProviders(true);
+  };
 
   const toggleWatchedMutation = useMutation({
     mutationFn: async ({ id, watched }: { id: number; watched: boolean }) => {
@@ -90,6 +105,7 @@ export default function Watchlist() {
                       item={item}
                       onToggleWatched={() => toggleWatchedMutation.mutate({ id: item.id, watched: true })}
                       onRemove={() => removeMutation.mutate(item.id)}
+                      onWatchNow={() => handleWatchNow(item.tmdbId)}
                       isPending={toggleWatchedMutation.isPending || removeMutation.isPending}
                     />
                   ))}
@@ -107,6 +123,7 @@ export default function Watchlist() {
                       item={item}
                       onToggleWatched={() => toggleWatchedMutation.mutate({ id: item.id, watched: false })}
                       onRemove={() => removeMutation.mutate(item.id)}
+                      onWatchNow={() => handleWatchNow(item.tmdbId)}
                       isPending={toggleWatchedMutation.isPending || removeMutation.isPending}
                     />
                   ))}
@@ -116,6 +133,113 @@ export default function Watchlist() {
           </div>
         )}
       </main>
+
+      {/* Watch Providers Dialog */}
+      <Dialog open={showWatchProviders} onOpenChange={setShowWatchProviders}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tv className="w-5 h-5 text-primary" />
+              Where to Watch
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="py-4">
+            {isLoadingProviders ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              </div>
+            ) : watchProviders && watchProviders.providers.length > 0 ? (
+              <div className="space-y-4">
+                {watchProviders.providers.filter(p => p.type === "subscription").length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-muted-foreground mb-3">Stream with Subscription</h4>
+                    <div className="grid grid-cols-3 gap-3">
+                      {watchProviders.providers.filter(p => p.type === "subscription").map((provider) => (
+                        <a
+                          key={provider.id}
+                          href={watchProviders.link || "#"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
+                          data-testid={`provider-${provider.id}`}
+                        >
+                          <img
+                            src={`https://image.tmdb.org/t/p/original${provider.logoPath}`}
+                            alt={provider.name}
+                            className="w-12 h-12 rounded-lg object-cover"
+                          />
+                          <span className="text-xs text-center text-muted-foreground line-clamp-2">{provider.name}</span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {watchProviders.providers.filter(p => p.type === "rent").length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-muted-foreground mb-3">Rent</h4>
+                    <div className="grid grid-cols-3 gap-3">
+                      {watchProviders.providers.filter(p => p.type === "rent").map((provider) => (
+                        <a
+                          key={provider.id}
+                          href={watchProviders.link || "#"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
+                          data-testid={`provider-rent-${provider.id}`}
+                        >
+                          <img
+                            src={`https://image.tmdb.org/t/p/original${provider.logoPath}`}
+                            alt={provider.name}
+                            className="w-12 h-12 rounded-lg object-cover"
+                          />
+                          <span className="text-xs text-center text-muted-foreground line-clamp-2">{provider.name}</span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {watchProviders.providers.filter(p => p.type === "buy").length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-muted-foreground mb-3">Buy</h4>
+                    <div className="grid grid-cols-3 gap-3">
+                      {watchProviders.providers.filter(p => p.type === "buy").map((provider) => (
+                        <a
+                          key={provider.id}
+                          href={watchProviders.link || "#"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
+                          data-testid={`provider-buy-${provider.id}`}
+                        >
+                          <img
+                            src={`https://image.tmdb.org/t/p/original${provider.logoPath}`}
+                            alt={provider.name}
+                            className="w-12 h-12 rounded-lg object-cover"
+                          />
+                          <span className="text-xs text-center text-muted-foreground line-clamp-2">{provider.name}</span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-xs text-muted-foreground text-center mt-4">
+                  Data provided by JustWatch via TMDb
+                </p>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Tv className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-muted-foreground">No streaming options available in Australia for this title.</p>
+                <p className="text-xs text-muted-foreground mt-2">Try searching for it directly on your favorite streaming service.</p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -124,11 +248,13 @@ function MovieCard({
   item,
   onToggleWatched,
   onRemove,
+  onWatchNow,
   isPending,
 }: {
   item: WatchlistItem;
   onToggleWatched: () => void;
   onRemove: () => void;
+  onWatchNow: () => void;
   isPending: boolean;
 }) {
   const posterUrl = item.posterPath
@@ -164,27 +290,39 @@ function MovieCard({
         )}
 
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2">
             <Button
               size="sm"
-              variant={item.watched ? "outline" : "default"}
-              onClick={onToggleWatched}
-              disabled={isPending}
-              className="flex-1 text-xs"
-              data-testid={`button-toggle-watched-${item.id}`}
+              variant="default"
+              onClick={onWatchNow}
+              className="w-full gap-1 text-xs"
+              data-testid={`button-watch-now-${item.id}`}
             >
-              {item.watched ? "Unwatch" : "Watched"}
+              <Tv className="w-3 h-3" />
+              Watch Now
             </Button>
-            <Button
-              size="icon"
-              variant="destructive"
-              onClick={onRemove}
-              disabled={isPending}
-              className="shrink-0"
-              data-testid={`button-remove-${item.id}`}
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant={item.watched ? "outline" : "secondary"}
+                onClick={onToggleWatched}
+                disabled={isPending}
+                className="flex-1 text-xs"
+                data-testid={`button-toggle-watched-${item.id}`}
+              >
+                {item.watched ? "Unwatch" : "Watched"}
+              </Button>
+              <Button
+                size="icon"
+                variant="destructive"
+                onClick={onRemove}
+                disabled={isPending}
+                className="shrink-0"
+                data-testid={`button-remove-${item.id}`}
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
         </div>
       </div>
