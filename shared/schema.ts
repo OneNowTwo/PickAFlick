@@ -142,3 +142,20 @@ export const healthResponseSchema = z.object({
 });
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
+
+// Watch provider schema for "where to watch" feature
+export const watchProviderSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  logoPath: z.string(),
+  type: z.enum(["subscription", "rent", "buy"]),
+});
+
+export type WatchProvider = z.infer<typeof watchProviderSchema>;
+
+export const watchProvidersResponseSchema = z.object({
+  link: z.string().nullable(),
+  providers: z.array(watchProviderSchema),
+});
+
+export type WatchProvidersResponse = z.infer<typeof watchProvidersResponseSchema>;

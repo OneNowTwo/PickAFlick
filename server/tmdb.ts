@@ -42,6 +42,36 @@ interface TMDbVideoResult {
   official: boolean;
 }
 
+interface TMDbWatchProvider {
+  logo_path: string;
+  provider_id: number;
+  provider_name: string;
+  display_priority: number;
+}
+
+interface TMDbWatchProvidersResponse {
+  results: {
+    AU?: {
+      link?: string;
+      flatrate?: TMDbWatchProvider[];
+      rent?: TMDbWatchProvider[];
+      buy?: TMDbWatchProvider[];
+    };
+  };
+}
+
+export interface WatchProvider {
+  id: number;
+  name: string;
+  logoPath: string;
+  type: "subscription" | "rent" | "buy";
+}
+
+export interface WatchProvidersResult {
+  link: string | null;
+  providers: WatchProvider[];
+}
+
 const GENRE_MAP: Record<number, string> = {
   28: "Action",
   12: "Adventure",
@@ -218,4 +248,62 @@ export async function resolveMovieFromTitle(
   }
 
   return movie;
+}
+
+export async function getWatchProviders(tmdbId: number): Promise<WatchProvidersResult> {
+  try {
+    const data = await tmdbFetch<TMDbWatchProvidersResponse>(`/movie/${tmdbId}/watch/providers`);
+    
+    const auData = data.results.AU;
+    if (!auData) {
+      return { link: null, providers: [] };
+    }
+
+    const providers: WatchProvider[] = [];
+    
+    if (auData.flatrate) {
+      for (const p of auData.flatrate) {
+        providers.push({
+          id: p.provider_id,
+          name: p.provider_name,
+          logoPath: p.logo_path,
+          type: "subscription",
+        });
+      }
+    }
+    
+    if (auData.rent) {
+      for (const p of auData.rent) {
+        if (!providers.find(existing => existing.id === p.provider_id)) {
+          providers.push({
+            id: p.provider_id,
+            name: p.provider_name,
+            logoPath: p.logo_path,
+            type: "rent",
+          });
+        }
+      }
+    }
+    
+    if (auData.buy) {
+      for (const p of auData.buy) {
+        if (!providers.find(existing => existing.id === p.provider_id)) {
+          providers.push({
+            id: p.provider_id,
+            name: p.provider_name,
+            logoPath: p.logo_path,
+            type: "buy",
+          });
+        }
+      }
+    }
+
+    return {
+      link: auData.link || null,
+      providers,
+    };
+  } catch (error) {
+    console.error(`Failed to get watch providers for ${tmdbId}:`, error);
+    return { link: null, providers: [] };
+  }
 }

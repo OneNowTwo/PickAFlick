@@ -1,10 +1,11 @@
-import type { RecommendationsResponse } from "@shared/schema";
+import type { RecommendationsResponse, WatchProvidersResponse } from "@shared/schema";
 import { Button } from "@/components/ui/button";
-import { Loader2, Play, RefreshCw, Film, Palette, Heart, Calendar, Sparkles, ChevronLeft, ChevronRight, ThumbsUp, Bookmark } from "lucide-react";
+import { Loader2, Play, RefreshCw, Film, Palette, Heart, Calendar, Sparkles, ChevronLeft, ChevronRight, ThumbsUp, Bookmark, Tv, X } from "lucide-react";
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface ResultsScreenProps {
   recommendations: RecommendationsResponse | null;
@@ -17,7 +18,15 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
   const [likedMovies, setLikedMovies] = useState<Set<number>>(new Set());
   const [maybeMovies, setMaybeMovies] = useState<Set<number>>(new Set());
   const [autoPlayTrailer, setAutoPlayTrailer] = useState(true);
+  const [showWatchProviders, setShowWatchProviders] = useState(false);
   const { toast } = useToast();
+
+  const currentTmdbId = recommendations?.recommendations[currentIndex]?.movie.tmdbId;
+
+  const { data: watchProviders, isLoading: isLoadingProviders } = useQuery<WatchProvidersResponse>({
+    queryKey: ["/api/watch-providers", currentTmdbId],
+    enabled: showWatchProviders && !!currentTmdbId,
+  });
 
   const addToWatchlistMutation = useMutation({
     mutationFn: async (movie: { tmdbId: number; title: string; year: number | null; posterPath: string | null; genres: string[]; rating: number | null }) => {
@@ -292,6 +301,16 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
                 {currentRec.movie.runtime ? ` • ${currentRec.movie.runtime} min` : ""}
               </p>
             </div>
+            <Button
+              variant="default"
+              size="default"
+              onClick={() => setShowWatchProviders(true)}
+              className="gap-2 shrink-0"
+              data-testid="button-watch-now"
+            >
+              <Tv className="w-4 h-4" />
+              Watch Now
+            </Button>
           </div>
           
           {currentRec.movie.genres.length > 0 && (
@@ -392,6 +411,116 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
         <RefreshCw className="w-5 h-5 mr-2" />
         Start Over
       </Button>
+
+      {/* Watch Providers Dialog */}
+      <Dialog open={showWatchProviders} onOpenChange={setShowWatchProviders}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tv className="w-5 h-5 text-primary" />
+              Where to Watch
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="py-4">
+            {isLoadingProviders ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              </div>
+            ) : watchProviders && watchProviders.providers.length > 0 ? (
+              <div className="space-y-4">
+                {/* Subscription Services */}
+                {watchProviders.providers.filter(p => p.type === "subscription").length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-muted-foreground mb-3">Stream with Subscription</h4>
+                    <div className="grid grid-cols-3 gap-3">
+                      {watchProviders.providers.filter(p => p.type === "subscription").map((provider) => (
+                        <a
+                          key={provider.id}
+                          href={watchProviders.link || "#"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
+                          data-testid={`provider-${provider.id}`}
+                        >
+                          <img
+                            src={`https://image.tmdb.org/t/p/original${provider.logoPath}`}
+                            alt={provider.name}
+                            className="w-12 h-12 rounded-lg object-cover"
+                          />
+                          <span className="text-xs text-center text-muted-foreground line-clamp-2">{provider.name}</span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Rent */}
+                {watchProviders.providers.filter(p => p.type === "rent").length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-muted-foreground mb-3">Rent</h4>
+                    <div className="grid grid-cols-3 gap-3">
+                      {watchProviders.providers.filter(p => p.type === "rent").map((provider) => (
+                        <a
+                          key={provider.id}
+                          href={watchProviders.link || "#"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
+                          data-testid={`provider-rent-${provider.id}`}
+                        >
+                          <img
+                            src={`https://image.tmdb.org/t/p/original${provider.logoPath}`}
+                            alt={provider.name}
+                            className="w-12 h-12 rounded-lg object-cover"
+                          />
+                          <span className="text-xs text-center text-muted-foreground line-clamp-2">{provider.name}</span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Buy */}
+                {watchProviders.providers.filter(p => p.type === "buy").length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-muted-foreground mb-3">Buy</h4>
+                    <div className="grid grid-cols-3 gap-3">
+                      {watchProviders.providers.filter(p => p.type === "buy").map((provider) => (
+                        <a
+                          key={provider.id}
+                          href={watchProviders.link || "#"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
+                          data-testid={`provider-buy-${provider.id}`}
+                        >
+                          <img
+                            src={`https://image.tmdb.org/t/p/original${provider.logoPath}`}
+                            alt={provider.name}
+                            className="w-12 h-12 rounded-lg object-cover"
+                          />
+                          <span className="text-xs text-center text-muted-foreground line-clamp-2">{provider.name}</span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-xs text-muted-foreground text-center mt-4">
+                  Data provided by JustWatch via TMDb
+                </p>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Tv className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-muted-foreground">No streaming options available in Australia for this title.</p>
+                <p className="text-xs text-muted-foreground mt-2">Try searching for it directly on your favorite streaming service.</p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

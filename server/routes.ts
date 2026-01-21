@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { getCatalogue, getRecommendations, getHealth, initCatalogue, isCatalogueReady, getRandomMoviePair } from "./catalogue";
-import { getMovieTrailer } from "./tmdb";
+import { getMovieTrailer, getWatchProviders } from "./tmdb";
 import { sessionStorage } from "./session-storage";
 import { generateRecommendations } from "./ai-recommender";
 import { storage } from "./storage";
@@ -315,6 +315,23 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching health:", error);
       res.status(500).json({ error: "Failed to fetch health status" });
+    }
+  });
+
+  // Get watch providers for a movie (where to watch in Australia)
+  app.get("/api/watch-providers/:tmdbId", async (req: Request, res: Response) => {
+    try {
+      const tmdbId = parseInt(req.params.tmdbId);
+      if (isNaN(tmdbId)) {
+        res.status(400).json({ error: "Invalid TMDb ID" });
+        return;
+      }
+
+      const providers = await getWatchProviders(tmdbId);
+      res.json(providers);
+    } catch (error) {
+      console.error("Error fetching watch providers:", error);
+      res.status(500).json({ error: "Failed to fetch watch providers" });
     }
   });
 
