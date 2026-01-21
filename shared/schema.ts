@@ -1,4 +1,23 @@
 import { z } from "zod";
+import { pgTable, serial, text, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+
+// Watchlist table for persisting liked movies
+export const watchlist = pgTable("watchlist", {
+  id: serial("id").primaryKey(),
+  tmdbId: integer("tmdb_id").notNull(),
+  title: text("title").notNull(),
+  year: integer("year"),
+  posterPath: text("poster_path"),
+  genres: text("genres").array().notNull().default([]),
+  rating: integer("rating"),
+  watched: boolean("watched").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertWatchlistSchema = createInsertSchema(watchlist).omit({ id: true, createdAt: true });
+export type InsertWatchlistItem = z.infer<typeof insertWatchlistSchema>;
+export type WatchlistItem = typeof watchlist.$inferSelect;
 
 // Movie schema with extended metadata for preference learning
 export const movieSchema = z.object({
