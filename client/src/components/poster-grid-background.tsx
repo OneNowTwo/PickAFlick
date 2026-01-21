@@ -8,11 +8,11 @@ export function PosterGridBackground() {
         className="absolute inset-0"
         style={{
           background: `
-            radial-gradient(ellipse 80% 50% at 50% 40%, 
-              hsl(345 82% 45% / 0.15) 0%,
-              hsl(345 82% 45% / 0.08) 25%,
-              hsl(345 82% 45% / 0.03) 50%,
-              transparent 70%
+            radial-gradient(ellipse 100% 70% at 50% 30%, 
+              hsl(345 82% 45% / 0.35) 0%,
+              hsl(345 82% 40% / 0.20) 30%,
+              hsl(345 82% 35% / 0.08) 60%,
+              transparent 85%
             )
           `,
         }}
@@ -21,9 +21,10 @@ export function PosterGridBackground() {
         className="absolute inset-0"
         style={{
           background: `
-            radial-gradient(ellipse 60% 40% at 50% 35%, 
-              hsl(0 0% 100% / 0.03) 0%,
-              transparent 60%
+            radial-gradient(ellipse 70% 50% at 50% 25%, 
+              hsl(0 0% 100% / 0.08) 0%,
+              hsl(0 0% 100% / 0.03) 40%,
+              transparent 70%
             )
           `,
         }}
