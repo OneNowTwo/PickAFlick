@@ -28,7 +28,7 @@ export function PosterGridBackground() {
               hsl(350 60% 8%) 100%
             )
           `,
-          filter: 'blur(8px)',
+          filter: 'blur(6px)',
         }}
       />
 
@@ -39,8 +39,8 @@ export function PosterGridBackground() {
             radial-gradient(ellipse 120% 100% at 50% 50%,
               transparent 0%,
               transparent 30%,
-              hsl(0 0% 0% / 0.4) 60%,
-              hsl(0 0% 0% / 0.85) 85%,
+              hsl(0 0% 0% / 0.3) 60%,
+              hsl(0 0% 0% / 0.7) 85%,
               hsl(0 0% 0%) 100%
             )
           `,
@@ -48,73 +48,62 @@ export function PosterGridBackground() {
       />
 
       <div 
-        className="absolute inset-0"
+        className="absolute"
         style={{
+          width: '50vw',
+          height: '60vh',
+          left: '25%',
+          top: '20%',
           background: `
-            linear-gradient(180deg,
-              hsl(0 0% 0% / 0.6) 0%,
-              transparent 15%,
-              transparent 85%,
-              hsl(0 0% 0% / 0.7) 100%
+            radial-gradient(ellipse at center,
+              hsl(350 80% 55% / 0.5) 0%,
+              hsl(350 75% 45% / 0.3) 30%,
+              hsl(350 70% 35% / 0.1) 60%,
+              transparent 80%
             )
           `,
+          animation: 'spotlight-drift-1 15s ease-in-out infinite',
+          filter: 'blur(30px)',
         }}
       />
 
       <div 
-        className="absolute w-[200%] h-[200%] -left-1/2 -top-1/2"
+        className="absolute"
         style={{
+          width: '40vw',
+          height: '50vh',
+          left: '45%',
+          top: '30%',
           background: `
-            conic-gradient(
-              from 0deg at 30% 40%,
-              transparent 0deg,
-              hsl(45 100% 95% / 0.25) 4deg,
-              hsl(45 100% 90% / 0.15) 8deg,
-              hsl(45 90% 85% / 0.05) 15deg,
-              transparent 25deg,
-              transparent 360deg
+            radial-gradient(ellipse at center,
+              hsl(350 80% 50% / 0.4) 0%,
+              hsl(350 75% 40% / 0.25) 30%,
+              hsl(350 70% 30% / 0.08) 60%,
+              transparent 80%
             )
           `,
-          animation: 'spotlight-sweep-1 8s ease-in-out infinite',
-          filter: 'blur(15px)',
+          animation: 'spotlight-drift-2 18s ease-in-out infinite',
+          filter: 'blur(25px)',
         }}
       />
 
       <div 
-        className="absolute w-[200%] h-[200%] -left-1/2 -top-1/2"
+        className="absolute"
         style={{
+          width: '35vw',
+          height: '45vh',
+          left: '15%',
+          top: '35%',
           background: `
-            conic-gradient(
-              from 180deg at 70% 45%,
-              transparent 0deg,
-              hsl(45 100% 95% / 0.20) 3deg,
-              hsl(45 100% 90% / 0.12) 7deg,
-              hsl(45 90% 85% / 0.04) 12deg,
-              transparent 20deg,
-              transparent 360deg
+            radial-gradient(ellipse at center,
+              hsl(350 80% 52% / 0.35) 0%,
+              hsl(350 75% 42% / 0.2) 30%,
+              hsl(350 70% 32% / 0.06) 60%,
+              transparent 80%
             )
           `,
-          animation: 'spotlight-sweep-2 10s ease-in-out infinite',
-          filter: 'blur(18px)',
-        }}
-      />
-
-      <div 
-        className="absolute w-[200%] h-[200%] -left-1/2 -top-1/2"
-        style={{
-          background: `
-            conic-gradient(
-              from 270deg at 50% 35%,
-              transparent 0deg,
-              hsl(45 100% 95% / 0.18) 3deg,
-              hsl(45 100% 90% / 0.10) 6deg,
-              hsl(45 90% 85% / 0.03) 12deg,
-              transparent 18deg,
-              transparent 360deg
-            )
-          `,
-          animation: 'spotlight-sweep-3 12s ease-in-out infinite',
-          filter: 'blur(20px)',
+          animation: 'spotlight-drift-3 20s ease-in-out infinite',
+          filter: 'blur(28px)',
         }}
       />
     </div>

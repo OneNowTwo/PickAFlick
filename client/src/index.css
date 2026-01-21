@@ -357,32 +357,47 @@
 }
 
 /* Cinema spotlight animations */
-@keyframes spotlight-sweep-1 {
+@keyframes spotlight-drift-1 {
   0%, 100% {
-    transform: rotate(-15deg);
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(10%, -5%);
   }
   50% {
-    transform: rotate(25deg);
+    transform: translate(-5%, 8%);
+  }
+  75% {
+    transform: translate(-12%, -3%);
   }
 }
 
-@keyframes spotlight-sweep-2 {
+@keyframes spotlight-drift-2 {
   0%, 100% {
-    transform: rotate(20deg);
-  }
-  50% {
-    transform: rotate(-20deg);
-  }
-}
-
-@keyframes spotlight-sweep-3 {
-  0%, 100% {
-    transform: rotate(-10deg);
+    transform: translate(0, 0);
   }
   33% {
-    transform: rotate(15deg);
+    transform: translate(-15%, 10%);
   }
   66% {
-    transform: rotate(-5deg);
+    transform: translate(8%, -8%);
+  }
+}
+
+@keyframes spotlight-drift-3 {
+  0%, 100% {
+    transform: translate(0, 0);
+  }
+  20% {
+    transform: translate(12%, 5%);
+  }
+  40% {
+    transform: translate(-8%, -10%);
+  }
+  60% {
+    transform: translate(5%, 12%);
+  }
+  80% {
+    transform: translate(-10%, 3%);
   }
 }
