@@ -5,19 +5,29 @@ import type { CatalogueResponse } from "@shared/schema";
 export function PosterGridBackground() {
   const [isVisible, setIsVisible] = useState(false);
 
-  const { data: catalogue } = useQuery<CatalogueResponse>({
+  const { data: catalogue, isLoading } = useQuery<CatalogueResponse>({
     queryKey: ["/api/catalogue"],
     staleTime: 1000 * 60 * 5,
+    refetchInterval: (query) => {
+      if (!query.state.data?.movies?.length) {
+        return 3000;
+      }
+      return false;
+    },
+    retry: 3,
+    retryDelay: 2000,
   });
 
-  useEffect(() => {
-    const timer = setTimeout(() => setIsVisible(true), 100);
-    return () => clearTimeout(timer);
-  }, []);
-
   const movies = catalogue?.movies || [];
+
+  useEffect(() => {
+    if (movies.length > 0) {
+      const timer = setTimeout(() => setIsVisible(true), 100);
+      return () => clearTimeout(timer);
+    }
+  }, [movies.length]);
   
-  if (movies.length === 0) {
+  if (isLoading || movies.length === 0) {
     return null;
   }
 
