@@ -356,21 +356,33 @@
   }
 }
 
-/* Poster grid scrolling animations */
-@keyframes scroll-left {
-  0% {
-    transform: translateX(0);
+/* Cinema spotlight animations */
+@keyframes spotlight-sweep-1 {
+  0%, 100% {
+    transform: rotate(-15deg);
   }
-  100% {
-    transform: translateX(-33.333%);
+  50% {
+    transform: rotate(25deg);
   }
 }
 
-@keyframes scroll-right {
-  0% {
-    transform: translateX(-33.333%);
+@keyframes spotlight-sweep-2 {
+  0%, 100% {
+    transform: rotate(20deg);
   }
-  100% {
-    transform: translateX(0);
+  50% {
+    transform: rotate(-20deg);
+  }
+}
+
+@keyframes spotlight-sweep-3 {
+  0%, 100% {
+    transform: rotate(-10deg);
+  }
+  33% {
+    transform: rotate(15deg);
+  }
+  66% {
+    transform: rotate(-5deg);
   }
 }
