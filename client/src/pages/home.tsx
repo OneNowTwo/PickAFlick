@@ -4,6 +4,7 @@ import { apiRequest } from "@/lib/queryClient";
 import type { StartSessionResponse, RoundPairResponse, ChoiceResponse, RecommendationsResponse } from "@shared/schema";
 import { RoundPicker } from "@/components/round-picker";
 import { ResultsScreen } from "@/components/results-screen";
+import { PosterGridBackground } from "@/components/poster-grid-background";
 import { Button } from "@/components/ui/button";
 import { Clapperboard, Loader2, Bookmark } from "lucide-react";
 import { Link } from "wouter";
@@ -106,41 +107,44 @@ export default function Home() {
 
       <main className="w-full max-w-7xl mx-auto py-8 px-4">
         {gameState === "start" && (
-          <div className="flex flex-col items-center justify-center gap-8 min-h-[70vh] text-center">
-            <div className="space-y-4">
-              <h2 className="text-4xl md:text-5xl font-bold text-foreground">
-                Find Your Perfect Movie
-              </h2>
-              <p className="text-xl text-muted-foreground max-w-lg mx-auto">
-                Make 7 quick choices between movie pairs, and our AI will recommend the perfect films for your taste.
-              </p>
-              <p className="text-base text-muted-foreground italic max-w-md mx-auto">
-                "Because choosing your movie, shouldn't take longer than watching it."
-              </p>
-            </div>
+          <div className="relative min-h-[70vh] flex items-center justify-center">
+            <PosterGridBackground />
+            <div className="relative z-10 flex flex-col items-center justify-center gap-8 text-center">
+              <div className="space-y-4">
+                <h2 className="text-4xl md:text-5xl font-bold text-foreground">
+                  Find Your Perfect Movie
+                </h2>
+                <p className="text-xl text-muted-foreground max-w-lg mx-auto">
+                  Make 7 quick choices between movie pairs, and our AI will recommend the perfect films for your taste.
+                </p>
+                <p className="text-base text-muted-foreground italic max-w-md mx-auto">
+                  "Because choosing your movie, shouldn't take longer than watching it."
+                </p>
+              </div>
 
-            <Button
-              size="lg"
-              onClick={handleStart}
-              disabled={startSessionMutation.isPending}
-              className="text-lg px-8 py-6"
-              data-testid="button-start-game"
-            >
-              {startSessionMutation.isPending ? (
-                <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Starting...
-                </>
-              ) : (
-                "Start Picking"
+              <Button
+                size="lg"
+                onClick={handleStart}
+                disabled={startSessionMutation.isPending}
+                className="text-lg px-8 py-6"
+                data-testid="button-start-game"
+              >
+                {startSessionMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Starting...
+                  </>
+                ) : (
+                  "Start Picking"
+                )}
+              </Button>
+
+              {startSessionMutation.isError && (
+                <p className="text-destructive">
+                  Movies are still loading. Please wait a moment and try again.
+                </p>
               )}
-            </Button>
-
-            {startSessionMutation.isError && (
-              <p className="text-destructive">
-                Movies are still loading. Please wait a moment and try again.
-              </p>
-            )}
+            </div>
           </div>
         )}
 
