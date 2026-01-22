@@ -4,9 +4,9 @@
 PickAFlick is a comparison-based movie picker where users complete 7 rounds of choosing between two movie posters. After all rounds, AI analyzes their choices and recommends 5 personalized movies with trailers. The app sources movies from 5 curated IMDb lists and uses TMDb for movie data, posters, and trailers.
 
 ## Current State
-- **Frontend**: 7-round head-to-head movie picker with side-by-side cards, progress bar, AI recommendations results screen, Watchlist page
-- **Backend**: Session-based game state, IMDb list scraping, TMDb integration, OpenAI-powered preference analysis and recommendations, PostgreSQL watchlist persistence
-- **Integration**: Full flow from game start through AI recommendations with trailer playback, saved liked movies persist to database
+- **Frontend**: 7-round head-to-head movie picker with side-by-side cards, progress bar, AI recommendations results screen, Watchlist page, Mood/Genre selection on home page, How It Works instructions
+- **Backend**: Session-based game state with genre filtering, IMDb list scraping, TMDb integration, OpenAI-powered preference analysis and recommendations, PostgreSQL watchlist persistence
+- **Integration**: Full flow from mood selection → game start → genre-filtered movie pairs → AI recommendations with trailer playback, saved liked movies persist to database
 
 ## Architecture
 
@@ -35,7 +35,7 @@ PickAFlick is a comparison-based movie picker where users complete 7 rounds of c
 
 ## API Endpoints
 ### Session/Game
-- `POST /api/session/start` - Creates new game session, returns sessionId and totalRounds
+- `POST /api/session/start` - Creates new game session. Accepts optional `genres` array and `includeTopPicks` boolean to filter movies. Returns sessionId and totalRounds
 - `GET /api/session/:sessionId/round` - Returns current round's movie pair
 - `POST /api/session/:sessionId/choose` - Submit movie choice for current round
 - `GET /api/session/:sessionId/recommendations` - Get AI-powered movie recommendations
