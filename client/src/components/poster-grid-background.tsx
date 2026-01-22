@@ -51,10 +51,10 @@ export function PosterGridBackground() {
       <div 
         className="absolute"
         style={{
-          width: '50vw',
-          height: '60vh',
-          left: '25%',
-          top: '15%',
+          width: '75vw',
+          height: '85vh',
+          left: '15%',
+          top: '5%',
           background: `
             radial-gradient(ellipse 50% 55% at center,
               hsl(350 85% 65% / 0.8) 0%,
@@ -66,7 +66,7 @@ export function PosterGridBackground() {
             )
           `,
           animation: 'spotlight-drift-1 18s ease-in-out infinite',
-          filter: 'blur(15px)',
+          filter: 'blur(20px)',
         }}
       />
 
@@ -74,10 +74,10 @@ export function PosterGridBackground() {
       <div 
         className="absolute"
         style={{
-          width: '40vw',
-          height: '50vh',
-          left: '5%',
-          top: '25%',
+          width: '60vw',
+          height: '75vh',
+          left: '-5%',
+          top: '15%',
           background: `
             radial-gradient(ellipse 48% 52% at center,
               hsl(350 85% 62% / 0.7) 0%,
@@ -89,7 +89,7 @@ export function PosterGridBackground() {
             )
           `,
           animation: 'spotlight-drift-2 22s ease-in-out infinite',
-          filter: 'blur(12px)',
+          filter: 'blur(18px)',
         }}
       />
 
@@ -97,10 +97,10 @@ export function PosterGridBackground() {
       <div 
         className="absolute"
         style={{
-          width: '42vw',
-          height: '52vh',
-          left: '50%',
-          top: '30%',
+          width: '65vw',
+          height: '80vh',
+          left: '40%',
+          top: '20%',
           background: `
             radial-gradient(ellipse 46% 50% at center,
               hsl(350 85% 60% / 0.65) 0%,
@@ -112,7 +112,7 @@ export function PosterGridBackground() {
             )
           `,
           animation: 'spotlight-drift-3 25s ease-in-out infinite',
-          filter: 'blur(14px)',
+          filter: 'blur(18px)',
         }}
       />
     </div>
