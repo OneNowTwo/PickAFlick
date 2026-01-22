@@ -28,9 +28,14 @@ export function RoundPicker({
   const [isAnimating, setIsAnimating] = useState(false);
   const [showSynopsis, setShowSynopsis] = useState<"left" | "right" | null>(null);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const didShowSynopsisRef = useRef(false);
 
   const handleSelect = (side: "left" | "right", movieId: number) => {
-    if (isSubmitting || isAnimating || isSkipping) return;
+    // Block selection if synopsis was shown during this press, or other blocking states
+    if (isSubmitting || isAnimating || isSkipping || showSynopsis || didShowSynopsisRef.current) {
+      didShowSynopsisRef.current = false;
+      return;
+    }
     
     setSelectedSide(side);
     setIsAnimating(true);
@@ -41,7 +46,9 @@ export function RoundPicker({
   };
 
   const handleLongPressStart = (side: "left" | "right") => {
+    didShowSynopsisRef.current = false;
     longPressTimerRef.current = setTimeout(() => {
+      didShowSynopsisRef.current = true;
       setShowSynopsis(side);
     }, 500);
   };
@@ -53,10 +60,19 @@ export function RoundPicker({
     }
   };
 
+  const handleCloseSynopsis = () => {
+    setShowSynopsis(null);
+    // Clear the ref after a brief delay so the click that closes doesn't trigger a selection
+    setTimeout(() => {
+      didShowSynopsisRef.current = false;
+    }, 100);
+  };
+
   useEffect(() => {
     setSelectedSide(null);
     setIsAnimating(false);
     setShowSynopsis(null);
+    didShowSynopsisRef.current = false;
   }, [round, leftMovie.id, rightMovie.id]);
 
   useEffect(() => {
@@ -172,7 +188,7 @@ export function RoundPicker({
       {synopsisMovie && (
         <div 
           className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
-          onClick={() => setShowSynopsis(null)}
+          onClick={handleCloseSynopsis}
         >
           <div 
             className="bg-card rounded-lg p-4 md:p-6 max-w-md w-full max-h-[80vh] overflow-y-auto"
@@ -181,7 +197,7 @@ export function RoundPicker({
             <div className="flex justify-between items-start mb-3">
               <h3 className="text-lg md:text-xl font-bold text-foreground">{synopsisMovie.title}</h3>
               <button 
-                onClick={() => setShowSynopsis(null)}
+                onClick={handleCloseSynopsis}
                 className="text-muted-foreground"
                 data-testid="button-close-synopsis"
               >
