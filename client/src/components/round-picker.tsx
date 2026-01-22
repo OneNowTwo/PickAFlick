@@ -80,19 +80,19 @@ export function RoundPicker({
       )}
 
       {/* Side-by-side on mobile, larger on desktop */}
-      <div className="relative flex flex-row gap-2 md:gap-8 w-full items-center justify-center perspective-1000">
+      <div className="relative flex flex-row gap-1 md:gap-8 w-full items-center justify-center perspective-1000">
         {/* Left Movie */}
         <button
           onClick={() => handleSelect("left", leftMovie.id)}
           disabled={isSubmitting || isAnimating}
           className={`
-            relative w-[45%] md:w-full max-w-[300px] aspect-[2/3] rounded-lg md:rounded-xl overflow-hidden 
+            relative w-[42%] md:w-full max-w-[300px] aspect-[2/3] rounded-lg md:rounded-xl overflow-hidden 
             transition-all duration-500 ease-out cursor-pointer
             ${selectedSide === "left" 
               ? "z-20 scale-105 md:scale-110 md:translate-x-[60%] shadow-2xl shadow-primary/30" 
               : selectedSide === "right" 
                 ? "z-10 scale-90 opacity-40" 
-                : "hover:scale-[1.02] hover:shadow-xl hover:shadow-black/50"
+                : ""
             }
           `}
           data-testid="movie-choice-left"
@@ -140,13 +140,13 @@ export function RoundPicker({
           onClick={() => handleSelect("right", rightMovie.id)}
           disabled={isSubmitting || isAnimating}
           className={`
-            relative w-[45%] md:w-full max-w-[300px] aspect-[2/3] rounded-lg md:rounded-xl overflow-hidden 
+            relative w-[42%] md:w-full max-w-[300px] aspect-[2/3] rounded-lg md:rounded-xl overflow-hidden 
             transition-all duration-500 ease-out cursor-pointer
             ${selectedSide === "right" 
               ? "z-20 scale-105 md:scale-110 md:-translate-x-[60%] shadow-2xl shadow-primary/30" 
               : selectedSide === "left" 
                 ? "z-10 scale-90 opacity-40" 
-                : "hover:scale-[1.02] hover:shadow-xl hover:shadow-black/50"
+                : ""
             }
           `}
           data-testid="movie-choice-right"
