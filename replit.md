@@ -60,12 +60,20 @@ PickAFlick is a comparison-based movie picker where users complete 7 rounds of c
 - `TMDB_API_KEY` (required) - TMDb API key for movie data
 - `CATALOGUE_TTL_HOURS` (optional, default: 24) - How often to rebuild catalogue
 
-## IMDb Lists Used
+## Movie Sources
+Primary: IMDb Lists (when available)
 1. ls094921320 - Top 250 Movies
 2. ls003501243 - Best Horror Movies
 3. ls002065120 - Classic Movies
 4. ls000873904 - Best Comedies
 5. ls005747458 - Critically Acclaimed
+
+Fallback: TMDb API (when IMDb scraping fails)
+- Top Rated movies
+- Popular Now movies
+- Horror (genre ID: 27)
+- Comedy (genre ID: 35)
+- Sci-Fi & Fantasy (genre IDs: 878, 14)
 
 ## Design
 - Dark cinema theme (very dark background ~4% lightness for immersive feel)
