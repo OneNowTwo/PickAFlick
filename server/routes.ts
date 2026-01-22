@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
-import { getCatalogue, getRecommendations, getHealth, initCatalogue, isCatalogueReady, getRandomMoviePair } from "./catalogue";
+import { getCatalogue, getRecommendations, getHealth, initCatalogue, isCatalogueReady, getCatalogueStatus, getRandomMoviePair } from "./catalogue";
 import { getMovieTrailer, getWatchProviders } from "./tmdb";
 import { sessionStorage } from "./session-storage";
 import { generateRecommendations } from "./ai-recommender";
@@ -31,8 +31,18 @@ export async function registerRoutes(
   // Start a new game session
   app.post("/api/session/start", async (_req: Request, res: Response) => {
     try {
-      if (!isCatalogueReady()) {
-        res.status(503).json({ error: "Catalogue is still loading. Please try again shortly." });
+      const catalogueStatus = getCatalogueStatus();
+      
+      if (catalogueStatus.loading) {
+        res.status(503).json({ error: "Movies are still loading. Please wait a moment and try again." });
+        return;
+      }
+      
+      if (catalogueStatus.error || !catalogueStatus.ready) {
+        res.status(503).json({ 
+          error: catalogueStatus.error || "Failed to load movies. Please try refreshing the page.",
+          canRetry: true
+        });
         return;
       }
 
@@ -315,6 +325,17 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching health:", error);
       res.status(500).json({ error: "Failed to fetch health status" });
+    }
+  });
+
+  // Get catalogue status for frontend loading state
+  app.get("/api/catalogue-status", async (_req: Request, res: Response) => {
+    try {
+      const status = getCatalogueStatus();
+      res.json(status);
+    } catch (error) {
+      console.error("Error fetching catalogue status:", error);
+      res.status(500).json({ error: "Failed to fetch status" });
     }
   });
 

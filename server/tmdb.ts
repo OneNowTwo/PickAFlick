@@ -250,6 +250,85 @@ export async function resolveMovieFromTitle(
   return movie;
 }
 
+// Discover movies from TMDb (fallback when IMDb scraping fails)
+export async function discoverMovies(
+  category: string,
+  options: { genreIds?: number[]; minRating?: number; page?: number } = {}
+): Promise<Movie[]> {
+  try {
+    const params: Record<string, string> = {
+      sort_by: "vote_count.desc",
+      "vote_average.gte": (options.minRating || 6.5).toString(),
+      "vote_count.gte": "1000",
+      page: (options.page || 1).toString(),
+      include_adult: "false",
+    };
+
+    if (options.genreIds && options.genreIds.length > 0) {
+      params.with_genres = options.genreIds.join(",");
+    }
+
+    const data = await tmdbFetch<{ results: TMDbSearchResult[] }>("/discover/movie", params);
+    
+    const movies: Movie[] = [];
+    for (const result of data.results) {
+      const movie = await getMovieDetails(result.id);
+      if (movie) {
+        movie.listSource = category;
+        movies.push(movie);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    return movies;
+  } catch (error) {
+    console.error(`Failed to discover movies for ${category}:`, error);
+    return [];
+  }
+}
+
+export async function getPopularMovies(listSource: string, page: number = 1): Promise<Movie[]> {
+  try {
+    const data = await tmdbFetch<{ results: TMDbSearchResult[] }>("/movie/popular", { page: page.toString() });
+    
+    const movies: Movie[] = [];
+    for (const result of data.results.slice(0, 15)) {
+      const movie = await getMovieDetails(result.id);
+      if (movie) {
+        movie.listSource = listSource;
+        movies.push(movie);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    return movies;
+  } catch (error) {
+    console.error("Failed to get popular movies:", error);
+    return [];
+  }
+}
+
+export async function getTopRatedMovies(listSource: string, page: number = 1): Promise<Movie[]> {
+  try {
+    const data = await tmdbFetch<{ results: TMDbSearchResult[] }>("/movie/top_rated", { page: page.toString() });
+    
+    const movies: Movie[] = [];
+    for (const result of data.results.slice(0, 15)) {
+      const movie = await getMovieDetails(result.id);
+      if (movie) {
+        movie.listSource = listSource;
+        movies.push(movie);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    return movies;
+  } catch (error) {
+    console.error("Failed to get top rated movies:", error);
+    return [];
+  }
+}
+
 export async function getWatchProviders(tmdbId: number): Promise<WatchProvidersResult> {
   try {
     const data = await tmdbFetch<TMDbWatchProvidersResponse>(`/movie/${tmdbId}/watch/providers`);

@@ -1,6 +1,6 @@
 import type { Movie } from "@shared/schema";
 import { getAllIMDbMovies, getIMDbLists } from "./imdb-scraper";
-import { resolveMovieFromTitle } from "./tmdb";
+import { resolveMovieFromTitle, discoverMovies, getTopRatedMovies, getPopularMovies } from "./tmdb";
 
 interface CatalogueCache {
   allMovies: Movie[];
@@ -8,6 +8,8 @@ interface CatalogueCache {
   recPool: Movie[];
   grouped: Record<string, Movie[]>;
   lastUpdated: Date | null;
+  buildComplete: boolean;
+  buildError: string | null;
 }
 
 const cache: CatalogueCache = {
@@ -16,6 +18,8 @@ const cache: CatalogueCache = {
   recPool: [],
   grouped: {},
   lastUpdated: null,
+  buildComplete: false,
+  buildError: null,
 };
 
 const CATALOGUE_TTL_HOURS = parseInt(process.env.CATALOGUE_TTL_HOURS || "24");
@@ -36,37 +40,96 @@ function sampleFromArray<T>(array: T[], count: number): T[] {
   return shuffled.slice(0, count);
 }
 
-async function buildCatalogue(): Promise<void> {
-  console.log("Building movie catalogue...");
-  
-  const imdbMovies = await getAllIMDbMovies();
+async function buildCatalogueFromTMDb(): Promise<{ allMovies: Movie[]; grouped: Record<string, Movie[]> }> {
+  console.log("Building catalogue from TMDb API...");
   const allMovies: Movie[] = [];
   const grouped: Record<string, Movie[]> = {};
 
-  for (const [listName, items] of Array.from(imdbMovies.entries())) {
-    console.log(`Processing ${listName}: ${items.length} movies`);
-    const listMovies: Movie[] = [];
+  // Categories with their TMDb genre IDs
+  const categories = [
+    { name: "Top Rated", fetch: () => getTopRatedMovies("Top Rated", 1) },
+    { name: "Popular Now", fetch: () => getPopularMovies("Popular Now", 1) },
+    { name: "Horror", fetch: () => discoverMovies("Horror", { genreIds: [27], minRating: 6.0 }) },
+    { name: "Comedy", fetch: () => discoverMovies("Comedy", { genreIds: [35], minRating: 6.5 }) },
+    { name: "Sci-Fi & Fantasy", fetch: () => discoverMovies("Sci-Fi & Fantasy", { genreIds: [878, 14], minRating: 6.5 }) },
+  ];
 
-    for (const item of items.slice(0, 50)) {
-      const movie = await resolveMovieFromTitle(item.title, item.year, listName);
-      if (movie) {
-        listMovies.push(movie);
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-
-    grouped[listName] = listMovies;
-    allMovies.push(...listMovies);
-    console.log(`Resolved ${listMovies.length} movies for ${listName}`);
+  for (const category of categories) {
+    console.log(`Fetching ${category.name} movies from TMDb...`);
+    const movies = await category.fetch();
+    grouped[category.name] = movies.slice(0, 30);
+    allMovies.push(...movies.slice(0, 30));
+    console.log(`Got ${movies.length} movies for ${category.name}`);
   }
 
-  cache.allMovies = allMovies;
-  cache.grouped = grouped;
-  cache.lastUpdated = new Date();
+  return { allMovies, grouped };
+}
 
-  selectNewCatalogue();
+async function buildCatalogue(): Promise<void> {
+  console.log("Building movie catalogue...");
+  cache.buildComplete = false;
+  cache.buildError = null;
   
-  console.log(`Catalogue built: ${allMovies.length} total movies`);
+  try {
+    // First try IMDb scraping
+    const imdbMovies = await getAllIMDbMovies();
+    let allMovies: Movie[] = [];
+    let grouped: Record<string, Movie[]> = {};
+    let usedTMDbFallback = false;
+
+    // Check if IMDb scraping returned any movies
+    let imdbTotalCount = 0;
+    for (const [, items] of Array.from(imdbMovies.entries())) {
+      imdbTotalCount += items.length;
+    }
+
+    if (imdbTotalCount > 0) {
+      // IMDb scraping worked, use it
+      for (const [listName, items] of Array.from(imdbMovies.entries())) {
+        console.log(`Processing ${listName}: ${items.length} movies`);
+        const listMovies: Movie[] = [];
+
+        for (const item of items.slice(0, 50)) {
+          const movie = await resolveMovieFromTitle(item.title, item.year, listName);
+          if (movie) {
+            listMovies.push(movie);
+          }
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+
+        grouped[listName] = listMovies;
+        allMovies.push(...listMovies);
+        console.log(`Resolved ${listMovies.length} movies for ${listName}`);
+      }
+    } else {
+      // IMDb scraping failed, use TMDb fallback
+      console.log("IMDb scraping failed, falling back to TMDb API...");
+      usedTMDbFallback = true;
+      const tmdbResult = await buildCatalogueFromTMDb();
+      allMovies = tmdbResult.allMovies;
+      grouped = tmdbResult.grouped;
+    }
+
+    cache.allMovies = allMovies;
+    cache.grouped = grouped;
+    cache.lastUpdated = new Date();
+    cache.buildComplete = true;
+
+    if (allMovies.length === 0) {
+      cache.buildError = "Failed to load movies. Please check your TMDB_API_KEY and try again.";
+      console.error("Catalogue build completed but no movies were loaded!");
+    } else if (usedTMDbFallback) {
+      console.log("Using TMDb fallback catalogue successfully");
+    }
+
+    selectNewCatalogue();
+    
+    console.log(`Catalogue built: ${allMovies.length} total movies`);
+  } catch (error) {
+    cache.buildComplete = true;
+    cache.buildError = "An error occurred while building the movie catalogue.";
+    console.error("Catalogue build failed:", error);
+  }
 }
 
 function selectNewCatalogue(): void {
@@ -129,7 +192,16 @@ export async function initCatalogue(): Promise<void> {
 }
 
 export function isCatalogueReady(): boolean {
-  return cache.allMovies.length > 0;
+  return cache.buildComplete && cache.allMovies.length > 0;
+}
+
+export function getCatalogueStatus(): { ready: boolean; loading: boolean; error: string | null; movieCount: number } {
+  return {
+    ready: cache.buildComplete && cache.allMovies.length > 0,
+    loading: !cache.buildComplete,
+    error: cache.buildError,
+    movieCount: cache.allMovies.length,
+  };
 }
 
 export function getAllMovies(): Movie[] {

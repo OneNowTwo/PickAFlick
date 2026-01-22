@@ -30,9 +30,16 @@ async function fetchIMDbList(listId: string): Promise<IMDbListItem[]> {
   try {
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
       },
     });
 
@@ -44,33 +51,69 @@ async function fetchIMDbList(listId: string): Promise<IMDbListItem[]> {
     const html = await response.text();
     const items: IMDbListItem[] = [];
 
-    const titleRegex = /<h3 class="ipc-title__text"[^>]*>[\s\S]*?<a[^>]*href="\/title\/[^"]*"[^>]*>([^<]+)<\/a>/g;
-    const altTitleRegex = /class="lister-item-header"[\s\S]*?<a[^>]*href="\/title\/[^"]*"[^>]*>([^<]+)<\/a>[\s\S]*?<span class="lister-item-year[^"]*">\((\d{4})\)/g;
-    
-    const jsonLdMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
-    if (jsonLdMatch) {
+    // Try parsing __NEXT_DATA__ JSON (modern IMDb uses Next.js)
+    const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">([^<]+)<\/script>/);
+    if (nextDataMatch) {
       try {
-        const jsonData = JSON.parse(jsonLdMatch[1]);
-        if (jsonData.itemListElement && Array.isArray(jsonData.itemListElement)) {
-          for (const item of jsonData.itemListElement) {
-            if (item.item && item.item.name) {
-              const yearMatch = item.item.name.match(/\((\d{4})\)/);
-              items.push({
-                title: decodeHtmlEntities(item.item.name.replace(/\s*\(\d{4}\)\s*$/, "").trim()),
-                year: yearMatch ? parseInt(yearMatch[1]) : undefined,
-              });
-            }
+        const nextData = JSON.parse(nextDataMatch[1]);
+        const listItems = nextData?.props?.pageProps?.list?.items || 
+                          nextData?.props?.pageProps?.mainColumnData?.predefinedList?.titleListItemSearch?.edges ||
+                          [];
+        
+        for (const item of listItems) {
+          const titleText = item?.item?.titleText?.text || 
+                           item?.listItem?.titleText?.text ||
+                           item?.node?.item?.titleText?.text ||
+                           item?.node?.listItem?.titleText?.text;
+          const year = item?.item?.releaseYear?.year || 
+                      item?.listItem?.releaseYear?.year ||
+                      item?.node?.item?.releaseYear?.year ||
+                      item?.node?.listItem?.releaseYear?.year;
+          
+          if (titleText) {
+            items.push({
+              title: decodeHtmlEntities(titleText),
+              year: year || undefined,
+            });
           }
         }
+        
+        if (items.length > 0) {
+          console.log(`Parsed ${items.length} movies from __NEXT_DATA__ for list ${listId}`);
+        }
       } catch (e) {
-        console.log("Failed to parse JSON-LD, falling back to regex");
+        console.log("Failed to parse __NEXT_DATA__, trying other methods");
       }
     }
 
+    // Try JSON-LD structured data
     if (items.length === 0) {
-      const modernListRegex = /"titleText":\{"text":"([^"]+)"\}[\s\S]*?"releaseYear":\{"year":(\d{4})/g;
+      const jsonLdMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+      if (jsonLdMatch) {
+        try {
+          const jsonData = JSON.parse(jsonLdMatch[1]);
+          if (jsonData.itemListElement && Array.isArray(jsonData.itemListElement)) {
+            for (const item of jsonData.itemListElement) {
+              if (item.item && item.item.name) {
+                const yearMatch = item.item.name.match(/\((\d{4})\)/);
+                items.push({
+                  title: decodeHtmlEntities(item.item.name.replace(/\s*\(\d{4}\)\s*$/, "").trim()),
+                  year: yearMatch ? parseInt(yearMatch[1]) : undefined,
+                });
+              }
+            }
+          }
+        } catch (e) {
+          console.log("Failed to parse JSON-LD");
+        }
+      }
+    }
+
+    // Try extracting from inline JSON data patterns
+    if (items.length === 0) {
+      const titleYearRegex = /"titleText":\s*\{\s*"text"\s*:\s*"([^"]+)"\s*\}[^}]*"releaseYear":\s*\{\s*"year"\s*:\s*(\d{4})/g;
       let match;
-      while ((match = modernListRegex.exec(html)) !== null) {
+      while ((match = titleYearRegex.exec(html)) !== null) {
         items.push({
           title: decodeHtmlEntities(match[1]),
           year: parseInt(match[2]),
@@ -78,14 +121,26 @@ async function fetchIMDbList(listId: string): Promise<IMDbListItem[]> {
       }
     }
 
+    // Fallback: Try extracting title/year from visible HTML
     if (items.length === 0) {
-      const simpleRegex = /href="\/title\/tt\d+\/"[^>]*>([^<]+)<\/a>[\s\S]{0,500}?(?:\((\d{4})\)|"releaseYear":\{"year":(\d{4})\})/g;
+      const listItemRegex = /data-testid="list-page-mc-list-item"[\s\S]*?aria-label="([^"]+)"[\s\S]*?\((\d{4})\)/g;
       let match;
-      while ((match = simpleRegex.exec(html)) !== null) {
-        const title = decodeHtmlEntities(match[1].trim());
-        const year = parseInt(match[2] || match[3]);
-        if (title && !title.includes("See more") && title.length > 1) {
-          items.push({ title, year: isNaN(year) ? undefined : year });
+      while ((match = listItemRegex.exec(html)) !== null) {
+        items.push({
+          title: decodeHtmlEntities(match[1].trim()),
+          year: parseInt(match[2]),
+        });
+      }
+    }
+
+    // Another fallback pattern for h3 titles
+    if (items.length === 0) {
+      const altRegex = /<a[^>]*href="\/title\/tt\d+\/?"[^>]*class="[^"]*ipc-title-link-wrapper[^"]*"[^>]*>[\s\S]*?<h3[^>]*>([^<]+)<\/h3>/g;
+      let match;
+      while ((match = altRegex.exec(html)) !== null) {
+        const title = decodeHtmlEntities(match[1].replace(/^\d+\.\s*/, '').trim());
+        if (title && title.length > 1) {
+          items.push({ title, year: undefined });
         }
       }
     }
