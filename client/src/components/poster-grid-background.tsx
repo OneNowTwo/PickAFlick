@@ -47,66 +47,129 @@ export function PosterGridBackground() {
         }}
       />
 
-      <div 
-        className="absolute"
-        style={{
-          width: '55vw',
-          height: '65vh',
-          left: '20%',
-          top: '15%',
-          background: `
-            radial-gradient(ellipse at center,
-              hsl(350 85% 65% / 0.9) 0%,
-              hsl(350 80% 55% / 0.6) 25%,
-              hsl(350 75% 45% / 0.3) 50%,
-              hsl(350 70% 35% / 0.1) 70%,
-              transparent 90%
-            )
-          `,
-          animation: 'spotlight-drift-1 15s ease-in-out infinite',
-          filter: 'blur(40px)',
-        }}
-      />
-
+      {/* Main spotlight 1 - center right */}
       <div 
         className="absolute"
         style={{
           width: '45vw',
           height: '55vh',
-          left: '40%',
-          top: '25%',
+          left: '30%',
+          top: '15%',
           background: `
-            radial-gradient(ellipse at center,
-              hsl(350 85% 60% / 0.7) 0%,
-              hsl(350 80% 50% / 0.45) 25%,
-              hsl(350 75% 40% / 0.2) 50%,
-              hsl(350 70% 30% / 0.08) 70%,
-              transparent 90%
+            radial-gradient(ellipse 60% 70% at center,
+              hsl(45 100% 95% / 0.15) 0%,
+              hsl(350 90% 70% / 0.7) 15%,
+              hsl(350 85% 55% / 0.5) 35%,
+              hsl(350 80% 40% / 0.2) 55%,
+              hsl(350 70% 30% / 0.05) 75%,
+              transparent 100%
             )
           `,
-          animation: 'spotlight-drift-2 18s ease-in-out infinite',
-          filter: 'blur(35px)',
+          animation: 'spotlight-drift-1 18s ease-in-out infinite',
+          filter: 'blur(8px)',
         }}
       />
-
+      {/* Glow layer for spotlight 1 */}
       <div 
         className="absolute"
         style={{
-          width: '40vw',
-          height: '50vh',
-          left: '10%',
-          top: '30%',
+          width: '55vw',
+          height: '65vh',
+          left: '25%',
+          top: '10%',
           background: `
-            radial-gradient(ellipse at center,
-              hsl(350 85% 62% / 0.6) 0%,
-              hsl(350 80% 52% / 0.4) 25%,
-              hsl(350 75% 42% / 0.18) 50%,
-              hsl(350 70% 32% / 0.06) 70%,
-              transparent 90%
+            radial-gradient(ellipse 60% 70% at center,
+              hsl(350 80% 50% / 0.3) 0%,
+              hsl(350 75% 40% / 0.15) 40%,
+              transparent 70%
             )
           `,
-          animation: 'spotlight-drift-3 20s ease-in-out infinite',
-          filter: 'blur(38px)',
+          animation: 'spotlight-drift-1 18s ease-in-out infinite',
+          filter: 'blur(30px)',
+        }}
+      />
+
+      {/* Main spotlight 2 - left side */}
+      <div 
+        className="absolute"
+        style={{
+          width: '35vw',
+          height: '45vh',
+          left: '5%',
+          top: '25%',
+          background: `
+            radial-gradient(ellipse 55% 65% at center,
+              hsl(45 100% 95% / 0.12) 0%,
+              hsl(350 90% 68% / 0.6) 15%,
+              hsl(350 85% 52% / 0.4) 35%,
+              hsl(350 80% 38% / 0.15) 55%,
+              hsl(350 70% 28% / 0.03) 75%,
+              transparent 100%
+            )
+          `,
+          animation: 'spotlight-drift-2 22s ease-in-out infinite',
+          filter: 'blur(6px)',
+        }}
+      />
+      {/* Glow layer for spotlight 2 */}
+      <div 
+        className="absolute"
+        style={{
+          width: '45vw',
+          height: '55vh',
+          left: '0%',
+          top: '20%',
+          background: `
+            radial-gradient(ellipse 55% 65% at center,
+              hsl(350 80% 48% / 0.25) 0%,
+              hsl(350 75% 38% / 0.1) 40%,
+              transparent 70%
+            )
+          `,
+          animation: 'spotlight-drift-2 22s ease-in-out infinite',
+          filter: 'blur(25px)',
+        }}
+      />
+
+      {/* Main spotlight 3 - right bottom */}
+      <div 
+        className="absolute"
+        style={{
+          width: '38vw',
+          height: '48vh',
+          left: '55%',
+          top: '35%',
+          background: `
+            radial-gradient(ellipse 58% 68% at center,
+              hsl(45 100% 95% / 0.1) 0%,
+              hsl(350 90% 65% / 0.5) 15%,
+              hsl(350 85% 50% / 0.35) 35%,
+              hsl(350 80% 36% / 0.12) 55%,
+              hsl(350 70% 26% / 0.02) 75%,
+              transparent 100%
+            )
+          `,
+          animation: 'spotlight-drift-3 25s ease-in-out infinite',
+          filter: 'blur(7px)',
+        }}
+      />
+      {/* Glow layer for spotlight 3 */}
+      <div 
+        className="absolute"
+        style={{
+          width: '48vw',
+          height: '58vh',
+          left: '50%',
+          top: '30%',
+          background: `
+            radial-gradient(ellipse 58% 68% at center,
+              hsl(350 80% 46% / 0.2) 0%,
+              hsl(350 75% 36% / 0.08) 40%,
+              transparent 70%
+            )
+          `,
+          animation: 'spotlight-drift-3 25s ease-in-out infinite',
+          filter: 'blur(22px)',
         }}
       />
     </div>
