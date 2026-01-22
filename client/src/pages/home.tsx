@@ -110,14 +110,14 @@ export default function Home() {
         {gameState === "start" && (
           <div className="relative min-h-[70vh] flex items-center justify-center">
             <div className="relative z-10 flex flex-col items-center justify-center gap-8 text-center">
-              <div className="space-y-4">
-                <h2 className="text-4xl md:text-5xl font-bold text-foreground">
+              <div className="space-y-4 p-8 rounded-lg" style={{ background: 'rgba(0, 0, 0, 0.6)' }}>
+                <h2 className="text-4xl md:text-5xl font-bold text-white drop-shadow-lg">
                   Find Your Perfect Movie
                 </h2>
-                <p className="text-xl text-muted-foreground max-w-lg mx-auto">
+                <p className="text-xl text-gray-200 max-w-lg mx-auto drop-shadow-md">
                   Make 7 quick choices between movie pairs, and our AI will recommend the perfect films for your taste.
                 </p>
-                <p className="text-base text-muted-foreground italic max-w-md mx-auto">
+                <p className="text-base text-gray-300 italic max-w-md mx-auto drop-shadow-md">
                   "Because choosing your movie, shouldn't take longer than watching it."
                 </p>
               </div>
