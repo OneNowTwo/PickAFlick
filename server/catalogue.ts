@@ -219,3 +219,54 @@ export function getRandomMoviePair(excludeIds: Set<number> = new Set()): [Movie,
   const shuffled = shuffleArray(available);
   return [shuffled[0], shuffled[1]];
 }
+
+// Get a random pair of movies filtered by genres
+export function getRandomMoviePairFiltered(
+  genres: string[],
+  includeTopPicks: boolean,
+  excludeIds: Set<number> = new Set()
+): [Movie, Movie] | null {
+  let available: Movie[];
+  
+  if (genres.length === 0 && !includeTopPicks) {
+    // No filters - use all movies
+    available = cache.allMovies.filter((m) => !excludeIds.has(m.id));
+  } else {
+    // Filter by genres and/or top picks
+    available = cache.allMovies.filter((m) => {
+      if (excludeIds.has(m.id)) return false;
+      
+      // Check if movie is from top picks lists (Top Rated, Popular Now)
+      const isTopPick = m.listSource === "Top Rated" || m.listSource === "Popular Now";
+      
+      // Check if movie matches any selected genre
+      const matchesGenre = genres.length > 0 && m.genres.some(g => genres.includes(g));
+      
+      // If only top picks selected (no genres), only show top picks
+      if (includeTopPicks && genres.length === 0) {
+        return isTopPick;
+      }
+      
+      // If genres selected (with or without top picks), show matching genres OR top picks
+      if (includeTopPicks) {
+        return matchesGenre || isTopPick;
+      }
+      
+      // Only genres selected, no top picks
+      return matchesGenre;
+    });
+  }
+  
+  if (available.length < 2) {
+    // Fallback to all movies if not enough matches
+    console.log("Not enough filtered movies, falling back to all movies");
+    available = cache.allMovies.filter((m) => !excludeIds.has(m.id));
+  }
+  
+  if (available.length < 2) {
+    return null;
+  }
+
+  const shuffled = shuffleArray(available);
+  return [shuffled[0], shuffled[1]];
+}

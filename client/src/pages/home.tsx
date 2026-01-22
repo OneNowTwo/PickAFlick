@@ -6,20 +6,55 @@ import { RoundPicker } from "@/components/round-picker";
 import { ResultsScreen } from "@/components/results-screen";
 import { PosterGridBackground } from "@/components/poster-grid-background";
 import { Button } from "@/components/ui/button";
-import { Clapperboard, Loader2, Bookmark } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Clapperboard, Loader2, Bookmark, Sparkles, MousePointerClick, Film, Heart } from "lucide-react";
 import { Link } from "wouter";
 
 type GameState = "start" | "playing" | "loading-recommendations" | "results";
+
+// Mood/genre options for users to select
+const MOOD_OPTIONS = [
+  { id: "action", label: "Action & Adventure", genres: ["Action", "Adventure"] },
+  { id: "comedy", label: "Comedy", genres: ["Comedy"] },
+  { id: "drama", label: "Drama", genres: ["Drama"] },
+  { id: "horror", label: "Horror & Thriller", genres: ["Horror", "Thriller"] },
+  { id: "scifi", label: "Sci-Fi & Fantasy", genres: ["Science Fiction", "Fantasy"] },
+  { id: "romance", label: "Romance", genres: ["Romance"] },
+  { id: "top", label: "Top Picks", genres: [] }, // Special case - top rated/popular
+];
 
 export default function Home() {
   const [gameState, setGameState] = useState<GameState>("start");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [recommendations, setRecommendations] = useState<RecommendationsResponse | null>(null);
+  const [selectedMoods, setSelectedMoods] = useState<string[]>([]);
+
+  const toggleMood = useCallback((moodId: string) => {
+    setSelectedMoods(prev => 
+      prev.includes(moodId) 
+        ? prev.filter(id => id !== moodId)
+        : [...prev, moodId]
+    );
+  }, []);
+
+  // Get all selected genres from moods
+  const getSelectedGenres = useCallback(() => {
+    const genres: string[] = [];
+    for (const moodId of selectedMoods) {
+      const mood = MOOD_OPTIONS.find(m => m.id === moodId);
+      if (mood) {
+        genres.push(...mood.genres);
+      }
+    }
+    return genres;
+  }, [selectedMoods]);
 
   // Start session mutation
   const startSessionMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/session/start");
+      const genres = getSelectedGenres();
+      const includeTopPicks = selectedMoods.includes("top");
+      const res = await apiRequest("POST", "/api/session/start", { genres, includeTopPicks });
       return res.json() as Promise<StartSessionResponse>;
     },
     onSuccess: (data) => {
@@ -81,6 +116,7 @@ export default function Home() {
   const handlePlayAgain = useCallback(() => {
     setSessionId(null);
     setRecommendations(null);
+    setSelectedMoods([]);
     setGameState("start");
   }, []);
 
@@ -109,17 +145,70 @@ export default function Home() {
       <main className="w-full max-w-7xl mx-auto py-8 px-4">
         {gameState === "start" && (
           <div className="relative min-h-[70vh] flex items-center justify-center">
-            <div className="relative z-10 flex flex-col items-center justify-center gap-8 text-center">
-              <div className="space-y-4 p-8 rounded-lg" style={{ background: 'rgba(0, 0, 0, 0.6)' }}>
-                <h2 className="text-4xl md:text-5xl font-bold text-white drop-shadow-lg">
+            <div className="relative z-10 flex flex-col items-center justify-center gap-6 text-center max-w-3xl mx-auto">
+              <div className="space-y-3 p-6 md:p-8 rounded-lg" style={{ background: 'rgba(0, 0, 0, 0.7)' }}>
+                <h2 className="text-3xl md:text-4xl font-bold text-white drop-shadow-lg">
                   Find Your Perfect Movie
                 </h2>
-                <p className="text-xl text-gray-200 max-w-lg mx-auto drop-shadow-md">
-                  Make 7 quick choices between movie pairs, and our AI will recommend the perfect films for your taste.
+                <p className="text-lg text-gray-300 italic max-w-md mx-auto drop-shadow-md">
+                  "Because choosing your movie shouldn't take longer than watching it."
                 </p>
-                <p className="text-base text-gray-300 italic max-w-md mx-auto drop-shadow-md">
-                  "Because choosing your movie, shouldn't take longer than watching it."
-                </p>
+              </div>
+
+              {/* How It Works */}
+              <div className="p-6 rounded-lg w-full" style={{ background: 'rgba(0, 0, 0, 0.6)' }}>
+                <h3 className="text-lg font-semibold text-white mb-4">How It Works</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+                      <Sparkles className="w-4 h-4 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-white font-medium">1. Pick Your Mood</p>
+                      <p className="text-gray-400 text-sm">Select one or more genres that match how you're feeling tonight</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+                      <MousePointerClick className="w-4 h-4 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-white font-medium">2. Quick Choices</p>
+                      <p className="text-gray-400 text-sm">Make 7 quick picks between movie pairs - trust your gut!</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+                      <Film className="w-4 h-4 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-white font-medium">3. Get Watching</p>
+                      <p className="text-gray-400 text-sm">Our AI learns your taste and recommends the perfect films</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Mood Selection */}
+              <div className="p-6 rounded-lg w-full" style={{ background: 'rgba(0, 0, 0, 0.6)' }}>
+                <h3 className="text-lg font-semibold text-white mb-2">What's Your Mood?</h3>
+                <p className="text-gray-400 text-sm mb-4">Select one or more (or skip for a mix of everything)</p>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {MOOD_OPTIONS.map((mood) => (
+                    <Badge
+                      key={mood.id}
+                      onClick={() => toggleMood(mood.id)}
+                      className={`cursor-pointer text-sm toggle-elevate ${
+                        selectedMoods.includes(mood.id)
+                          ? "bg-primary text-primary-foreground toggle-elevated"
+                          : "bg-muted/50 text-muted-foreground"
+                      }`}
+                      data-testid={`button-mood-${mood.id}`}
+                    >
+                      {mood.label}
+                    </Badge>
+                  ))}
+                </div>
               </div>
 
               <Button
@@ -135,12 +224,15 @@ export default function Home() {
                     Starting...
                   </>
                 ) : (
-                  "Start Picking"
+                  <>
+                    <Heart className="w-5 h-5 mr-2" />
+                    {selectedMoods.length > 0 ? "Start Picking" : "Surprise Me"}
+                  </>
                 )}
               </Button>
 
               {startSessionMutation.isError && (
-                <p className="text-destructive">
+                <p className="text-destructive bg-black/50 px-4 py-2 rounded">
                   Movies are still loading. Please wait a moment and try again.
                 </p>
               )}

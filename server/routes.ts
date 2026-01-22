@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
-import { getCatalogue, getRecommendations, getHealth, initCatalogue, isCatalogueReady, getCatalogueStatus, getRandomMoviePair } from "./catalogue";
+import { getCatalogue, getRecommendations, getHealth, initCatalogue, isCatalogueReady, getCatalogueStatus, getRandomMoviePair, getRandomMoviePairFiltered } from "./catalogue";
 import { getMovieTrailer, getWatchProviders } from "./tmdb";
 import { sessionStorage } from "./session-storage";
 import { generateRecommendations } from "./ai-recommender";
@@ -29,7 +29,7 @@ export async function registerRoutes(
   // ===== NEW SESSION-BASED GAME ENDPOINTS =====
 
   // Start a new game session
-  app.post("/api/session/start", async (_req: Request, res: Response) => {
+  app.post("/api/session/start", async (req: Request, res: Response) => {
     try {
       const catalogueStatus = getCatalogueStatus();
       
@@ -46,10 +46,14 @@ export async function registerRoutes(
         return;
       }
 
-      const session = sessionStorage.createSession();
+      // Parse genre filters from request
+      const genres = Array.isArray(req.body?.genres) ? req.body.genres : [];
+      const includeTopPicks = req.body?.includeTopPicks === true;
+
+      const session = sessionStorage.createSession(genres, includeTopPicks);
       
-      // Generate first pair
-      const pair = getRandomMoviePair();
+      // Generate first pair using filters
+      const pair = getRandomMoviePairFiltered(genres, includeTopPicks);
       if (!pair) {
         res.status(500).json({ error: "Not enough movies available" });
         return;
@@ -101,11 +105,14 @@ export async function registerRoutes(
       let currentPair = sessionPairs.get(sessionId);
       
       if (!currentPair || currentPair.round !== session.currentRound) {
-        // Generate new pair for current round
+        // Generate new pair for current round using session filters
         const usedIds = new Set(
           session.choices.flatMap((c) => [c.leftMovie.id, c.rightMovie.id])
         );
-        const pair = getRandomMoviePair(usedIds);
+        const filters = sessionStorage.getSessionFilters(sessionId);
+        const pair = filters 
+          ? getRandomMoviePairFiltered(filters.genres, filters.includeTopPicks, usedIds)
+          : getRandomMoviePair(usedIds);
         
         if (!pair) {
           res.status(500).json({ error: "Not enough movies available" });
@@ -190,7 +197,10 @@ export async function registerRoutes(
         const usedIds = new Set(
           updatedSession.choices.flatMap((c) => [c.leftMovie.id, c.rightMovie.id])
         );
-        const pair = getRandomMoviePair(usedIds);
+        const filters = sessionStorage.getSessionFilters(sessionId);
+        const pair = filters 
+          ? getRandomMoviePairFiltered(filters.genres, filters.includeTopPicks, usedIds)
+          : getRandomMoviePair(usedIds);
         
         if (pair) {
           sessionPairs.set(sessionId, {
