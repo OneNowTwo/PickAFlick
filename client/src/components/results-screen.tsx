@@ -135,19 +135,19 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
     : null;
 
   return (
-    <div className="flex flex-col items-center gap-6 w-full max-w-5xl mx-auto px-4 py-6">
-      {/* Header */}
+    <div className="flex flex-col items-center gap-3 md:gap-6 w-full max-w-5xl mx-auto px-2 md:px-4 py-2 md:py-6">
+      {/* Header - More compact on mobile */}
       <div className="text-center max-w-3xl">
-        <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-3">
+        <h2 className="text-xl md:text-4xl font-bold text-foreground mb-1 md:mb-3">
           Your Tailored Picks
         </h2>
-        <p className="text-muted-foreground text-base">
+        <p className="text-muted-foreground text-xs md:text-base hidden md:block">
           Based on your 7 choices, here's what we learned about your taste
         </p>
       </div>
 
-      {/* Preference Profile Cards - Expanded for readability */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 w-full" data-testid="preference-profile">
+      {/* Preference Profile Cards - Hidden on mobile, shown on tablet+ */}
+      <div className="hidden md:grid grid-cols-2 lg:grid-cols-4 gap-3 w-full" data-testid="preference-profile">
         {preferenceProfile.topGenres.length > 0 && (
           <div className="bg-card/80 border border-border/50 rounded-lg p-4 backdrop-blur-sm">
             <div className="flex items-center gap-2 mb-3">
@@ -205,9 +205,9 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
         )}
       </div>
 
-      {/* Themes */}
+      {/* Themes - Hidden on mobile */}
       {preferenceProfile.themes && preferenceProfile.themes.length > 0 && (
-        <div className="flex flex-wrap items-center justify-center gap-2">
+        <div className="hidden md:flex flex-wrap items-center justify-center gap-2">
           <Sparkles className="w-4 h-4 text-primary/70" />
           <span className="text-sm text-muted-foreground">Key themes:</span>
           {preferenceProfile.themes.slice(0, 4).map((theme, i) => (
@@ -218,12 +218,12 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
         </div>
       )}
 
-      {/* Divider */}
-      <div className="w-full max-w-lg border-t border-border/30" />
+      {/* Divider - Hidden on mobile */}
+      <div className="hidden md:block w-full max-w-lg border-t border-border/30" />
 
-      {/* Movie Counter */}
-      <div className="flex items-center gap-3">
-        <h3 className="text-lg font-semibold text-foreground">
+      {/* Movie Counter - Inline with navigation on mobile */}
+      <div className="flex items-center gap-2 md:gap-3">
+        <h3 className="text-sm md:text-lg font-semibold text-foreground">
           Movie {currentIndex + 1} of {totalRecs}
         </h3>
         <div className="flex gap-1">
@@ -248,10 +248,10 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
 
       {/* Current Recommendation */}
       <div 
-        className="w-full max-w-3xl bg-card/50 border border-border/50 rounded-2xl overflow-hidden backdrop-blur-sm"
+        className="w-full max-w-3xl bg-card/50 border border-border/50 rounded-xl md:rounded-2xl overflow-hidden backdrop-blur-sm"
         data-testid={`recommendation-card-${currentIndex}`}
       >
-        {/* Trailer / Poster Area */}
+        {/* Trailer / Poster Area - Slightly shorter on mobile */}
         <div className="aspect-video relative">
           {currentRec.trailerUrl && autoPlayTrailer ? (
             <iframe
@@ -271,145 +271,147 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                 {currentRec.trailerUrl && (
                   <Button
-                    size="lg"
+                    size="default"
                     onClick={() => setAutoPlayTrailer(true)}
                     className="gap-2"
                     data-testid={`button-play-trailer-${currentIndex}`}
                   >
-                    <Play className="w-5 h-5" />
-                    Watch Trailer
+                    <Play className="w-4 h-4 md:w-5 md:h-5" />
+                    <span className="text-sm md:text-base">Watch Trailer</span>
                   </Button>
                 )}
               </div>
             </div>
           ) : (
             <div className="w-full h-full bg-muted flex items-center justify-center">
-              <span className="text-muted-foreground">No Preview Available</span>
+              <span className="text-muted-foreground text-sm">No Preview Available</span>
             </div>
           )}
         </div>
 
-        {/* Movie Info */}
-        <div className="p-5">
-          <div className="flex items-start justify-between gap-4 mb-3">
-            <div>
-              <h3 className="font-bold text-xl md:text-2xl text-foreground">
+        {/* Movie Info - More compact on mobile */}
+        <div className="p-3 md:p-5">
+          <div className="flex items-start justify-between gap-2 md:gap-4 mb-2 md:mb-3">
+            <div className="min-w-0 flex-1">
+              <h3 className="font-bold text-lg md:text-2xl text-foreground line-clamp-2">
                 {currentRec.movie.title}
               </h3>
-              <p className="text-muted-foreground">
+              <p className="text-muted-foreground text-xs md:text-base">
                 {currentRec.movie.year} {currentRec.movie.rating ? `• ${currentRec.movie.rating.toFixed(1)}★` : ""}
                 {currentRec.movie.runtime ? ` • ${currentRec.movie.runtime} min` : ""}
               </p>
             </div>
             <Button
               variant="default"
-              size="default"
+              size="sm"
               onClick={() => setShowWatchProviders(true)}
-              className="gap-2 shrink-0"
+              className="gap-1.5 shrink-0"
               data-testid="button-watch-now"
             >
-              <Tv className="w-4 h-4" />
-              Watch Now
+              <Tv className="w-3.5 h-3.5 md:w-4 md:h-4" />
+              <span className="text-xs md:text-sm">Watch Now</span>
             </Button>
           </div>
           
           {currentRec.movie.genres.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-4">
-              {currentRec.movie.genres.slice(0, 4).map((genre, i) => (
-                <span key={i} className="text-xs bg-muted px-2 py-0.5 rounded text-muted-foreground">
+            <div className="flex flex-wrap gap-1 md:gap-1.5 mb-2 md:mb-4">
+              {currentRec.movie.genres.slice(0, 3).map((genre, i) => (
+                <span key={i} className="text-[10px] md:text-xs bg-muted px-1.5 md:px-2 py-0.5 rounded text-muted-foreground">
                   {genre}
                 </span>
               ))}
             </div>
           )}
           
-          <p className="text-foreground/90 text-sm md:text-base leading-relaxed">
+          <p className="text-foreground/90 text-xs md:text-base leading-relaxed line-clamp-3 md:line-clamp-none">
             {currentRec.reason}
           </p>
         </div>
       </div>
 
-      {/* Navigation Controls */}
-      <div className="flex flex-col items-center gap-4 w-full max-w-lg">
-        {/* Back / Next Row - More prominent */}
-        <div className="flex items-center justify-between w-full gap-4">
+      {/* Navigation Controls - More compact on mobile */}
+      <div className="flex flex-col items-center gap-2 md:gap-4 w-full max-w-lg">
+        {/* Back / Next Row */}
+        <div className="flex items-center justify-between w-full gap-2 md:gap-4">
           <Button
             variant="outline"
-            size="lg"
+            size="default"
             onClick={handleBack}
             disabled={currentIndex === 0}
-            className="flex-1 gap-2"
+            className="flex-1 gap-1 md:gap-2"
             data-testid="button-back"
           >
-            <ChevronLeft className="w-5 h-5" />
-            Back
+            <ChevronLeft className="w-4 h-4 md:w-5 md:h-5" />
+            <span className="text-sm md:text-base">Back</span>
           </Button>
 
           <Button
             variant="outline"
-            size="lg"
+            size="default"
             onClick={handleNext}
             disabled={currentIndex === totalRecs - 1}
-            className="flex-1 gap-2"
+            className="flex-1 gap-1 md:gap-2"
             data-testid="button-next"
           >
-            Next
-            <ChevronRight className="w-5 h-5" />
+            <span className="text-sm md:text-base">Next</span>
+            <ChevronRight className="w-4 h-4 md:w-5 md:h-5" />
           </Button>
         </div>
 
         {/* Like / Maybe Row */}
-        <div className="flex items-center justify-center gap-3 w-full">
+        <div className="flex items-center justify-center gap-2 md:gap-3 w-full">
           <Button
             variant={isMaybe ? "default" : "outline"}
+            size="default"
             onClick={handleMaybe}
-            className={`flex-1 gap-2 toggle-elevate ${isMaybe ? "toggle-elevated bg-yellow-600 border-yellow-600" : ""}`}
+            className={`flex-1 gap-1 md:gap-2 toggle-elevate ${isMaybe ? "toggle-elevated bg-yellow-600 border-yellow-600" : ""}`}
             data-testid="button-maybe"
           >
             <Bookmark className="w-4 h-4" />
-            Maybe
+            <span className="text-sm md:text-base">Maybe</span>
           </Button>
 
           <Button
             variant={isLiked ? "default" : "outline"}
+            size="default"
             onClick={handleLike}
-            className={`flex-1 gap-2 toggle-elevate ${isLiked ? "toggle-elevated bg-green-600 border-green-600" : ""}`}
+            className={`flex-1 gap-1 md:gap-2 toggle-elevate ${isLiked ? "toggle-elevated bg-green-600 border-green-600" : ""}`}
             data-testid="button-like"
           >
             <ThumbsUp className="w-4 h-4" />
-            Like
+            <span className="text-sm md:text-base">Like</span>
           </Button>
         </div>
       </div>
 
-      {/* Summary of liked/maybe */}
+      {/* Summary of liked/maybe - Smaller on mobile */}
       {(likedMovies.size > 0 || maybeMovies.size > 0) && (
-        <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground">
+        <div className="flex items-center justify-center gap-3 md:gap-4 text-xs md:text-sm text-muted-foreground">
           {likedMovies.size > 0 && (
             <span className="flex items-center gap-1">
-              <ThumbsUp className="w-3.5 h-3.5 text-green-500" />
+              <ThumbsUp className="w-3 h-3 md:w-3.5 md:h-3.5 text-green-500" />
               {likedMovies.size} liked
             </span>
           )}
           {maybeMovies.size > 0 && (
             <span className="flex items-center gap-1">
-              <Bookmark className="w-3.5 h-3.5 text-yellow-500" />
+              <Bookmark className="w-3 h-3 md:w-3.5 md:h-3.5 text-yellow-500" />
               {maybeMovies.size} maybe
             </span>
           )}
         </div>
       )}
 
-      {/* Play Again */}
+      {/* Play Again - Smaller on mobile */}
       <Button 
-        size="lg" 
+        size="default" 
         variant="outline"
         onClick={onPlayAgain} 
-        className="mt-2"
+        className="mt-1 md:mt-2"
         data-testid="button-play-again"
       >
-        <RefreshCw className="w-5 h-5 mr-2" />
-        Start Over
+        <RefreshCw className="w-4 h-4 md:w-5 md:h-5 mr-1.5 md:mr-2" />
+        <span className="text-sm md:text-base">Start Over</span>
       </Button>
 
       {/* Watch Providers Dialog */}
