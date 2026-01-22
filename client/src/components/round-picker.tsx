@@ -93,8 +93,9 @@ export function RoundPicker({
       : null;
   };
 
-  const getLeadActor = (movie: Movie) => {
-    return movie.cast && movie.cast.length > 0 ? movie.cast[0] : null;
+  const getLeadActors = (movie: Movie) => {
+    if (!movie.cast || movie.cast.length === 0) return null;
+    return movie.cast.slice(0, 2).join(", ");
   };
 
   const isHighlyRated = (movie: Movie) => {
@@ -105,7 +106,7 @@ export function RoundPicker({
   const rightPosterUrl = getPosterUrl(rightMovie);
 
   const renderMovieCard = (movie: Movie, side: "left" | "right", posterUrl: string | null) => {
-    const leadActor = getLeadActor(movie);
+    const leadActors = getLeadActors(movie);
     const highlyRated = isHighlyRated(movie);
 
     return (
@@ -159,9 +160,9 @@ export function RoundPicker({
           <p className="text-white/70 text-xs md:text-sm">
             {movie.year} {movie.rating ? `• ${movie.rating.toFixed(1)}★` : ""}
           </p>
-          {leadActor && (
+          {leadActors && (
             <p className="text-white/60 text-[10px] md:text-xs mt-0.5 line-clamp-1">
-              {leadActor}
+              {leadActors}
             </p>
           )}
           <p className="text-white/50 text-[10px] md:text-xs mt-0.5 line-clamp-1 hidden md:block">
