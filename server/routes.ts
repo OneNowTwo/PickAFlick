@@ -225,6 +225,71 @@ export async function registerRoutes(
     }
   });
 
+  // Skip current round (adds +1 round to session)
+  app.post("/api/session/:sessionId/skip", async (req: Request, res: Response) => {
+    try {
+      const { sessionId } = req.params;
+      const session = sessionStorage.getSession(sessionId);
+
+      if (!session) {
+        res.status(404).json({ error: "Session not found" });
+        return;
+      }
+
+      if (session.isComplete) {
+        res.status(400).json({ error: "Session already complete" });
+        return;
+      }
+
+      // Add an extra round as the "cost" of skipping
+      const updatedSession = sessionStorage.addRound(sessionId);
+      if (!updatedSession) {
+        res.status(500).json({ error: "Failed to update session" });
+        return;
+      }
+
+      // Generate a new pair for the current round (replacing the skipped one)
+      const usedIds = new Set(
+        session.choices.flatMap((c) => [c.leftMovie.id, c.rightMovie.id])
+      );
+      
+      // Also exclude the current pair from the new selection
+      const currentPair = sessionPairs.get(sessionId);
+      if (currentPair) {
+        usedIds.add(currentPair.leftMovie.id);
+        usedIds.add(currentPair.rightMovie.id);
+      }
+
+      const filters = sessionStorage.getSessionFilters(sessionId);
+      const pair = filters 
+        ? getRandomMoviePairFiltered(filters.genres, filters.includeTopPicks, usedIds)
+        : getRandomMoviePair(usedIds);
+
+      if (!pair) {
+        res.status(500).json({ error: "Not enough movies to skip" });
+        return;
+      }
+
+      sessionPairs.set(sessionId, {
+        round: session.currentRound,
+        leftMovie: pair[0],
+        rightMovie: pair[1],
+      });
+
+      res.set(NO_CACHE_HEADERS);
+      res.json({
+        success: true,
+        round: session.currentRound,
+        totalRounds: updatedSession.totalRounds,
+        leftMovie: pair[0],
+        rightMovie: pair[1],
+      });
+    } catch (error) {
+      console.error("Error skipping round:", error);
+      res.status(500).json({ error: "Failed to skip round" });
+    }
+  });
+
   // Get AI recommendations after completing all rounds
   app.get("/api/session/:sessionId/recommendations", async (req: Request, res: Response) => {
     try {

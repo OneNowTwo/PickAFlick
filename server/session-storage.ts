@@ -101,4 +101,12 @@ export const sessionStorage = {
   deleteSession(sessionId: string): void {
     sessions.delete(sessionId);
   },
+
+  addRound(sessionId: string): Session | undefined {
+    const session = sessions.get(sessionId);
+    if (!session) return undefined;
+    
+    session.totalRounds++;
+    return session;
+  },
 };

@@ -113,6 +113,22 @@ export default function Home() {
     choiceMutation.mutate(chosenMovieId);
   }, [choiceMutation]);
 
+  // Skip round mutation (adds +1 round)
+  const skipMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/session/${sessionId}/skip`);
+      return res.json() as Promise<RoundPairResponse>;
+    },
+    onSuccess: () => {
+      // Refetch to get the new pair
+      roundQuery.refetch();
+    },
+  });
+
+  const handleSkip = useCallback(() => {
+    skipMutation.mutate();
+  }, [skipMutation]);
+
   const handlePlayAgain = useCallback(() => {
     setSessionId(null);
     setRecommendations(null);
@@ -247,7 +263,9 @@ export default function Home() {
             leftMovie={roundQuery.data.leftMovie}
             rightMovie={roundQuery.data.rightMovie}
             onChoice={handleChoice}
+            onSkip={handleSkip}
             isSubmitting={choiceMutation.isPending}
+            isSkipping={skipMutation.isPending}
           />
         )}
 
