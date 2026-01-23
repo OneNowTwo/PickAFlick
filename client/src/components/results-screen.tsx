@@ -315,18 +315,18 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
           )}
         </div>
 
-        {/* Movie Info - Compact */}
-        <div className="p-2 md:p-3">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
+        {/* Movie Info */}
+        <div className="p-3 md:p-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2 min-w-0 flex-1">
-              <h3 className="font-bold text-sm md:text-lg text-foreground truncate max-w-[200px] md:max-w-none">
+              <h3 className="font-bold text-base md:text-xl text-foreground truncate max-w-[200px] md:max-w-none">
                 {currentRec.movie.title}
               </h3>
-              <span className="text-muted-foreground text-xs md:text-sm shrink-0">
+              <span className="text-muted-foreground text-sm shrink-0">
                 {currentRec.movie.year}
               </span>
               {currentRec.movie.rating && (
-                <Badge variant="secondary" className="bg-primary/20 text-primary border-0 shrink-0 text-xs">
+                <Badge variant="secondary" className="bg-primary/20 text-primary border-0 shrink-0 text-sm">
                   {currentRec.movie.rating.toFixed(1)}★
                 </Badge>
               )}
@@ -343,20 +343,20 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
             </Button>
           </div>
           
-          <p className="text-foreground/70 text-xs leading-relaxed mt-1 line-clamp-1 md:line-clamp-2">
+          <p className="text-foreground/70 text-sm leading-relaxed mt-2 line-clamp-2">
             {currentRec.reason}
           </p>
         </div>
       </div>
 
       {/* Navigation Controls */}
-      <div className="flex items-center justify-center gap-2 w-full flex-wrap">
+      <div className="flex items-center justify-center gap-3 w-full flex-wrap">
         <Button
           variant="outline"
-          size="sm"
+          size="default"
           onClick={handleBack}
           disabled={currentIndex === 0}
-          className="gap-1"
+          className="gap-1.5"
           data-testid="button-back"
         >
           <ChevronLeft className="w-4 h-4" />
@@ -365,9 +365,9 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
 
         <Button
           variant={isLiked ? "default" : "outline"}
-          size="sm"
+          size="default"
           onClick={handleLike}
-          className={`gap-1 toggle-elevate ${isLiked ? "toggle-elevated bg-green-600 border-green-600" : ""}`}
+          className={`gap-1.5 toggle-elevate ${isLiked ? "toggle-elevated bg-green-600 border-green-600" : ""}`}
           data-testid="button-save-watchlist"
         >
           <Bookmark className="w-4 h-4" />
@@ -376,10 +376,10 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
 
         <Button
           variant="outline"
-          size="sm"
+          size="default"
           onClick={handleNext}
           disabled={currentIndex === totalRecs - 1}
-          className="gap-1"
+          className="gap-1.5"
           data-testid="button-next"
         >
           Next
@@ -387,10 +387,10 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
         </Button>
 
         <Button 
-          size="sm" 
+          size="default" 
           variant="ghost"
           onClick={onPlayAgain}
-          className="gap-1"
+          className="gap-1.5"
           data-testid="button-play-again"
         >
           <RefreshCw className="w-4 h-4" />
