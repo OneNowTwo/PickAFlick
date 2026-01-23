@@ -6,8 +6,7 @@ import { RoundPicker } from "@/components/round-picker";
 import { ResultsScreen } from "@/components/results-screen";
 import { PosterGridBackground } from "@/components/poster-grid-background";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Clapperboard, Loader2, Bookmark, Sparkles, MousePointerClick, Film, Heart } from "lucide-react";
+import { Clapperboard, Loader2, Bookmark, Heart } from "lucide-react";
 import { Link } from "wouter";
 
 type GameState = "start" | "playing" | "loading-recommendations" | "results";
@@ -171,58 +170,25 @@ export default function Home() {
                 </p>
               </div>
 
-              {/* How It Works */}
+              {/* Mood Selection - Clear tappable buttons */}
               <div className="p-6 rounded-lg w-full" style={{ background: 'rgba(0, 0, 0, 0.6)' }}>
-                <h3 className="text-lg font-semibold text-white mb-4">How It Works</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-                      <Sparkles className="w-4 h-4 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-white font-medium">1. Pick Your Mood</p>
-                      <p className="text-gray-400 text-sm">Select one or more genres that match how you're feeling tonight</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-                      <MousePointerClick className="w-4 h-4 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-white font-medium">2. Quick Choices</p>
-                      <p className="text-gray-400 text-sm">Make 7 quick picks between movie pairs - trust your gut!</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-                      <Film className="w-4 h-4 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-white font-medium">3. Get Watching</p>
-                      <p className="text-gray-400 text-sm">Our AI learns your taste and recommends the perfect films</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Mood Selection */}
-              <div className="p-6 rounded-lg w-full" style={{ background: 'rgba(0, 0, 0, 0.6)' }}>
-                <h3 className="text-lg font-semibold text-white mb-2">What's Your Mood?</h3>
-                <p className="text-gray-400 text-sm mb-4">Select one or more (or skip for a mix of everything)</p>
-                <div className="flex flex-wrap justify-center gap-2">
+                <h3 className="text-xl font-bold text-white mb-1">Tap Your Mood</h3>
+                <p className="text-gray-400 text-sm mb-4">Pick genres or skip for everything</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
                   {MOOD_OPTIONS.map((mood) => (
-                    <Badge
+                    <Button
                       key={mood.id}
                       onClick={() => toggleMood(mood.id)}
-                      className={`cursor-pointer text-sm toggle-elevate ${
+                      variant={selectedMoods.includes(mood.id) ? "default" : "outline"}
+                      className={`h-12 md:h-14 text-sm md:text-base font-medium transition-all ${
                         selectedMoods.includes(mood.id)
-                          ? "bg-primary text-primary-foreground toggle-elevated"
-                          : "bg-muted/50 text-muted-foreground"
+                          ? "bg-primary text-primary-foreground border-primary ring-2 ring-primary/50"
+                          : "bg-black/40 border-white/20 text-white hover:bg-white/10 hover:border-white/40"
                       }`}
                       data-testid={`button-mood-${mood.id}`}
                     >
                       {mood.label}
-                    </Badge>
+                    </Button>
                   ))}
                 </div>
               </div>
@@ -266,6 +232,7 @@ export default function Home() {
             onSkip={handleSkip}
             isSubmitting={choiceMutation.isPending}
             isSkipping={skipMutation.isPending}
+            choiceHistory={roundQuery.data.choiceHistory}
           />
         )}
 

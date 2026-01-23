@@ -64,6 +64,15 @@ export const startSessionResponseSchema = z.object({
 
 export type StartSessionResponse = z.infer<typeof startSessionResponseSchema>;
 
+// Choice history for insights
+export const choiceHistorySchema = z.object({
+  round: z.number(),
+  chosenMovie: movieSchema,
+  rejectedMovie: movieSchema,
+});
+
+export type ChoiceHistory = z.infer<typeof choiceHistorySchema>;
+
 // API response for getting current round's movie pair
 export const roundPairResponseSchema = z.object({
   sessionId: z.string(),
@@ -72,6 +81,7 @@ export const roundPairResponseSchema = z.object({
   leftMovie: movieSchema,
   rightMovie: movieSchema,
   isComplete: z.boolean(),
+  choiceHistory: z.array(choiceHistorySchema).optional(),
 });
 
 export type RoundPairResponse = z.infer<typeof roundPairResponseSchema>;

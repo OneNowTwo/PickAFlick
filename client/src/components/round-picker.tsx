@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import type { Movie } from "@shared/schema";
-import { Loader2, Star, HelpCircle, X } from "lucide-react";
+import type { Movie, ChoiceHistory } from "@shared/schema";
+import { Loader2, Star, Shuffle, X, Brain } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface RoundPickerProps {
@@ -12,6 +12,148 @@ interface RoundPickerProps {
   onSkip?: () => void;
   isSubmitting: boolean;
   isSkipping?: boolean;
+  choiceHistory?: ChoiceHistory[];
+}
+
+// Generate personalized insight based on choices made
+function generateInsight(choiceHistory: ChoiceHistory[], round: number): string {
+  if (!choiceHistory || choiceHistory.length === 0) {
+    return "Pick the poster that calls to you...";
+  }
+
+  const chosenMovies = choiceHistory.map(c => c.chosenMovie);
+  
+  // Analyze patterns
+  const genreCounts: Record<string, number> = {};
+  const eraCounts: Record<string, number> = {};
+  let highRatingCount = 0;
+  let actorNames: string[] = [];
+  
+  chosenMovies.forEach(movie => {
+    movie.genres.forEach(g => {
+      genreCounts[g] = (genreCounts[g] || 0) + 1;
+    });
+    
+    if (movie.year) {
+      if (movie.year >= 2015) eraCounts["recent"] = (eraCounts["recent"] || 0) + 1;
+      else if (movie.year >= 2000) eraCounts["2000s"] = (eraCounts["2000s"] || 0) + 1;
+      else eraCounts["classic"] = (eraCounts["classic"] || 0) + 1;
+    }
+    
+    if (movie.rating && movie.rating >= 7.5) highRatingCount++;
+    
+    if (movie.cast && movie.cast[0]) {
+      actorNames.push(movie.cast[0]);
+    }
+  });
+
+  const topGenres = Object.entries(genreCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2)
+    .map(([g]) => g);
+  
+  const topEra = Object.entries(eraCounts)
+    .sort((a, b) => b[1] - a[1])[0]?.[0];
+
+  // Generate varied insights based on round and patterns
+  const insights: string[] = [];
+  
+  if (round === 2 && topGenres.length > 0) {
+    insights.push(`Interesting... ${topGenres[0]} vibes detected!`);
+    insights.push(`I sense some ${topGenres[0]} energy tonight...`);
+  }
+  
+  if (round === 3 && topGenres.length >= 2) {
+    insights.push(`${topGenres[0]} meets ${topGenres[1]} — intriguing taste!`);
+    insights.push(`You like ${topGenres[0]} with a ${topGenres[1]} twist...`);
+  }
+  
+  if (round === 4 && highRatingCount >= 2) {
+    insights.push("You've got an eye for the critically acclaimed!");
+    insights.push("Quality over quantity — I like it!");
+  } else if (round === 4) {
+    insights.push("Building your taste profile...");
+    insights.push("Keep going, almost there!");
+  }
+  
+  if (round === 5 && topEra === "recent") {
+    insights.push("Fresh films are your thing — got it!");
+    insights.push("Modern cinema lover detected!");
+  } else if (round === 5 && topEra === "classic") {
+    insights.push("A classic film buff — respect!");
+    insights.push("Old school vibes coming through!");
+  } else if (round === 5) {
+    insights.push("Your preferences are coming together...");
+  }
+  
+  if (round >= 6 && actorNames.length > 0) {
+    const uniqueActors = Array.from(new Set(actorNames));
+    if (uniqueActors.length > 0) {
+      insights.push(`Maybe a ${uniqueActors[0]} fan? Almost there!`);
+      insights.push("Final stretch — I think I know what you want!");
+    }
+  }
+  
+  if (round >= 6) {
+    insights.push("Just a bit more and I'll have your picks ready!");
+    insights.push("The picture is almost complete...");
+  }
+
+  // Pick a random insight from available ones, or use a default
+  if (insights.length > 0) {
+    return insights[Math.floor(Math.random() * insights.length)];
+  }
+  
+  const defaults = [
+    "Learning your taste...",
+    "Keep picking!",
+    "Trust your instincts!",
+  ];
+  return defaults[round % defaults.length];
+}
+
+// Progress ring component
+function ProgressRing({ progress, size = 80 }: { progress: number; size?: number }) {
+  const strokeWidth = 6;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const strokeDashoffset = circumference - (progress / 100) * circumference;
+  
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg className="transform -rotate-90" width={size} height={size}>
+        {/* Background ring */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="currentColor"
+          strokeWidth={strokeWidth}
+          fill="none"
+          className="text-muted/30"
+        />
+        {/* Progress ring */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="currentColor"
+          strokeWidth={strokeWidth}
+          fill="none"
+          strokeLinecap="round"
+          className="text-primary transition-all duration-700 ease-out"
+          style={{
+            strokeDasharray: circumference,
+            strokeDashoffset,
+          }}
+        />
+      </svg>
+      {/* Center icon */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <Brain className={`w-6 h-6 text-primary ${progress > 0 ? "animate-pulse" : ""}`} />
+      </div>
+    </div>
+  );
 }
 
 export function RoundPicker({
@@ -23,15 +165,16 @@ export function RoundPicker({
   onSkip,
   isSubmitting,
   isSkipping = false,
+  choiceHistory = [],
 }: RoundPickerProps) {
   const [selectedSide, setSelectedSide] = useState<"left" | "right" | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
   const [showSynopsis, setShowSynopsis] = useState<"left" | "right" | null>(null);
+  const [insight, setInsight] = useState("");
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const didShowSynopsisRef = useRef(false);
 
   const handleSelect = (side: "left" | "right", movieId: number) => {
-    // Block selection if synopsis was shown during this press, or other blocking states
     if (isSubmitting || isAnimating || isSkipping || showSynopsis || didShowSynopsisRef.current) {
       didShowSynopsisRef.current = false;
       return;
@@ -62,18 +205,19 @@ export function RoundPicker({
 
   const handleCloseSynopsis = () => {
     setShowSynopsis(null);
-    // Clear the ref after a brief delay so the click that closes doesn't trigger a selection
     setTimeout(() => {
       didShowSynopsisRef.current = false;
     }, 100);
   };
 
+  // Generate new insight when round changes
   useEffect(() => {
     setSelectedSide(null);
     setIsAnimating(false);
     setShowSynopsis(null);
     didShowSynopsisRef.current = false;
-  }, [round, leftMovie.id, rightMovie.id]);
+    setInsight(generateInsight(choiceHistory, round));
+  }, [round, leftMovie.id, rightMovie.id, choiceHistory]);
 
   useEffect(() => {
     return () => {
@@ -83,6 +227,7 @@ export function RoundPicker({
     };
   }, []);
 
+  // Calculate progress percentage (ring closes as rounds complete)
   const progress = ((round - 1) / totalRounds) * 100;
 
   const getPosterUrl = (movie: Movie) => {
@@ -145,7 +290,6 @@ export function RoundPicker({
         
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
         
-        {/* High rating badge */}
         {highlyRated && (
           <div className="absolute top-2 left-2 md:top-3 md:left-3 flex items-center gap-1 bg-yellow-500/90 text-black px-1.5 py-0.5 md:px-2 md:py-1 rounded text-[10px] md:text-xs font-semibold">
             <Star className="w-3 h-3 fill-current" />
@@ -184,7 +328,7 @@ export function RoundPicker({
   const synopsisMovie = showSynopsis === "left" ? leftMovie : showSynopsis === "right" ? rightMovie : null;
 
   return (
-    <div className="flex flex-col items-center gap-3 md:gap-6 w-full max-w-4xl mx-auto px-2 md:px-4">
+    <div className="flex flex-col items-center gap-2 md:gap-4 w-full max-w-4xl mx-auto px-2 md:px-4">
       {/* Synopsis overlay */}
       {synopsisMovie && (
         <div 
@@ -230,24 +374,17 @@ export function RoundPicker({
         </div>
       )}
 
-      {/* Compact header for mobile */}
-      <div className="text-center">
-        <h2 className="text-lg md:text-3xl font-bold text-foreground mb-1">
-          Round {round} of {totalRounds}
-        </h2>
-        <p className="text-muted-foreground text-xs md:text-base">Tap the movie you'd rather watch</p>
-        <p className="text-muted-foreground/60 text-[10px] md:text-xs mt-1 italic hidden md:block">
-          Hold on a poster for more info
-        </p>
-      </div>
-
-      {/* Thinner progress bar on mobile */}
-      <div className="w-full max-w-md h-1.5 md:h-2 bg-muted/30 rounded-full overflow-hidden">
-        <div 
-          className="h-full bg-primary transition-all duration-500 ease-out"
-          style={{ width: `${progress}%` }}
-          data-testid="progress-bar"
-        />
+      {/* Progress ring and insight header */}
+      <div className="flex flex-col items-center gap-2">
+        <ProgressRing progress={progress} size={70} />
+        <div className="text-center">
+          <p className="text-primary font-semibold text-sm md:text-base">
+            Round {round} of {totalRounds}
+          </p>
+          <p className="text-muted-foreground text-xs md:text-sm max-w-xs">
+            {insight}
+          </p>
+        </div>
       </div>
 
       {(isSubmitting || isSkipping) && (
@@ -257,11 +394,10 @@ export function RoundPicker({
         </div>
       )}
 
-      {/* Side-by-side on mobile, larger on desktop */}
+      {/* Side-by-side movie cards */}
       <div className="relative flex flex-row gap-1 md:gap-8 w-full items-center justify-center perspective-1000">
         {renderMovieCard(leftMovie, "left", leftPosterUrl)}
 
-        {/* VS indicator - smaller on mobile, hidden during animation */}
         <div className={`flex items-center justify-center transition-opacity duration-300 ${selectedSide ? "opacity-0" : "opacity-100"}`}>
           <span className="text-lg md:text-4xl font-bold text-muted-foreground/30">VS</span>
         </div>
@@ -269,25 +405,25 @@ export function RoundPicker({
         {renderMovieCard(rightMovie, "right", rightPosterUrl)}
       </div>
 
-      {/* Skip button and helper text */}
+      {/* Skip button - more prominent */}
       {onSkip && !selectedSide && (
-        <div className="flex flex-col items-center gap-2 mt-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onSkip}
-            disabled={isSubmitting || isAnimating || isSkipping}
-            className="text-muted-foreground text-xs md:text-sm"
-            data-testid="button-skip-round"
-          >
-            <HelpCircle className="w-4 h-4 mr-1" />
-            Don't know either? Skip (+1 round)
-          </Button>
-          <p className="text-muted-foreground/50 text-[10px] md:text-xs text-center max-w-xs">
-            A picture is worth a thousand words — go with your gut!
-          </p>
-        </div>
+        <Button
+          variant="outline"
+          size="default"
+          onClick={onSkip}
+          disabled={isSubmitting || isAnimating || isSkipping}
+          className="mt-2 border-muted-foreground/30 text-muted-foreground"
+          data-testid="button-skip-round"
+        >
+          <Shuffle className="w-4 h-4 mr-2" />
+          Skip & Get New Pair (+1 round)
+        </Button>
       )}
+
+      {/* Long press hint - mobile only */}
+      <p className="text-muted-foreground/40 text-[10px] text-center md:hidden">
+        Hold a poster for details
+      </p>
     </div>
   );
 }

@@ -127,6 +127,13 @@ export async function registerRoutes(
         sessionPairs.set(sessionId, currentPair);
       }
 
+      // Build choice history for insights
+      const choiceHistory = session.choices.map(choice => ({
+        round: choice.round,
+        chosenMovie: choice.chosenMovieId === choice.leftMovie.id ? choice.leftMovie : choice.rightMovie,
+        rejectedMovie: choice.chosenMovieId === choice.leftMovie.id ? choice.rightMovie : choice.leftMovie,
+      }));
+
       const response: RoundPairResponse = {
         sessionId,
         round: session.currentRound,
@@ -134,6 +141,7 @@ export async function registerRoutes(
         leftMovie: currentPair.leftMovie,
         rightMovie: currentPair.rightMovie,
         isComplete: false,
+        choiceHistory,
       };
 
       res.set(NO_CACHE_HEADERS);
