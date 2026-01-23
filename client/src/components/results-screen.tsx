@@ -333,13 +333,13 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
             </div>
             <Button
               variant="default"
-              size="sm"
+              size="default"
               onClick={() => setShowWatchProviders(true)}
-              className="gap-1 shrink-0"
+              className="gap-2 shrink-0"
               data-testid="button-watch-now"
             >
-              <Tv className="w-3.5 h-3.5" />
-              <span className="text-xs">Watch</span>
+              <Tv className="w-4 h-4" />
+              Click to Watch
             </Button>
           </div>
           
@@ -364,25 +364,14 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
         </Button>
 
         <Button
-          variant={isMaybe ? "default" : "outline"}
-          size="sm"
-          onClick={handleMaybe}
-          className={`gap-1 toggle-elevate ${isMaybe ? "toggle-elevated bg-yellow-600 border-yellow-600" : ""}`}
-          data-testid="button-maybe"
-        >
-          <Bookmark className="w-4 h-4" />
-          Maybe
-        </Button>
-
-        <Button
           variant={isLiked ? "default" : "outline"}
           size="sm"
           onClick={handleLike}
           className={`gap-1 toggle-elevate ${isLiked ? "toggle-elevated bg-green-600 border-green-600" : ""}`}
-          data-testid="button-like"
+          data-testid="button-save-watchlist"
         >
-          <ThumbsUp className="w-4 h-4" />
-          Like
+          <Bookmark className="w-4 h-4" />
+          {isLiked ? "Saved to Watchlist" : "Save to Watchlist"}
         </Button>
 
         <Button
