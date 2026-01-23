@@ -110,7 +110,14 @@ async function buildCatalogue(): Promise<void> {
       grouped = tmdbResult.grouped;
     }
 
-    cache.allMovies = allMovies;
+    // Deduplicate allMovies by tmdbId to prevent same movie appearing twice
+    const uniqueMovies = new Map<number, Movie>();
+    for (const movie of allMovies) {
+      if (!uniqueMovies.has(movie.tmdbId)) {
+        uniqueMovies.set(movie.tmdbId, movie);
+      }
+    }
+    cache.allMovies = Array.from(uniqueMovies.values());
     cache.grouped = grouped;
     cache.lastUpdated = new Date();
     cache.buildComplete = true;
