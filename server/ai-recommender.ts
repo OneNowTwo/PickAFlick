@@ -51,7 +51,11 @@ export async function generateRecommendations(
     rating: m.rating,
   }));
 
-  const prompt = `You are an expert film analyst and recommendation engine. A user has been shown pairs of movies and chose the following 7 movies as your preferences:
+  // Add randomization seed to encourage varied responses
+  const randomSeed = Math.floor(Math.random() * 100000);
+  const sessionTime = new Date().toISOString();
+
+  const prompt = `You are an expert film analyst with encyclopedic knowledge of cinema. A user played a movie picker game, choosing between pairs of films. They selected these 7 movies:
 
 ${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}, ${m.era})
    Director: ${m.director}
@@ -60,24 +64,28 @@ ${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}, ${m.era})
    Keywords/Themes: ${m.keywords.length > 0 ? m.keywords.join(", ") : "N/A"}
    Synopsis: ${m.overview || "No synopsis available"}`).join("\n\n")}
 
-Analyze your choices deeply. Consider:
-1. **Genres & Themes**: What genres and narrative themes do you prefer?
-2. **Era Preference**: Do you favor classic cinema, modern blockbusters, or a specific decade?
-3. **Director Style**: Look for patterns in directors you chose (auteur films, commercial directors, indie filmmakers)
-4. **Visual Style & Feel**: Based on the movies, what cinematographic style appeals to you? (gritty, polished, atmospheric, colorful, noir, etc.)
-5. **Mood & Tone**: Are you drawn to dark/serious films, feel-good movies, thrilling suspense, or quirky indie vibes?
-6. **Cast Patterns**: Do you seem to follow certain actors or types of performances?
+[Session: ${sessionTime} | Seed: ${randomSeed}]
 
-Based on this deep analysis, recommend 5 movies you would love.
+DEEP ANALYSIS REQUIRED - Go beyond surface-level genre matching. Examine:
 
-IMPORTANT RULES:
-1. DO NOT recommend any movie the user already chose
-2. Recommend movies that exist on TMDb with trailers - but AVOID overused recommendations like Fight Club, Prisoners, Se7en, Shawshank Redemption, Inception, The Dark Knight, Interstellar
-3. ENSURE DIVERSITY: Include at least one movie from a different era than the majority of choices, and ensure variety across genres
-4. Match your taste across all dimensions: genre, era, director style, visual feel, mood
-5. Provide a personalized reason explaining WHY this matches your preferences - always use "you" and "your", never "they" or "their"
-6. Be specific - mention what elements connect the recommendation to your choices
-7. Think outside the box - suggest hidden gems and lesser-known films that match the taste profile
+1. **Narrative DNA**: What storytelling structures resonate? (nonlinear timelines, unreliable narrators, slow burns, ensemble casts, character studies, plot-driven thrillers)
+2. **Cinematographic Fingerprint**: What visual language appeals? (long takes, handheld intimacy, symmetrical compositions, naturalistic lighting, saturated colors, desaturated palettes, wide establishing shots)
+3. **Thematic Undercurrents**: What deeper themes connect these films? (existential dread, family dysfunction, moral ambiguity, identity crisis, societal critique, redemption arcs)
+4. **Pacing & Rhythm**: Fast-paced editing or contemplative pacing? Action set-pieces or dialogue-driven scenes?
+5. **Era & Movement**: Are they drawn to French New Wave aesthetics, 70s New Hollywood grit, 90s indie sensibility, modern A24 style, classic Hollywood glamour?
+6. **Emotional Register**: Cathartic release, intellectual stimulation, visceral thrills, melancholic beauty, dark humor?
+7. **Director Signatures**: Identify any auteur influences - are these Fincher-esque, Nolan-like, Villeneuve style, Coen Brothers tone, Ari Aster vibes?
+
+Based on this DEEP analysis, recommend 5 films that match this unique taste profile.
+
+CRITICAL RULES:
+1. DO NOT recommend any movie already in their selections
+2. THINK CREATIVELY - draw from world cinema, underseen gems, cult classics, and lesser-known works by famous directors
+3. Each recommendation should connect to MULTIPLE dimensions of their taste profile, not just genre
+4. Vary your recommendations across eras and styles - don't cluster around one type
+5. Your reasons must be SPECIFIC - cite exact visual, thematic, or narrative parallels to their choices
+6. Address the user directly using "you" and "your"
+7. If a well-known film genuinely fits perfectly, recommend it - but justify deeply WHY it matches
 
 Respond in this exact JSON format:
 {
@@ -103,7 +111,8 @@ CRITICAL for visualStyle and mood:
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
-      max_tokens: 1500,
+      max_tokens: 2000,
+      temperature: 0.9,
     });
 
     const content = response.choices[0]?.message?.content || "{}";
