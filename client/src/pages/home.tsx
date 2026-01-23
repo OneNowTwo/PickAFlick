@@ -19,6 +19,7 @@ const MOOD_OPTIONS = [
   { id: "horror", label: "Horror & Thriller", genres: ["Horror", "Thriller"] },
   { id: "scifi", label: "Sci-Fi & Fantasy", genres: ["Science Fiction", "Fantasy"] },
   { id: "romance", label: "Romance", genres: ["Romance"] },
+  { id: "mystery", label: "Mystery & Crime", genres: ["Mystery", "Crime"] },
   { id: "top", label: "Top Picks", genres: [] }, // Special case - top rated/popular
 ];
 
