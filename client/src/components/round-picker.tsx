@@ -405,14 +405,14 @@ export function RoundPicker({
         {renderMovieCard(rightMovie, "right", rightPosterUrl)}
       </div>
 
-      {/* Skip button - more prominent */}
+      {/* Skip button - bold and prominent */}
       {onSkip && !selectedSide && (
         <Button
-          variant="outline"
+          variant="secondary"
           size="default"
           onClick={onSkip}
           disabled={isSubmitting || isAnimating || isSkipping}
-          className="mt-2 border-muted-foreground/30 text-muted-foreground"
+          className="mt-2 font-semibold"
           data-testid="button-skip-round"
         >
           <Shuffle className="w-4 h-4 mr-2" />

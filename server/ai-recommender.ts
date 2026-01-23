@@ -84,13 +84,15 @@ Respond in this exact JSON format:
   "topGenres": ["genre1", "genre2", "genre3"],
   "themes": ["theme1", "theme2", "theme3"],
   "preferredEras": ["era1", "era2"],
-  "visualStyle": "Brief description of your preferred visual/cinematographic style (use 'you' not 'they')",
-  "mood": "Brief description of the overall mood/tone you prefer (use 'you' not 'they')",
+  "visualStyle": "MUST reference specific movies you chose - e.g. 'Like the gritty realism of [Movie A] and the moody atmosphere of [Movie B], you gravitate toward...' - be SPECIFIC with film names",
+  "mood": "MUST reference specific movies you chose - e.g. 'From choosing [Movie X] over lighter options and picking [Movie Y]'s dark tone, you clearly prefer...' - be SPECIFIC with film names",
   "recommendations": [
     {"title": "Movie Title", "year": 2020, "reason": "Personalized reason connecting to your preferences"},
     {"title": "Movie Title 2", "year": 2018, "reason": "Personalized reason connecting to your preferences"}
   ]
-}`;
+}
+
+CRITICAL for visualStyle and mood: You MUST name 2-3 specific movies from the user's choices in each description. Do NOT give generic descriptions - reference the actual films they picked and explain what that reveals about their taste.`;
 
   try {
     const response = await openai.chat.completions.create({
