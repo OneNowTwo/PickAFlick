@@ -1,11 +1,48 @@
 import type { RecommendationsResponse, WatchProvidersResponse } from "@shared/schema";
 import { Button } from "@/components/ui/button";
-import { Loader2, Play, RefreshCw, Film, Palette, Heart, Calendar, Sparkles, ChevronLeft, ChevronRight, ThumbsUp, Bookmark, Tv, X } from "lucide-react";
-import { useState } from "react";
+import { Loader2, Play, RefreshCw, Film, Palette, Heart, Calendar, Sparkles, ChevronLeft, ChevronRight, ThumbsUp, Bookmark, Tv, Brain } from "lucide-react";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
+// Generate personalized reveal message based on preference profile
+function generateRevealMessage(profile: RecommendationsResponse["preferenceProfile"]): string {
+  const parts: string[] = [];
+  
+  if (profile.topGenres.length >= 2) {
+    parts.push(`You're in the mood for some ${profile.topGenres[0]} with a ${profile.topGenres[1]} twist`);
+  } else if (profile.topGenres.length === 1) {
+    parts.push(`You're craving some ${profile.topGenres[0]}`);
+  }
+  
+  if (profile.mood) {
+    const moodLower = profile.mood.toLowerCase();
+    if (moodLower.includes("intense") || moodLower.includes("dark")) {
+      parts.push("something with edge and intensity");
+    } else if (moodLower.includes("light") || moodLower.includes("fun")) {
+      parts.push("something light and enjoyable");
+    } else if (moodLower.includes("thought") || moodLower.includes("deep")) {
+      parts.push("something to really think about");
+    }
+  }
+  
+  if (profile.preferredEras && profile.preferredEras.length > 0) {
+    const era = profile.preferredEras[0].toLowerCase();
+    if (era.includes("modern") || era.includes("recent") || era.includes("2020") || era.includes("2010")) {
+      parts.push("from the modern era");
+    } else if (era.includes("classic") || era.includes("80s") || era.includes("90s")) {
+      parts.push("with that classic feel");
+    }
+  }
+  
+  if (parts.length === 0) {
+    return "We've figured out exactly what you're in the mood for!";
+  }
+  
+  return parts.join(", ") + ". Here's what we picked for you!";
+}
 
 interface ResultsScreenProps {
   recommendations: RecommendationsResponse | null;
@@ -45,13 +82,41 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center gap-6 min-h-[60vh]" data-testid="loading-recommendations">
-        <div className="relative">
-          <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full" />
-          <Loader2 className="relative w-16 h-16 animate-spin text-primary" />
+        <div className="relative" style={{ width: 120, height: 120 }}>
+          {/* Animated closing ring */}
+          <svg className="transform -rotate-90 animate-pulse" width={120} height={120}>
+            <circle
+              cx={60}
+              cy={60}
+              r={54}
+              stroke="currentColor"
+              strokeWidth={8}
+              fill="none"
+              className="text-muted/30"
+            />
+            <circle
+              cx={60}
+              cy={60}
+              r={54}
+              stroke="currentColor"
+              strokeWidth={8}
+              fill="none"
+              strokeLinecap="round"
+              className="text-primary"
+              style={{
+                strokeDasharray: 339.292,
+                strokeDashoffset: 0,
+                animation: "ring-close 2s ease-in-out infinite",
+              }}
+            />
+          </svg>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Brain className="w-10 h-10 text-primary animate-pulse" />
+          </div>
         </div>
         <div className="text-center">
-          <h2 className="text-2xl font-bold text-foreground mb-2">Analyzing Your Taste...</h2>
-          <p className="text-muted-foreground">Our AI is finding the perfect movies for you</p>
+          <h2 className="text-xl md:text-2xl font-bold text-foreground mb-2">Almost there...</h2>
+          <p className="text-muted-foreground text-sm md:text-base">Finding the perfect movies just for you</p>
         </div>
       </div>
     );
@@ -75,6 +140,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
   const { preferenceProfile } = recommendations;
   const currentRec = recommendations.recommendations[currentIndex];
   const totalRecs = recommendations.recommendations.length;
+  const revealMessage = generateRevealMessage(preferenceProfile);
 
   const handleNext = () => {
     if (currentIndex < totalRecs - 1) {
@@ -136,13 +202,19 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
 
   return (
     <div className="flex flex-col items-center gap-3 md:gap-6 w-full max-w-5xl mx-auto px-2 md:px-4 py-2 md:py-6">
-      {/* Header - More compact on mobile */}
+      {/* Header with personalized reveal message */}
       <div className="text-center max-w-3xl">
-        <h2 className="text-xl md:text-4xl font-bold text-foreground mb-1 md:mb-3">
-          Your Tailored Picks
-        </h2>
-        <p className="text-muted-foreground text-xs md:text-base hidden md:block">
-          Based on your 7 choices, here's what we learned about your taste
+        <div className="flex items-center justify-center gap-2 mb-2">
+          <Brain className="w-6 h-6 md:w-8 md:h-8 text-primary" />
+          <h2 className="text-xl md:text-3xl font-bold text-foreground">
+            We've Got It!
+          </h2>
+        </div>
+        <p className="text-primary font-medium text-sm md:text-lg mb-1">
+          {revealMessage}
+        </p>
+        <p className="text-muted-foreground text-xs md:text-sm hidden md:block">
+          Swipe through your personalized recommendations below
         </p>
       </div>
 

@@ -401,3 +401,15 @@
     transform: translate(-10%, 3%);
   }
 }
+
+@keyframes ring-close {
+  0% {
+    stroke-dashoffset: 339.292;
+  }
+  50% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: 339.292;
+  }
+}
