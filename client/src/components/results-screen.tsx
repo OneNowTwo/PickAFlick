@@ -115,8 +115,9 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
           </div>
         </div>
         <div className="text-center">
-          <h2 className="text-xl md:text-2xl font-bold text-foreground mb-2">Almost there...</h2>
-          <p className="text-muted-foreground text-sm md:text-base">Finding the perfect movies just for you</p>
+          <h2 className="text-xl md:text-2xl font-bold text-foreground mb-2">Hold a tic...</h2>
+          <p className="text-muted-foreground text-sm md:text-base">We're picking your perfect movies!</p>
+          <p className="text-primary/70 text-xs mt-2 animate-pulse">This won't take long</p>
         </div>
       </div>
     );

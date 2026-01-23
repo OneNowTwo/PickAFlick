@@ -112,46 +112,65 @@ function generateInsight(choiceHistory: ChoiceHistory[], round: number): string 
   return defaults[round % defaults.length];
 }
 
-// Progress ring component
-function ProgressRing({ progress, size = 80 }: { progress: number; size?: number }) {
+// Get fun status message based on progress
+function getProgressMessage(progress: number, round: number): string {
+  if (progress === 0) return "Let's go!";
+  if (progress < 30) return "Getting started...";
+  if (progress < 50) return "I see what you like...";
+  if (progress < 70) return "Building your profile...";
+  if (progress < 85) return "Nearly there!";
+  if (progress < 100) return "Almost got it!";
+  return "Done!";
+}
+
+// Progress ring component with percentage and status
+function ProgressRing({ progress, round, size = 90 }: { progress: number; round: number; size?: number }) {
   const strokeWidth = 6;
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
   const strokeDashoffset = circumference - (progress / 100) * circumference;
+  const statusMessage = getProgressMessage(progress, round);
   
   return (
-    <div className="relative" style={{ width: size, height: size }}>
-      <svg className="transform -rotate-90" width={size} height={size}>
-        {/* Background ring */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke="currentColor"
-          strokeWidth={strokeWidth}
-          fill="none"
-          className="text-muted/30"
-        />
-        {/* Progress ring */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke="currentColor"
-          strokeWidth={strokeWidth}
-          fill="none"
-          strokeLinecap="round"
-          className="text-primary transition-all duration-700 ease-out"
-          style={{
-            strokeDasharray: circumference,
-            strokeDashoffset,
-          }}
-        />
-      </svg>
-      {/* Center icon */}
-      <div className="absolute inset-0 flex items-center justify-center">
-        <Brain className={`w-6 h-6 text-primary ${progress > 0 ? "animate-pulse" : ""}`} />
+    <div className="flex flex-col items-center gap-1">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg className="transform -rotate-90" width={size} height={size}>
+          {/* Background ring */}
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke="currentColor"
+            strokeWidth={strokeWidth}
+            fill="none"
+            className="text-muted/30"
+          />
+          {/* Progress ring */}
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke="currentColor"
+            strokeWidth={strokeWidth}
+            fill="none"
+            strokeLinecap="round"
+            className="text-primary transition-all duration-700 ease-out"
+            style={{
+              strokeDasharray: circumference,
+              strokeDashoffset,
+            }}
+          />
+        </svg>
+        {/* Center content - percentage and icon */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <Brain className={`w-5 h-5 text-primary ${progress > 0 ? "animate-pulse" : ""}`} />
+          <span className="text-xs font-bold text-primary mt-0.5">{Math.round(progress)}%</span>
+        </div>
       </div>
+      {/* Status message below ring */}
+      <span className="text-xs text-muted-foreground font-medium animate-pulse">
+        {statusMessage}
+      </span>
     </div>
   );
 }
@@ -375,8 +394,8 @@ export function RoundPicker({
       )}
 
       {/* Progress ring and insight header */}
-      <div className="flex flex-col items-center gap-2">
-        <ProgressRing progress={progress} size={70} />
+      <div className="flex flex-col items-center gap-1">
+        <ProgressRing progress={progress} round={round} size={80} />
         <div className="text-center">
           <p className="text-primary font-semibold text-sm md:text-base">
             Round {round} of {totalRounds}
