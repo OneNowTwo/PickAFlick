@@ -234,15 +234,15 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
           </Badge>
         )}
         {preferenceProfile.visualStyle && (
-          <Badge variant="secondary" className="bg-white/10 text-white/80 border-0 gap-1 max-w-[180px]">
+          <Badge variant="secondary" className="bg-white/10 text-white/80 border-0 gap-1">
             <Palette className="w-3 h-3 text-primary shrink-0" />
-            <span className="truncate">{preferenceProfile.visualStyle}</span>
+            {preferenceProfile.visualStyle}
           </Badge>
         )}
         {preferenceProfile.mood && (
-          <Badge variant="secondary" className="bg-white/10 text-white/80 border-0 gap-1 max-w-[180px]">
+          <Badge variant="secondary" className="bg-white/10 text-white/80 border-0 gap-1">
             <Sparkles className="w-3 h-3 text-primary shrink-0" />
-            <span className="truncate">{preferenceProfile.mood}</span>
+            {preferenceProfile.mood}
           </Badge>
         )}
       </div>
@@ -349,60 +349,63 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
         </div>
       </div>
 
-      {/* Navigation Controls - Single row, icons on mobile */}
-      <div className="flex items-center justify-center gap-1.5 md:gap-2 w-full">
+      {/* Navigation Controls */}
+      <div className="flex items-center justify-center gap-2 w-full flex-wrap">
         <Button
           variant="outline"
-          size="icon"
+          size="sm"
           onClick={handleBack}
           disabled={currentIndex === 0}
+          className="gap-1"
           data-testid="button-back"
-          title="Previous"
         >
-          <ChevronLeft className="w-5 h-5" />
+          <ChevronLeft className="w-4 h-4" />
+          Back
         </Button>
 
         <Button
           variant={isMaybe ? "default" : "outline"}
-          size="icon"
+          size="sm"
           onClick={handleMaybe}
-          className={`toggle-elevate ${isMaybe ? "toggle-elevated bg-yellow-600 border-yellow-600" : ""}`}
+          className={`gap-1 toggle-elevate ${isMaybe ? "toggle-elevated bg-yellow-600 border-yellow-600" : ""}`}
           data-testid="button-maybe"
-          title="Maybe"
         >
-          <Bookmark className="w-5 h-5" />
+          <Bookmark className="w-4 h-4" />
+          Maybe
         </Button>
 
         <Button
           variant={isLiked ? "default" : "outline"}
-          size="icon"
+          size="sm"
           onClick={handleLike}
-          className={`toggle-elevate ${isLiked ? "toggle-elevated bg-green-600 border-green-600" : ""}`}
+          className={`gap-1 toggle-elevate ${isLiked ? "toggle-elevated bg-green-600 border-green-600" : ""}`}
           data-testid="button-like"
-          title="Like"
         >
-          <ThumbsUp className="w-5 h-5" />
+          <ThumbsUp className="w-4 h-4" />
+          Like
         </Button>
 
         <Button
           variant="outline"
-          size="icon"
+          size="sm"
           onClick={handleNext}
           disabled={currentIndex === totalRecs - 1}
+          className="gap-1"
           data-testid="button-next"
-          title="Next"
         >
-          <ChevronRight className="w-5 h-5" />
+          Next
+          <ChevronRight className="w-4 h-4" />
         </Button>
 
         <Button 
-          size="icon" 
+          size="sm" 
           variant="ghost"
-          onClick={onPlayAgain} 
+          onClick={onPlayAgain}
+          className="gap-1"
           data-testid="button-play-again"
-          title="Start Over"
         >
           <RefreshCw className="w-4 h-4" />
+          Restart
         </Button>
       </div>
 
