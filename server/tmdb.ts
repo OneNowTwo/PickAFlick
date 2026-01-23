@@ -292,7 +292,7 @@ export async function getPopularMovies(listSource: string, page: number = 1): Pr
     const data = await tmdbFetch<{ results: TMDbSearchResult[] }>("/movie/popular", { page: page.toString() });
     
     const movies: Movie[] = [];
-    for (const result of data.results.slice(0, 15)) {
+    for (const result of data.results) {
       const movie = await getMovieDetails(result.id);
       if (movie) {
         movie.listSource = listSource;
@@ -313,7 +313,7 @@ export async function getTopRatedMovies(listSource: string, page: number = 1): P
     const data = await tmdbFetch<{ results: TMDbSearchResult[] }>("/movie/top_rated", { page: page.toString() });
     
     const movies: Movie[] = [];
-    for (const result of data.results.slice(0, 15)) {
+    for (const result of data.results) {
       const movie = await getMovieDetails(result.id);
       if (movie) {
         movie.listSource = listSource;

@@ -41,25 +41,61 @@ function sampleFromArray<T>(array: T[], count: number): T[] {
 }
 
 async function buildCatalogueFromTMDb(): Promise<{ allMovies: Movie[]; grouped: Record<string, Movie[]> }> {
-  console.log("Building catalogue from TMDb API...");
+  console.log("Building expanded catalogue from TMDb API (this may take a couple minutes)...");
   const allMovies: Movie[] = [];
   const grouped: Record<string, Movie[]> = {};
 
-  // Categories with their TMDb genre IDs
-  const categories = [
-    { name: "Top Rated", fetch: () => getTopRatedMovies("Top Rated", 1) },
-    { name: "Popular Now", fetch: () => getPopularMovies("Popular Now", 1) },
-    { name: "Horror", fetch: () => discoverMovies("Horror", { genreIds: [27], minRating: 6.0 }) },
-    { name: "Comedy", fetch: () => discoverMovies("Comedy", { genreIds: [35], minRating: 6.5 }) },
-    { name: "Sci-Fi & Fantasy", fetch: () => discoverMovies("Sci-Fi & Fantasy", { genreIds: [878, 14], minRating: 6.5 }) },
+  // Fetch multiple pages for Top Rated (pages 1-3 = ~60 movies)
+  console.log("Fetching Top Rated movies (3 pages)...");
+  const topRatedMovies: Movie[] = [];
+  for (let page = 1; page <= 3; page++) {
+    const movies = await getTopRatedMovies("Top Rated", page);
+    topRatedMovies.push(...movies);
+    console.log(`  Page ${page}: ${movies.length} movies`);
+  }
+  grouped["Top Rated"] = topRatedMovies;
+  allMovies.push(...topRatedMovies);
+  console.log(`Got ${topRatedMovies.length} Top Rated movies total`);
+
+  // Fetch multiple pages for Popular Now (pages 1-2 = ~40 movies)
+  console.log("Fetching Popular Now movies (2 pages)...");
+  const popularMovies: Movie[] = [];
+  for (let page = 1; page <= 2; page++) {
+    const movies = await getPopularMovies("Popular Now", page);
+    popularMovies.push(...movies);
+    console.log(`  Page ${page}: ${movies.length} movies`);
+  }
+  grouped["Popular Now"] = popularMovies;
+  allMovies.push(...popularMovies);
+  console.log(`Got ${popularMovies.length} Popular Now movies total`);
+
+  // Genre categories with their TMDb genre IDs (2 pages each)
+  const genreCategories = [
+    { name: "Horror", genreIds: [27], minRating: 5.5 },
+    { name: "Comedy", genreIds: [35], minRating: 6.0 },
+    { name: "Sci-Fi & Fantasy", genreIds: [878, 14], minRating: 6.0 },
+    { name: "Drama", genreIds: [18], minRating: 7.0 },
+    { name: "Action & Adventure", genreIds: [28, 12], minRating: 6.0 },
+    { name: "Romance", genreIds: [10749], minRating: 6.0 },
+    { name: "Mystery & Crime", genreIds: [9648, 80], minRating: 6.5 },
+    { name: "Animation", genreIds: [16], minRating: 6.5 },
   ];
 
-  for (const category of categories) {
-    console.log(`Fetching ${category.name} movies from TMDb...`);
-    const movies = await category.fetch();
-    grouped[category.name] = movies.slice(0, 30);
-    allMovies.push(...movies.slice(0, 30));
-    console.log(`Got ${movies.length} movies for ${category.name}`);
+  for (const category of genreCategories) {
+    console.log(`Fetching ${category.name} movies (2 pages)...`);
+    const categoryMovies: Movie[] = [];
+    for (let page = 1; page <= 2; page++) {
+      const movies = await discoverMovies(category.name, { 
+        genreIds: category.genreIds, 
+        minRating: category.minRating,
+        page 
+      });
+      categoryMovies.push(...movies);
+      console.log(`  Page ${page}: ${movies.length} movies`);
+    }
+    grouped[category.name] = categoryMovies;
+    allMovies.push(...categoryMovies);
+    console.log(`Got ${categoryMovies.length} ${category.name} movies total`);
   }
 
   return { allMovies, grouped };
