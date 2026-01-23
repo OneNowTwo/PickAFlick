@@ -82,41 +82,44 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center gap-6 min-h-[60vh]" data-testid="loading-recommendations">
-        <div className="relative" style={{ width: 120, height: 120 }}>
-          {/* Animated closing ring */}
-          <svg className="transform -rotate-90 animate-pulse" width={120} height={120}>
-            <circle
-              cx={60}
-              cy={60}
-              r={54}
-              stroke="currentColor"
-              strokeWidth={8}
-              fill="none"
-              className="text-muted/30"
-            />
-            <circle
-              cx={60}
-              cy={60}
-              r={54}
-              stroke="currentColor"
-              strokeWidth={8}
-              fill="none"
-              strokeLinecap="round"
-              className="text-primary"
-              style={{
-                strokeDasharray: 339.292,
-                strokeDashoffset: 0,
-                animation: "ring-close 2s ease-in-out infinite",
-              }}
-            />
-          </svg>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Brain className="w-10 h-10 text-primary animate-pulse" />
+        {/* Dark backdrop for better text visibility */}
+        <div className="bg-black/60 backdrop-blur-sm rounded-2xl p-8 flex flex-col items-center gap-6">
+          <div className="relative" style={{ width: 120, height: 120 }}>
+            {/* Animated closing ring */}
+            <svg className="transform -rotate-90 animate-pulse" width={120} height={120}>
+              <circle
+                cx={60}
+                cy={60}
+                r={54}
+                stroke="currentColor"
+                strokeWidth={8}
+                fill="none"
+                className="text-white/30"
+              />
+              <circle
+                cx={60}
+                cy={60}
+                r={54}
+                stroke="currentColor"
+                strokeWidth={8}
+                fill="none"
+                strokeLinecap="round"
+                className="text-white"
+                style={{
+                  strokeDasharray: 339.292,
+                  strokeDashoffset: 0,
+                  animation: "ring-close 2s ease-in-out infinite",
+                }}
+              />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Brain className="w-10 h-10 text-white animate-pulse" />
+            </div>
           </div>
-        </div>
-        <div className="text-center">
-          <h2 className="text-xl md:text-2xl font-bold text-white mb-2">Hold a tic...</h2>
-          <p className="text-white/80 text-sm md:text-base">We're picking your perfect movies!</p>
+          <div className="text-center">
+            <h2 className="text-xl md:text-2xl font-bold text-white mb-2">Hold a tic...</h2>
+            <p className="text-white/80 text-sm md:text-base">We're picking your perfect movies!</p>
+          </div>
         </div>
       </div>
     );
