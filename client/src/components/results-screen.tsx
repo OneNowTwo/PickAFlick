@@ -219,29 +219,29 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
         </p>
       </div>
 
-      {/* Compact Preference Summary - Hidden on mobile for space */}
-      <div className="hidden md:flex flex-wrap items-center justify-center gap-1.5 text-xs max-w-3xl" data-testid="preference-profile">
+      {/* Preference Summary - Hidden on mobile for space */}
+      <div className="hidden md:flex flex-wrap items-center justify-center gap-2 text-sm max-w-4xl" data-testid="preference-profile">
         {preferenceProfile.topGenres.length > 0 && (
-          <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1">
-            <Film className="w-3 h-3 text-primary" />
+          <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
+            <Film className="w-4 h-4 text-primary" />
             {preferenceProfile.topGenres.slice(0, 3).join(" · ")}
           </Badge>
         )}
         {preferenceProfile.preferredEras && preferenceProfile.preferredEras.length > 0 && (
-          <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1">
-            <Calendar className="w-3 h-3 text-primary" />
+          <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
+            <Calendar className="w-4 h-4 text-primary" />
             {preferenceProfile.preferredEras.slice(0, 2).join(", ")}
           </Badge>
         )}
         {preferenceProfile.visualStyle && (
-          <Badge variant="secondary" className="bg-white/10 text-white/80 border-0 gap-1">
-            <Palette className="w-3 h-3 text-primary shrink-0" />
+          <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
+            <Palette className="w-4 h-4 text-primary shrink-0" />
             {preferenceProfile.visualStyle}
           </Badge>
         )}
         {preferenceProfile.mood && (
-          <Badge variant="secondary" className="bg-white/10 text-white/80 border-0 gap-1">
-            <Sparkles className="w-3 h-3 text-primary shrink-0" />
+          <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
+            <Sparkles className="w-4 h-4 text-primary shrink-0" />
             {preferenceProfile.mood}
           </Badge>
         )}
