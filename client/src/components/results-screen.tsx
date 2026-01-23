@@ -1,6 +1,6 @@
 import type { RecommendationsResponse, WatchProvidersResponse } from "@shared/schema";
 import { Button } from "@/components/ui/button";
-import { Loader2, Play, RefreshCw, Film, Palette, Heart, Calendar, Sparkles, ChevronLeft, ChevronRight, ThumbsUp, Bookmark, Tv, Brain } from "lucide-react";
+import { Loader2, Play, RefreshCw, Film, Palette, Calendar, Sparkles, ChevronLeft, ChevronRight, ThumbsUp, Bookmark, Tv, Brain } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -117,7 +117,6 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
         <div className="text-center">
           <h2 className="text-xl md:text-2xl font-bold text-foreground mb-2">Hold a tic...</h2>
           <p className="text-muted-foreground text-sm md:text-base">We're picking your perfect movies!</p>
-          <p className="text-primary/70 text-xs mt-2 animate-pulse">This won't take long</p>
         </div>
       </div>
     );
@@ -219,59 +218,51 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
         </p>
       </div>
 
-      {/* Preference Profile Cards - Hidden on mobile, shown on tablet+ */}
-      <div className="hidden md:grid grid-cols-2 lg:grid-cols-4 gap-3 w-full" data-testid="preference-profile">
+      {/* Preference Profile Cards - Compact horizontal layout */}
+      <div className="hidden md:grid grid-cols-4 gap-2 w-full" data-testid="preference-profile">
         {preferenceProfile.topGenres.length > 0 && (
-          <div className="bg-card/80 border border-border/50 rounded-lg p-4 backdrop-blur-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="p-1.5 bg-primary/10 rounded-md">
-                <Film className="w-4 h-4 text-primary" />
-              </div>
-              <span className="text-sm font-medium text-muted-foreground">Favorite Genres</span>
+          <div className="bg-black/70 border border-white/10 rounded-lg p-3 backdrop-blur-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <Film className="w-4 h-4 text-primary" />
+              <span className="text-xs font-medium text-white/70">Genres</span>
             </div>
-            <p className="text-foreground text-sm leading-relaxed">
-              {preferenceProfile.topGenres.slice(0, 4).join(", ")}
+            <p className="text-white text-sm font-medium">
+              {preferenceProfile.topGenres.slice(0, 3).join(", ")}
             </p>
           </div>
         )}
 
         {preferenceProfile.preferredEras && preferenceProfile.preferredEras.length > 0 && (
-          <div className="bg-card/80 border border-border/50 rounded-lg p-4 backdrop-blur-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="p-1.5 bg-primary/10 rounded-md">
-                <Calendar className="w-4 h-4 text-primary" />
-              </div>
-              <span className="text-sm font-medium text-muted-foreground">Preferred Eras</span>
+          <div className="bg-black/70 border border-white/10 rounded-lg p-3 backdrop-blur-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <Calendar className="w-4 h-4 text-primary" />
+              <span className="text-xs font-medium text-white/70">Eras</span>
             </div>
-            <p className="text-foreground text-sm leading-relaxed">
+            <p className="text-white text-sm font-medium">
               {preferenceProfile.preferredEras.slice(0, 3).join(", ")}
             </p>
           </div>
         )}
 
         {preferenceProfile.visualStyle && (
-          <div className="bg-card/80 border border-border/50 rounded-lg p-4 backdrop-blur-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="p-1.5 bg-primary/10 rounded-md">
-                <Palette className="w-4 h-4 text-primary" />
-              </div>
-              <span className="text-sm font-medium text-muted-foreground">Visual Style</span>
+          <div className="bg-black/70 border border-white/10 rounded-lg p-3 backdrop-blur-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <Palette className="w-4 h-4 text-primary" />
+              <span className="text-xs font-medium text-white/70">Visual Style</span>
             </div>
-            <p className="text-foreground text-sm leading-relaxed">
+            <p className="text-white text-sm leading-snug">
               {preferenceProfile.visualStyle}
             </p>
           </div>
         )}
 
         {preferenceProfile.mood && (
-          <div className="bg-card/80 border border-border/50 rounded-lg p-4 backdrop-blur-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="p-1.5 bg-primary/10 rounded-md">
-                <Heart className="w-4 h-4 text-primary" />
-              </div>
-              <span className="text-sm font-medium text-muted-foreground">Mood & Tone</span>
+          <div className="bg-black/70 border border-white/10 rounded-lg p-3 backdrop-blur-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles className="w-4 h-4 text-primary" />
+              <span className="text-xs font-medium text-white/70">Mood</span>
             </div>
-            <p className="text-foreground text-sm leading-relaxed">
+            <p className="text-white text-sm leading-snug">
               {preferenceProfile.mood}
             </p>
           </div>

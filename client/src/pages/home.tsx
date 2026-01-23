@@ -6,7 +6,7 @@ import { RoundPicker } from "@/components/round-picker";
 import { ResultsScreen } from "@/components/results-screen";
 import { PosterGridBackground } from "@/components/poster-grid-background";
 import { Button } from "@/components/ui/button";
-import { Clapperboard, Loader2, Bookmark, Heart } from "lucide-react";
+import { Clapperboard, Loader2, Bookmark } from "lucide-react";
 import { Link } from "wouter";
 
 type GameState = "start" | "playing" | "loading-recommendations" | "results";
@@ -208,7 +208,7 @@ export default function Home() {
                   </>
                 ) : (
                   <>
-                    <Heart className="w-5 h-5 mr-2" />
+                    <Clapperboard className="w-5 h-5 mr-2" />
                     {selectedMoods.length > 0 ? "Start Picking" : "Surprise Me"}
                   </>
                 )}

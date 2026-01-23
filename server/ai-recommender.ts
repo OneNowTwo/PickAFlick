@@ -84,15 +84,19 @@ Respond in this exact JSON format:
   "topGenres": ["genre1", "genre2", "genre3"],
   "themes": ["theme1", "theme2", "theme3"],
   "preferredEras": ["era1", "era2"],
-  "visualStyle": "MUST reference specific movies you chose - e.g. 'Like the gritty realism of [Movie A] and the moody atmosphere of [Movie B], you gravitate toward...' - be SPECIFIC with film names",
-  "mood": "MUST reference specific movies you chose - e.g. 'From choosing [Movie X] over lighter options and picking [Movie Y]'s dark tone, you clearly prefer...' - be SPECIFIC with film names",
+  "visualStyle": "Write a SHORT, playful one-liner (15-25 words max) that sounds like a witty friend describing their taste. Must reference 1-2 of their chosen films naturally. Example: 'You've got an eye for that slick, dark aesthetic - think 'Parasite' meets 'No Country for Old Men' vibes.'",
+  "mood": "Write a SHORT, playful one-liner (15-25 words max) that feels personal and a little cheeky. Must mention 1-2 of their picks. Example: 'Clearly you like your films like your coffee - dark, complex, and keeps you up thinking.'",
   "recommendations": [
     {"title": "Movie Title", "year": 2020, "reason": "Personalized reason connecting to your preferences"},
     {"title": "Movie Title 2", "year": 2018, "reason": "Personalized reason connecting to your preferences"}
   ]
 }
 
-CRITICAL for visualStyle and mood: You MUST name 2-3 specific movies from the user's choices in each description. Do NOT give generic descriptions - reference the actual films they picked and explain what that reveals about their taste.`;
+CRITICAL for visualStyle and mood:
+- Keep them SHORT (one punchy sentence, 15-25 words max)
+- Make them feel personal and conversational - like a witty friend, not a film professor
+- Reference 1-2 specific films they chose, woven naturally into the sentence
+- Add a touch of personality/humor but don't overdo it - warm and clever, not silly`;
 
   try {
     const response = await openai.chat.completions.create({
