@@ -79,7 +79,7 @@ DEEP ANALYSIS REQUIRED - Go beyond surface-level genre matching. Examine:
 4. **Pacing & Rhythm**: Fast-paced editing or contemplative pacing? Action set-pieces or dialogue-driven scenes?
 5. **Emotional Register**: Cathartic release, intellectual stimulation, visceral thrills, melancholic beauty, dark humor?
 
-Based on this analysis, recommend 5 films that match this taste profile.
+Based on this analysis, recommend 7 films that match this taste profile (we'll show the user the top 5 that are available).
 
 === CRITICAL VARIETY REQUIREMENTS ===
 
@@ -123,11 +123,14 @@ Respond in this exact JSON format:
     {"title": "Underseen Gem Title", "year": 2015, "reason": "Why this hidden gem fits", "category": "underseen"},
     {"title": "Classic Title", "year": 1995, "reason": "Why this older film connects", "category": "classic"},
     {"title": "Flexible Pick 1", "year": 2019, "reason": "Personalized reason", "category": "flexible"},
-    {"title": "Flexible Pick 2", "year": 2021, "reason": "Personalized reason", "category": "flexible"}
+    {"title": "Flexible Pick 2", "year": 2021, "reason": "Personalized reason", "category": "flexible"},
+    {"title": "Backup Pick 1", "year": 2018, "reason": "Alternative recommendation", "category": "backup"},
+    {"title": "Backup Pick 2", "year": 2020, "reason": "Alternative recommendation", "category": "backup"}
   ]
 }
 
 CRITICAL NOTES:
+- Provide exactly 7 recommendations (5 main + 2 backups in case some aren't available)
 - The first recommendation MUST be from ${recentThreshold}-${currentYear} (labeled "recent")
 - One recommendation MUST be a lesser-known gem (labeled "underseen")
 - One recommendation MUST be from before 2010 (labeled "classic")
