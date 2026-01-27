@@ -1,4 +1,4 @@
-import { watchlist, type WatchlistItem, type InsertWatchlistItem } from "@shared/schema";
+import { watchlist, sharedRecommendations, type WatchlistItem, type InsertWatchlistItem, type SharedRecommendation } from "@shared/schema";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
 
@@ -8,6 +8,8 @@ export interface IStorage {
   removeFromWatchlist(id: number): Promise<void>;
   toggleWatched(id: number, watched: boolean): Promise<WatchlistItem | undefined>;
   getWatchlistByTmdbId(tmdbId: number): Promise<WatchlistItem | undefined>;
+  saveSharedRecommendations(shareId: string, recommendations: string, preferenceProfile: string): Promise<SharedRecommendation>;
+  getSharedRecommendations(shareId: string): Promise<SharedRecommendation | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -35,6 +37,20 @@ export class DatabaseStorage implements IStorage {
 
   async getWatchlistByTmdbId(tmdbId: number): Promise<WatchlistItem | undefined> {
     const [result] = await db.select().from(watchlist).where(eq(watchlist.tmdbId, tmdbId));
+    return result;
+  }
+
+  async saveSharedRecommendations(shareId: string, recommendations: string, preferenceProfile: string): Promise<SharedRecommendation> {
+    const [result] = await db.insert(sharedRecommendations).values({
+      shareId,
+      recommendations,
+      preferenceProfile,
+    }).returning();
+    return result;
+  }
+
+  async getSharedRecommendations(shareId: string): Promise<SharedRecommendation | undefined> {
+    const [result] = await db.select().from(sharedRecommendations).where(eq(sharedRecommendations.shareId, shareId));
     return result;
   }
 }

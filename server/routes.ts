@@ -593,5 +593,55 @@ export async function registerRoutes(
     }
   });
 
+  // ===== SHARE ENDPOINTS =====
+
+  // Save recommendations for sharing
+  app.post("/api/share", async (req: Request, res: Response) => {
+    try {
+      const { recommendations, preferenceProfile } = req.body;
+
+      if (!recommendations || !preferenceProfile) {
+        res.status(400).json({ error: "Missing recommendations or preferenceProfile" });
+        return;
+      }
+
+      // Generate unique share ID (8 characters)
+      const shareId = Math.random().toString(36).substring(2, 10);
+
+      await storage.saveSharedRecommendations(
+        shareId,
+        JSON.stringify(recommendations),
+        JSON.stringify(preferenceProfile)
+      );
+
+      res.json({ shareId });
+    } catch (error) {
+      console.error("Error saving shared recommendations:", error);
+      res.status(500).json({ error: "Failed to save shared recommendations" });
+    }
+  });
+
+  // Get shared recommendations
+  app.get("/api/share/:shareId", async (req: Request, res: Response) => {
+    try {
+      const { shareId } = req.params;
+
+      const shared = await storage.getSharedRecommendations(shareId);
+      if (!shared) {
+        res.status(404).json({ error: "Shared recommendations not found" });
+        return;
+      }
+
+      res.json({
+        recommendations: JSON.parse(shared.recommendations),
+        preferenceProfile: JSON.parse(shared.preferenceProfile),
+        createdAt: shared.createdAt,
+      });
+    } catch (error) {
+      console.error("Error getting shared recommendations:", error);
+      res.status(500).json({ error: "Failed to get shared recommendations" });
+    }
+  });
+
   return httpServer;
 }

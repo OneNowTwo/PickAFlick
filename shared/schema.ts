@@ -2,6 +2,17 @@ import { z } from "zod";
 import { pgTable, serial, text, integer, boolean, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 
+// Shared recommendations table for shareable results
+export const sharedRecommendations = pgTable("shared_recommendations", {
+  id: serial("id").primaryKey(),
+  shareId: text("share_id").notNull().unique(),
+  recommendations: text("recommendations").notNull(), // JSON string of recommendations
+  preferenceProfile: text("preference_profile").notNull(), // JSON string of preference profile
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type SharedRecommendation = typeof sharedRecommendations.$inferSelect;
+
 // Watchlist table for persisting liked movies
 export const watchlist = pgTable("watchlist", {
   id: serial("id").primaryKey(),
