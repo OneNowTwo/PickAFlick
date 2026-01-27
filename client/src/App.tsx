@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Home from "@/pages/home";
 import Watchlist from "@/pages/watchlist";
+import SharePage from "@/pages/share";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -12,6 +13,7 @@ function Router() {
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/watchlist" component={Watchlist} />
+      <Route path="/share/:id" component={SharePage} />
       <Route component={NotFound} />
     </Switch>
   );

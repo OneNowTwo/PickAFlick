@@ -1,7 +1,7 @@
 import type { RecommendationsResponse, WatchProvidersResponse, Recommendation } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Play, RefreshCw, Film, Palette, Calendar, Sparkles, ChevronLeft, ChevronRight, ThumbsUp, Bookmark, Tv, Brain, Eye } from "lucide-react";
+import { Loader2, Play, RefreshCw, Film, Palette, Calendar, Sparkles, ChevronLeft, ChevronRight, ThumbsUp, Bookmark, Tv, Brain, Eye, Share2, Check, Copy } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -61,6 +61,8 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   const [autoPlayTrailer, setAutoPlayTrailer] = useState(true);
   const [showWatchProviders, setShowWatchProviders] = useState(false);
   const [trailerError, setTrailerError] = useState(false);
+  const [shareId, setShareId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const { toast } = useToast();
 
   // Reset trailer error when changing movies
@@ -147,6 +149,59 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
       toast({
         title: "Added to watchlist",
         description: "Movie saved to your watchlist!",
+      });
+    },
+  });
+
+  // Share mutation
+  const shareMutation = useMutation({
+    mutationFn: async () => {
+      if (!recommendations) throw new Error("No recommendations to share");
+      const res = await apiRequest("POST", "/api/share", {
+        recommendations: recommendations.recommendations,
+        preferenceProfile: recommendations.preferenceProfile,
+      });
+      return res.json() as Promise<{ shareId: string }>;
+    },
+    onSuccess: async (data) => {
+      setShareId(data.shareId);
+      const shareUrl = `${window.location.origin}/share/${data.shareId}`;
+      
+      // Try native share first (mobile)
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: "Check out my PickAFlick recommendations!",
+            text: "PickAFlick figured out my movie taste in just 7 rounds. Here are my personalized picks:",
+            url: shareUrl,
+          });
+          return;
+        } catch (e) {
+          // User cancelled or error - fall through to copy
+        }
+      }
+      
+      // Fallback to clipboard
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+        toast({
+          title: "Link copied!",
+          description: "Share link copied to clipboard",
+        });
+      } catch (e) {
+        toast({
+          title: "Share link",
+          description: shareUrl,
+        });
+      }
+    },
+    onError: () => {
+      toast({
+        title: "Failed to share",
+        description: "Something went wrong. Please try again.",
+        variant: "destructive",
       });
     },
   });
@@ -506,6 +561,24 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         >
           <RefreshCw className="w-4 h-4" />
           Restart
+        </Button>
+
+        <Button 
+          size="default" 
+          variant="default"
+          onClick={() => shareMutation.mutate()}
+          disabled={shareMutation.isPending}
+          className="gap-1.5 bg-primary"
+          data-testid="button-share"
+        >
+          {shareMutation.isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : copied ? (
+            <Check className="w-4 h-4" />
+          ) : (
+            <Share2 className="w-4 h-4" />
+          )}
+          {copied ? "Copied!" : "Share"}
         </Button>
       </div>
 
