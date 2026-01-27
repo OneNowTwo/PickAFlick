@@ -12,7 +12,30 @@ interface AIRecommendationResult {
   title: string;
   year?: number;
   reason: string;
+  category?: string;
 }
+
+// List of commonly over-suggested movies to filter out for variety
+const BANNED_REPEATED_MOVIES = [
+  "a ghost story",
+  "moonlight", 
+  "lady bird",
+  "the florida project",
+  "eighth grade",
+  "hereditary",
+  "midsommar",
+  "the witch",
+  "drive",
+  "nightcrawler",
+  "ex machina",
+  "her",
+  "arrival",
+  "blade runner 2049",
+  "the lobster",
+  "under the skin",
+  "it follows",
+  "the babadook",
+];
 
 interface AIAnalysis {
   topGenres: string[];
@@ -55,7 +78,11 @@ export async function generateRecommendations(
   const randomSeed = Math.floor(Math.random() * 100000);
   const sessionTime = new Date().toISOString();
 
-  const prompt = `You are an expert film analyst with encyclopedic knowledge of cinema. A user played a movie picker game, choosing between pairs of films. They selected these 7 movies:
+  // Get current year for recent movie calculation
+  const currentYear = new Date().getFullYear();
+  const recentThreshold = currentYear - 3; // Movies from last 3 years
+
+  const prompt = `You are an expert film analyst with encyclopedic knowledge of cinema from all eras and countries. A user played a movie picker game, choosing between pairs of films. They selected these 7 movies:
 
 ${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}, ${m.era})
    Director: ${m.director}
@@ -64,47 +91,68 @@ ${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}, ${m.era})
    Keywords/Themes: ${m.keywords.length > 0 ? m.keywords.join(", ") : "N/A"}
    Synopsis: ${m.overview || "No synopsis available"}`).join("\n\n")}
 
-[Session: ${sessionTime} | Seed: ${randomSeed}]
+[Session: ${sessionTime} | Variation Seed: ${randomSeed}]
 
 DEEP ANALYSIS REQUIRED - Go beyond surface-level genre matching. Examine:
 
 1. **Narrative DNA**: What storytelling structures resonate? (nonlinear timelines, unreliable narrators, slow burns, ensemble casts, character studies, plot-driven thrillers)
-2. **Cinematographic Fingerprint**: What visual language appeals? (long takes, handheld intimacy, symmetrical compositions, naturalistic lighting, saturated colors, desaturated palettes, wide establishing shots)
+2. **Cinematographic Fingerprint**: What visual language appeals? (long takes, handheld intimacy, symmetrical compositions, naturalistic lighting, saturated colors, desaturated palettes)
 3. **Thematic Undercurrents**: What deeper themes connect these films? (existential dread, family dysfunction, moral ambiguity, identity crisis, societal critique, redemption arcs)
 4. **Pacing & Rhythm**: Fast-paced editing or contemplative pacing? Action set-pieces or dialogue-driven scenes?
-5. **Era & Movement**: Are they drawn to French New Wave aesthetics, 70s New Hollywood grit, 90s indie sensibility, modern A24 style, classic Hollywood glamour?
-6. **Emotional Register**: Cathartic release, intellectual stimulation, visceral thrills, melancholic beauty, dark humor?
-7. **Director Signatures**: Identify any auteur influences - are these Fincher-esque, Nolan-like, Villeneuve style, Coen Brothers tone, Ari Aster vibes?
+5. **Emotional Register**: Cathartic release, intellectual stimulation, visceral thrills, melancholic beauty, dark humor?
 
-Based on this DEEP analysis, recommend 5 films that match this unique taste profile.
+Based on this analysis, recommend 5 films that match this taste profile.
 
-CRITICAL RULES:
-1. DO NOT recommend any movie already in their selections
-2. THINK CREATIVELY - draw from world cinema, underseen gems, cult classics, and lesser-known works by famous directors
-3. Each recommendation should connect to MULTIPLE dimensions of their taste profile, not just genre
-4. Vary your recommendations across eras and styles - don't cluster around one type
-5. Your reasons must be SPECIFIC - cite exact visual, thematic, or narrative parallels to their choices
-6. Address the user directly using "you" and "your"
-7. If a well-known film genuinely fits perfectly, recommend it - but justify deeply WHY it matches
+=== CRITICAL VARIETY REQUIREMENTS ===
+
+Your 5 recommendations MUST include this diversity mix:
+1. **ONE RECENT RELEASE (${recentThreshold}-${currentYear})**: A movie from the last 3 years that relates to their taste. This could be a theatrical release, streaming original, or festival hit. Think: current directors' new work, recent genre entries, or buzzy films they might have missed.
+
+2. **ONE UNDERSEEN GEM**: A critically acclaimed but lesser-known film (not a mainstream blockbuster). Could be an indie darling, festival winner, or cult classic that never got wide release.
+
+3. **ONE CLASSIC OR OLDER FILM**: Something from before 2010 that connects thematically or stylistically.
+
+4. **TWO FLEXIBLE PICKS**: Can be any era, but should add variety to the mix.
+
+=== ANTI-REPETITION RULES ===
+
+DO NOT recommend these commonly over-suggested movies (find alternatives that match similar themes):
+- A Ghost Story, Moonlight, Lady Bird, The Florida Project, Eighth Grade
+- Hereditary, Midsommar, The Witch (unless they specifically chose A24 horror)
+- Drive, Nightcrawler, Ex Machina (unless very specifically thematically relevant)
+- Her, Arrival, Blade Runner 2049 (find fresher sci-fi alternatives)
+
+Instead, DIG DEEPER. For every "obvious" recommendation, ask: "What less-known film shares these same qualities?" Recommend THAT instead.
+
+=== QUALITY STANDARDS ===
+- All films should be English-language OR have significant English-speaking audience appeal (no obscure foreign films without mainstream crossover)
+- All films should have generally positive reception (no poorly-rated films)
+- Avoid direct-to-video quality films
+
+=== OUTPUT REQUIREMENTS ===
 
 Respond in this exact JSON format:
 {
   "topGenres": ["genre1", "genre2", "genre3"],
   "themes": ["theme1", "theme2", "theme3"],
   "preferredEras": ["era1", "era2"],
-  "visualStyle": "Write a SHORT, playful one-liner (15-25 words max) that sounds like a witty friend describing their taste. Must reference 1-2 of their chosen films naturally. Example: 'You've got an eye for that slick, dark aesthetic - think 'Parasite' meets 'No Country for Old Men' vibes.'",
-  "mood": "Write a SHORT, playful one-liner (15-25 words max) that feels personal and a little cheeky. Must mention 1-2 of their picks. Example: 'Clearly you like your films like your coffee - dark, complex, and keeps you up thinking.'",
+  "visualStyle": "Short playful one-liner (15-25 words) describing their visual taste. Reference 1-2 of their films.",
+  "mood": "Short playful one-liner (15-25 words) about their emotional preferences. Reference 1-2 of their picks.",
   "recommendations": [
-    {"title": "Movie Title", "year": 2020, "reason": "Personalized reason connecting to your preferences"},
-    {"title": "Movie Title 2", "year": 2018, "reason": "Personalized reason connecting to your preferences"}
+    {"title": "Recent Film Title", "year": ${currentYear}, "reason": "Why this recent release matches their taste", "category": "recent"},
+    {"title": "Underseen Gem Title", "year": 2015, "reason": "Why this hidden gem fits", "category": "underseen"},
+    {"title": "Classic Title", "year": 1995, "reason": "Why this older film connects", "category": "classic"},
+    {"title": "Flexible Pick 1", "year": 2019, "reason": "Personalized reason", "category": "flexible"},
+    {"title": "Flexible Pick 2", "year": 2021, "reason": "Personalized reason", "category": "flexible"}
   ]
 }
 
-CRITICAL for visualStyle and mood:
-- Keep them SHORT (one punchy sentence, 15-25 words max)
-- Make them feel personal and conversational - like a witty friend, not a film professor
-- Reference 1-2 specific films they chose, woven naturally into the sentence
-- Add a touch of personality/humor but don't overdo it - warm and clever, not silly`;
+CRITICAL NOTES:
+- The first recommendation MUST be from ${recentThreshold}-${currentYear} (labeled "recent")
+- One recommendation MUST be a lesser-known gem (labeled "underseen")
+- One recommendation MUST be from before 2010 (labeled "classic")
+- Keep visualStyle and mood SHORT (one punchy sentence each)
+- Address the user as "you" and "your" in reasons`;
 
   try {
     const response = await openai.chat.completions.create({
@@ -124,6 +172,13 @@ CRITICAL for visualStyle and mood:
 
     for (const rec of analysis.recommendations) {
       try {
+        // Skip banned/commonly repeated movies for variety
+        const titleLower = rec.title.toLowerCase();
+        if (BANNED_REPEATED_MOVIES.some(banned => titleLower.includes(banned))) {
+          console.log(`Skipping banned repeated movie: ${rec.title}`);
+          continue;
+        }
+        
         // Search for the movie on TMDb
         const searchResult = await searchMovieByTitle(rec.title, rec.year);
         
@@ -256,21 +311,49 @@ export async function generateReplacementRecommendation(
 
   const randomSeed = Math.floor(Math.random() * 100000);
 
-  const prompt = `You are a film expert. A user selected these movies in a preference game:
+  const currentYear = new Date().getFullYear();
+  const recentThreshold = currentYear - 3;
+  
+  // Randomly pick a category for variety
+  const categories = ["recent", "underseen", "classic", "flexible"];
+  const targetCategory = categories[Math.floor(Math.random() * categories.length)];
+  
+  let categoryInstruction = "";
+  switch (targetCategory) {
+    case "recent":
+      categoryInstruction = `Pick a RECENT film from ${recentThreshold}-${currentYear} that matches their taste.`;
+      break;
+    case "underseen":
+      categoryInstruction = `Pick an UNDERSEEN GEM - a critically acclaimed but lesser-known film they likely haven't seen.`;
+      break;
+    case "classic":
+      categoryInstruction = `Pick a CLASSIC film from before 2010 that connects thematically to their choices.`;
+      break;
+    default:
+      categoryInstruction = `Pick a film from any era that genuinely fits their taste profile.`;
+  }
+
+  const prompt = `You are a film expert with encyclopedic knowledge of cinema. A user selected these movies in a preference game:
 
 ${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}) - ${m.genres.join(", ")}`).join("\n")}
 
-They've already seen or dismissed movies with TMDb IDs: ${excludeTmdbIds.join(", ")}
+They've already seen or dismissed ${excludeTmdbIds.length} movies, so we need something FRESH.
 
-Recommend ONE movie that fits their taste profile. Choose something they likely haven't seen - explore international films, cult classics, or underseen gems.
+${categoryInstruction}
 
-[Seed: ${randomSeed}]
+VARIETY RULES:
+- DO NOT recommend commonly over-suggested films (A Ghost Story, Moonlight, Hereditary, Drive, Ex Machina, etc.)
+- DIG DEEPER - find something they truly haven't heard of
+- Should be English-language or have mainstream crossover appeal
+- Should be well-rated (no poorly received films)
+
+[Variation Seed: ${randomSeed}]
 
 Respond in JSON format:
 {
   "title": "Movie Title",
   "year": 2020,
-  "reason": "A short, personalized reason (1-2 sentences) why this fits their taste"
+  "reason": "A personalized 1-2 sentence reason using 'you' and 'your'"
 }`;
 
   try {
@@ -285,8 +368,17 @@ Respond in JSON format:
     const content = response.choices[0]?.message?.content || "{}";
     const result: AIRecommendationResult = JSON.parse(content);
 
+    // Skip banned/commonly repeated movies for variety
+    const titleLower = result.title.toLowerCase();
+    if (BANNED_REPEATED_MOVIES.some(banned => titleLower.includes(banned))) {
+      console.log(`Skipping banned repeated movie in replacement: ${result.title}`);
+      // Fall through to fallback
+    }
+    
     // Search for the movie on TMDb
-    const searchResult = await searchMovieByTitle(result.title, result.year);
+    const searchResult = !BANNED_REPEATED_MOVIES.some(banned => titleLower.includes(banned))
+      ? await searchMovieByTitle(result.title, result.year)
+      : null;
     
     if (!searchResult || excludeTmdbIds.includes(searchResult.id)) {
       // Try from catalogue as fallback

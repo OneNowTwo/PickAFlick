@@ -101,7 +101,6 @@ Fallback: TMDb API (when IMDb scraping fails)
 - Sci-Fi & Fantasy
 - Romance
 - Mystery & Crime
-- **New Releases** - Movies currently in theaters
 - Top Picks - Top rated and popular movies
 
 ## Development
@@ -109,6 +108,16 @@ Fallback: TMDb API (when IMDb scraping fails)
 - Frontend: Vite on port 5000
 - Backend: Express on port 5000
 - Catalogue builds on startup (takes ~1-2 minutes)
+
+## AI Recommendations
+- Uses GPT-4o-mini via Replit AI Integrations
+- Recommendations include variety mix:
+  - ONE recent release (last 3 years) that matches user taste
+  - ONE underseen gem (critically acclaimed but lesser-known)
+  - ONE classic/older film (pre-2010)
+  - TWO flexible picks
+- Explicit anti-repetition rules to avoid over-suggested films (A Ghost Story, Hereditary, etc.)
+- Quality standards: English-language or mainstream crossover, well-rated films only
 
 ## Notes
 - OpenAI integration uses Replit AI Integrations (no user API key required)
