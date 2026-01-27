@@ -60,7 +60,13 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   const [localRecs, setLocalRecs] = useState<Recommendation[]>([]); // Local mutable recs
   const [autoPlayTrailer, setAutoPlayTrailer] = useState(true);
   const [showWatchProviders, setShowWatchProviders] = useState(false);
+  const [trailerError, setTrailerError] = useState(false);
   const { toast } = useToast();
+
+  // Reset trailer error when changing movies
+  useEffect(() => {
+    setTrailerError(false);
+  }, [currentIndex]);
 
   // Initialize local recs from recommendations
   useEffect(() => {
@@ -343,14 +349,25 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
       >
         {/* Trailer / Poster Area - Constrained height for viewport fit */}
         <div className="aspect-video max-h-[40vh] md:max-h-[50vh] relative">
-          {currentRec.trailerUrl && autoPlayTrailer ? (
-            <iframe
-              src={`${currentRec.trailerUrl}?autoplay=1`}
-              className="w-full h-full"
-              allow="autoplay; encrypted-media"
-              allowFullScreen
-              title={`${currentRec.movie.title} Trailer`}
-            />
+          {currentRec.trailerUrl && autoPlayTrailer && !trailerError ? (
+            <div className="relative w-full h-full">
+              <iframe
+                src={`${currentRec.trailerUrl}?autoplay=1&origin=${window.location.origin}`}
+                className="w-full h-full"
+                allow="autoplay; encrypted-media"
+                allowFullScreen
+                title={`${currentRec.movie.title} Trailer`}
+                onError={() => setTrailerError(true)}
+              />
+              {/* Fallback button if trailer doesn't load properly */}
+              <button
+                onClick={() => setTrailerError(true)}
+                className="absolute bottom-2 right-2 text-xs text-white/60 hover:text-white/90 bg-black/50 px-2 py-1 rounded"
+                data-testid="button-trailer-not-working"
+              >
+                Trailer not working?
+              </button>
+            </div>
           ) : posterUrl ? (
             <div className="relative w-full h-full">
               <img
@@ -358,17 +375,31 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                 alt={currentRec.movie.title}
                 className="w-full h-full object-cover"
               />
-              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                {currentRec.trailerUrl && (
+              <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-3">
+                {currentRec.trailerUrl && !trailerError && (
                   <Button
                     size="default"
-                    onClick={() => setAutoPlayTrailer(true)}
+                    onClick={() => { setTrailerError(false); setAutoPlayTrailer(true); }}
                     className="gap-2"
                     data-testid={`button-play-trailer-${currentIndex}`}
                   >
                     <Play className="w-4 h-4 md:w-5 md:h-5" />
                     <span className="text-sm md:text-base">Watch Trailer</span>
                   </Button>
+                )}
+                {trailerError && (
+                  <div className="text-center px-4">
+                    <p className="text-white/80 text-sm mb-2">Trailer unavailable in your region</p>
+                    <a
+                      href={`https://www.youtube.com/results?search_query=${encodeURIComponent(currentRec.movie.title + " " + currentRec.movie.year + " trailer")}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline text-sm"
+                      data-testid="link-search-trailer"
+                    >
+                      Search on YouTube
+                    </a>
+                  </div>
                 )}
               </div>
             </div>

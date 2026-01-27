@@ -312,8 +312,10 @@ export function getRandomMoviePairFiltered(
       // Check if movie is a new release
       const isNewRelease = m.listSource === "New Releases";
       
-      // Check if movie matches any selected genre
-      const matchesGenre = genres.length > 0 && m.genres.some(g => genres.includes(g));
+      // Check if movie's PRIMARY genres (first 2 only) match any selected genre
+      // This prevents movies like Pulp Fiction (Crime/Thriller) from showing up for "Comedy" just because it has dark humor
+      const primaryGenres = m.genres.slice(0, 2);
+      const matchesGenre = genres.length > 0 && primaryGenres.some(g => genres.includes(g));
       
       // Build criteria
       const specialFiltersOnly = genres.length === 0;

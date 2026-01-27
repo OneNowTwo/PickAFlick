@@ -104,6 +104,18 @@ Recommend films like a passionate cinephile sharing their favorites - movies you
 
 If a popular film truly fits perfectly, recommend it with conviction. If a hidden gem is more appropriate, share that discovery. The goal is CONNECTION - finding films that will make them say "yes, this is exactly what I wanted."
 
+=== VARIETY IS KEY ===
+
+DIG DEEP into your film knowledge. Avoid the "first thing that comes to mind" - think of the SECOND or THIRD film that fits. Consider:
+- Different decades within the same genre
+- Films from different directors with similar sensibilities  
+- Regional variations (Australian, British, Irish cinema alongside Hollywood)
+- Debut films from directors who later became famous
+- Festival winners that never got wide release
+- Hidden gems from major studios that underperformed commercially
+
+Use the Variation Seed [${randomSeed}] to push yourself toward DIFFERENT corners of cinema with each request.
+
 === QUALITY STANDARDS ===
 - All films should be English-language OR have significant English-speaking audience appeal (no obscure foreign films without mainstream crossover)
 - All films should have generally positive reception (no poorly-rated films)
@@ -143,7 +155,7 @@ CRITICAL NOTES:
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
       max_tokens: 2000,
-      temperature: 0.9,
+      temperature: 0.95, // Higher temperature for more variety
     });
 
     const content = response.choices[0]?.message?.content || "{}";

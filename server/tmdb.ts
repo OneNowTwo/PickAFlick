@@ -189,7 +189,22 @@ export async function getMovieDetails(tmdbId: number): Promise<Movie | null> {
 
 export async function getMovieTrailer(tmdbId: number): Promise<string | null> {
   try {
-    const data = await tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`);
+    // First try with AU region to get region-available videos
+    let data = await tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`, { 
+      language: "en-AU" 
+    });
+
+    // If no results, try without region filter
+    if (data.results.length === 0) {
+      data = await tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`, {
+        language: "en-US"
+      });
+    }
+    
+    // If still no results, try default (no language filter)
+    if (data.results.length === 0) {
+      data = await tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`);
+    }
 
     const youtubeVideos = data.results.filter((v) => v.site === "YouTube");
 
