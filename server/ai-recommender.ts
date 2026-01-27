@@ -15,28 +15,6 @@ interface AIRecommendationResult {
   category?: string;
 }
 
-// List of commonly over-suggested movies to filter out for variety
-const BANNED_REPEATED_MOVIES = [
-  "a ghost story",
-  "moonlight", 
-  "lady bird",
-  "the florida project",
-  "eighth grade",
-  "hereditary",
-  "midsommar",
-  "the witch",
-  "drive",
-  "nightcrawler",
-  "ex machina",
-  "her",
-  "arrival",
-  "blade runner 2049",
-  "the lobster",
-  "under the skin",
-  "it follows",
-  "the babadook",
-];
-
 interface AIAnalysis {
   topGenres: string[];
   themes: string[];
@@ -114,15 +92,17 @@ Your 5 recommendations MUST include this diversity mix:
 
 4. **TWO FLEXIBLE PICKS**: Can be any era, but should add variety to the mix.
 
-=== ANTI-REPETITION RULES ===
+=== BE A TRUE FILM BUFF ===
 
-DO NOT recommend these commonly over-suggested movies (find alternatives that match similar themes):
-- A Ghost Story, Moonlight, Lady Bird, The Florida Project, Eighth Grade
-- Hereditary, Midsommar, The Witch (unless they specifically chose A24 horror)
-- Drive, Nightcrawler, Ex Machina (unless very specifically thematically relevant)
-- Her, Arrival, Blade Runner 2049 (find fresher sci-fi alternatives)
+You are their personal film expert friend. Based on their 7 choices, you KNOW this person now. You understand:
+- What visual styles excite them
+- What emotional journeys they seek
+- What storytelling approaches resonate
+- What era and tone they gravitate toward
 
-Instead, DIG DEEPER. For every "obvious" recommendation, ask: "What less-known film shares these same qualities?" Recommend THAT instead.
+Recommend films like a passionate cinephile sharing their favorites - movies you GENUINELY believe will delight this specific person. Don't just pattern-match genres. Think about WHY they chose each film and find movies that scratch the same itch.
+
+If a popular film truly fits perfectly, recommend it with conviction. If a hidden gem is more appropriate, share that discovery. The goal is CONNECTION - finding films that will make them say "yes, this is exactly what I wanted."
 
 === QUALITY STANDARDS ===
 - All films should be English-language OR have significant English-speaking audience appeal (no obscure foreign films without mainstream crossover)
@@ -172,13 +152,6 @@ CRITICAL NOTES:
 
     for (const rec of analysis.recommendations) {
       try {
-        // Skip banned/commonly repeated movies for variety
-        const titleLower = rec.title.toLowerCase();
-        if (BANNED_REPEATED_MOVIES.some(banned => titleLower.includes(banned))) {
-          console.log(`Skipping banned repeated movie: ${rec.title}`);
-          continue;
-        }
-        
         // Search for the movie on TMDb
         const searchResult = await searchMovieByTitle(rec.title, rec.year);
         
@@ -341,11 +314,12 @@ They've already seen or dismissed ${excludeTmdbIds.length} movies, so we need so
 
 ${categoryInstruction}
 
-VARIETY RULES:
-- DO NOT recommend commonly over-suggested films (A Ghost Story, Moonlight, Hereditary, Drive, Ex Machina, etc.)
-- DIG DEEPER - find something they truly haven't heard of
+BE A TRUE FILM BUFF:
+- You KNOW this person based on their picks
+- Recommend something you genuinely believe will delight them
+- Think about WHY they chose each film and find something that scratches the same itch
 - Should be English-language or have mainstream crossover appeal
-- Should be well-rated (no poorly received films)
+- Should be well-rated (quality matters)
 
 [Variation Seed: ${randomSeed}]
 
@@ -368,17 +342,8 @@ Respond in JSON format:
     const content = response.choices[0]?.message?.content || "{}";
     const result: AIRecommendationResult = JSON.parse(content);
 
-    // Skip banned/commonly repeated movies for variety
-    const titleLower = result.title.toLowerCase();
-    if (BANNED_REPEATED_MOVIES.some(banned => titleLower.includes(banned))) {
-      console.log(`Skipping banned repeated movie in replacement: ${result.title}`);
-      // Fall through to fallback
-    }
-    
     // Search for the movie on TMDb
-    const searchResult = !BANNED_REPEATED_MOVIES.some(banned => titleLower.includes(banned))
-      ? await searchMovieByTitle(result.title, result.year)
-      : null;
+    const searchResult = await searchMovieByTitle(result.title, result.year);
     
     if (!searchResult || excludeTmdbIds.includes(searchResult.id)) {
       // Try from catalogue as fallback
