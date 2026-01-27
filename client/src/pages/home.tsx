@@ -20,6 +20,7 @@ const MOOD_OPTIONS = [
   { id: "scifi", label: "Sci-Fi & Fantasy", genres: ["Science Fiction", "Fantasy"] },
   { id: "romance", label: "Romance", genres: ["Romance"] },
   { id: "mystery", label: "Mystery & Crime", genres: ["Mystery", "Crime"] },
+  { id: "newreleases", label: "New Releases", genres: [], isNewReleases: true }, // Movies in theaters now
   { id: "top", label: "Top Picks", genres: [] }, // Special case - top rated/popular
 ];
 
@@ -54,7 +55,8 @@ export default function Home() {
     mutationFn: async () => {
       const genres = getSelectedGenres();
       const includeTopPicks = selectedMoods.includes("top");
-      const res = await apiRequest("POST", "/api/session/start", { genres, includeTopPicks });
+      const includeNewReleases = selectedMoods.includes("newreleases");
+      const res = await apiRequest("POST", "/api/session/start", { genres, includeTopPicks, includeNewReleases });
       return res.json() as Promise<StartSessionResponse>;
     },
     onSuccess: (data) => {
@@ -227,6 +229,8 @@ export default function Home() {
           <RoundPicker
             round={roundQuery.data.round}
             totalRounds={roundQuery.data.totalRounds}
+            baseTotalRounds={roundQuery.data.baseTotalRounds}
+            choicesMade={roundQuery.data.choicesMade}
             leftMovie={roundQuery.data.leftMovie}
             rightMovie={roundQuery.data.rightMovie}
             onChoice={handleChoice}
@@ -258,6 +262,7 @@ export default function Home() {
             recommendations={recommendations}
             isLoading={gameState === "loading-recommendations"}
             onPlayAgain={handlePlayAgain}
+            sessionId={sessionId}
           />
         )}
       </main>

@@ -329,6 +329,30 @@ export async function getTopRatedMovies(listSource: string, page: number = 1): P
   }
 }
 
+export async function getNowPlayingMovies(listSource: string, page: number = 1): Promise<Movie[]> {
+  try {
+    const data = await tmdbFetch<{ results: TMDbSearchResult[] }>("/movie/now_playing", { 
+      page: page.toString(),
+      region: "AU" // Focus on Australia for more relevant releases
+    });
+    
+    const movies: Movie[] = [];
+    for (const result of data.results) {
+      const movie = await getMovieDetails(result.id);
+      if (movie) {
+        movie.listSource = listSource;
+        movies.push(movie);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    return movies;
+  } catch (error) {
+    console.error("Failed to get now playing movies:", error);
+    return [];
+  }
+}
+
 export async function getWatchProviders(tmdbId: number): Promise<WatchProvidersResult> {
   try {
     const data = await tmdbFetch<TMDbWatchProvidersResponse>(`/movie/${tmdbId}/watch/providers`);

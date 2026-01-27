@@ -239,3 +239,105 @@ function extractTopGenres(movies: Movie[]): string[] {
     .slice(0, 3)
     .map(([genre]) => genre);
 }
+
+// Generate a single replacement recommendation when user marks one as "seen it"
+export async function generateReplacementRecommendation(
+  chosenMovies: Movie[],
+  excludeTmdbIds: number[]
+): Promise<Recommendation | null> {
+  const movieDescriptions = chosenMovies.map((m) => ({
+    title: m.title,
+    year: m.year,
+    genres: m.genres,
+    director: m.director || "Unknown",
+    cast: m.cast?.slice(0, 3) || [],
+    keywords: m.keywords?.slice(0, 5) || [],
+  }));
+
+  const randomSeed = Math.floor(Math.random() * 100000);
+
+  const prompt = `You are a film expert. A user selected these movies in a preference game:
+
+${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}) - ${m.genres.join(", ")}`).join("\n")}
+
+They've already seen or dismissed movies with TMDb IDs: ${excludeTmdbIds.join(", ")}
+
+Recommend ONE movie that fits their taste profile. Choose something they likely haven't seen - explore international films, cult classics, or underseen gems.
+
+[Seed: ${randomSeed}]
+
+Respond in JSON format:
+{
+  "title": "Movie Title",
+  "year": 2020,
+  "reason": "A short, personalized reason (1-2 sentences) why this fits their taste"
+}`;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+      max_tokens: 300,
+      temperature: 0.95,
+    });
+
+    const content = response.choices[0]?.message?.content || "{}";
+    const result: AIRecommendationResult = JSON.parse(content);
+
+    // Search for the movie on TMDb
+    const searchResult = await searchMovieByTitle(result.title, result.year);
+    
+    if (!searchResult || excludeTmdbIds.includes(searchResult.id)) {
+      // Try from catalogue as fallback
+      const allMovies = getAllMovies();
+      const eligibleMovies = allMovies.filter(
+        (m) => !excludeTmdbIds.includes(m.tmdbId) && m.rating && m.rating >= 7.0
+      );
+      
+      if (eligibleMovies.length > 0) {
+        const fallbackMovie = shuffleArray([...eligibleMovies])[0];
+        const trailerUrl = await getMovieTrailer(fallbackMovie.tmdbId);
+        return {
+          movie: { ...fallbackMovie, listSource: "replacement" },
+          trailerUrl,
+          reason: `A great pick based on your taste in ${fallbackMovie.genres.slice(0, 2).join(" and ")} films!`,
+        };
+      }
+      return null;
+    }
+
+    // Get full movie details
+    const movieDetails = await getMovieDetails(searchResult.id);
+    if (!movieDetails) return null;
+
+    const trailerUrl = await getMovieTrailer(searchResult.id);
+    movieDetails.listSource = "replacement";
+
+    return {
+      movie: movieDetails,
+      trailerUrl,
+      reason: result.reason,
+    };
+  } catch (error) {
+    console.error("Failed to generate replacement:", error);
+    
+    // Fallback: pick from catalogue
+    const allMovies = getAllMovies();
+    const eligibleMovies = allMovies.filter(
+      (m) => !excludeTmdbIds.includes(m.tmdbId) && m.rating && m.rating >= 7.0
+    );
+    
+    if (eligibleMovies.length > 0) {
+      const fallbackMovie = shuffleArray([...eligibleMovies])[0];
+      const trailerUrl = await getMovieTrailer(fallbackMovie.tmdbId);
+      return {
+        movie: { ...fallbackMovie, listSource: "replacement" },
+        trailerUrl,
+        reason: `A fresh pick for your ${fallbackMovie.genres[0]} cravings!`,
+      };
+    }
+    
+    return null;
+  }
+}

@@ -78,6 +78,8 @@ export const roundPairResponseSchema = z.object({
   sessionId: z.string(),
   round: z.number(),
   totalRounds: z.number(),
+  baseTotalRounds: z.number(), // Original total rounds before any skips (for progress calculation)
+  choicesMade: z.number(), // Number of actual choices made (for progress calculation)
   leftMovie: movieSchema,
   rightMovie: movieSchema,
   isComplete: z.boolean(),

@@ -6,6 +6,8 @@ interface SessionWithFilters extends Session {
   _createdAt: number;
   _genres: string[];
   _includeTopPicks: boolean;
+  _includeNewReleases: boolean;
+  _baseTotalRounds: number; // Original total rounds before skips
 }
 
 // In-memory session storage
@@ -26,7 +28,7 @@ setInterval(() => {
 }, 5 * 60 * 1000); // Every 5 minutes
 
 export const sessionStorage = {
-  createSession(genres: string[] = [], includeTopPicks: boolean = false): Session {
+  createSession(genres: string[] = [], includeTopPicks: boolean = false, includeNewReleases: boolean = false): Session {
     const sessionId = uuidv4();
     const session: SessionWithFilters = {
       sessionId,
@@ -37,15 +39,22 @@ export const sessionStorage = {
       _createdAt: Date.now(),
       _genres: genres,
       _includeTopPicks: includeTopPicks,
+      _includeNewReleases: includeNewReleases,
+      _baseTotalRounds: 7, // Original total rounds
     };
     sessions.set(sessionId, session);
     return session;
   },
 
-  getSessionFilters(sessionId: string): { genres: string[]; includeTopPicks: boolean } | undefined {
+  getSessionFilters(sessionId: string): { genres: string[]; includeTopPicks: boolean; includeNewReleases: boolean } | undefined {
     const session = sessions.get(sessionId);
     if (!session) return undefined;
-    return { genres: session._genres, includeTopPicks: session._includeTopPicks };
+    return { genres: session._genres, includeTopPicks: session._includeTopPicks, includeNewReleases: session._includeNewReleases };
+  },
+
+  getBaseTotalRounds(sessionId: string): number {
+    const session = sessions.get(sessionId);
+    return session?._baseTotalRounds ?? 7;
   },
 
   getSession(sessionId: string): Session | undefined {

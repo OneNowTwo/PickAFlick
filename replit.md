@@ -35,10 +35,11 @@ PickAFlick is a comparison-based movie picker where users complete 7 rounds of c
 
 ## API Endpoints
 ### Session/Game
-- `POST /api/session/start` - Creates new game session. Accepts optional `genres` array and `includeTopPicks` boolean to filter movies. Returns sessionId and totalRounds
-- `GET /api/session/:sessionId/round` - Returns current round's movie pair
+- `POST /api/session/start` - Creates new game session. Accepts optional `genres` array, `includeTopPicks` and `includeNewReleases` booleans to filter movies. Returns sessionId and totalRounds
+- `GET /api/session/:sessionId/round` - Returns current round's movie pair (includes baseTotalRounds and choicesMade for progress calculation)
 - `POST /api/session/:sessionId/choose` - Submit movie choice for current round
 - `GET /api/session/:sessionId/recommendations` - Get AI-powered movie recommendations
+- `POST /api/session/:sessionId/replacement` - Get replacement recommendation when user marks one as "Seen It"
 
 ### Watchlist
 - `GET /api/watchlist` - Get all saved movies in watchlist
@@ -68,9 +69,13 @@ Primary: IMDb Lists (when available)
 4. ls000873904 - Best Comedies
 5. ls005747458 - Critically Acclaimed
 
+Always included from TMDb:
+- **New Releases** - "Now Playing" movies currently in theaters (region: AU)
+
 Fallback: TMDb API (when IMDb scraping fails)
 - Top Rated movies
 - Popular Now movies
+- New Releases (Now Playing)
 - Horror (genre ID: 27)
 - Comedy (genre ID: 35)
 - Sci-Fi & Fantasy (genre IDs: 878, 14)
@@ -79,12 +84,25 @@ Fallback: TMDb API (when IMDb scraping fails)
 - Dark cinema theme (very dark background ~4% lightness for immersive feel)
 - Side-by-side movie posters with click-to-select animation (chosen scales up, unchosen fades)
 - No confirm button - clicking a poster auto-advances to next round for frictionless flow
-- Progress bar showing round completion
+- Progress ring showing round completion (uses choicesMade/baseTotalRounds so skip doesn't move progress backwards)
+- Skip button adds +1 round to compensate, but progress percentage stays frozen
 - Results page shows one recommendation at a time with carousel navigation
-- Like/Maybe/Back/Next controls to rate each recommendation
+- "Seen It" button removes recommendation and AI generates a replacement
+- Save to Watchlist/Back/Next controls on results screen
 - Preference profile cards display full text without truncation
 - Trailer auto-plays (muted) for each recommendation
 - Uses Inter font family for clean modern look
+
+## Mood/Genre Options
+- Action & Adventure
+- Comedy
+- Drama
+- Horror & Thriller
+- Sci-Fi & Fantasy
+- Romance
+- Mystery & Crime
+- **New Releases** - Movies currently in theaters
+- Top Picks - Top rated and popular movies
 
 ## Development
 - Run with `npm run dev`

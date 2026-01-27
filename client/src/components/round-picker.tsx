@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 interface RoundPickerProps {
   round: number;
   totalRounds: number;
+  baseTotalRounds: number; // Original total before skips
+  choicesMade: number; // Actual choices made
   leftMovie: Movie;
   rightMovie: Movie;
   onChoice: (chosenMovieId: number) => void;
@@ -178,6 +180,8 @@ function ProgressRing({ progress, round, size = 90 }: { progress: number; round:
 export function RoundPicker({
   round,
   totalRounds,
+  baseTotalRounds,
+  choicesMade,
   leftMovie,
   rightMovie,
   onChoice,
@@ -246,8 +250,9 @@ export function RoundPicker({
     };
   }, []);
 
-  // Calculate progress percentage (ring closes as rounds complete)
-  const progress = ((round - 1) / totalRounds) * 100;
+  // Calculate progress based on actual choices made vs base total rounds
+  // This way, skipping doesn't move the progress bar backwards
+  const progress = (choicesMade / baseTotalRounds) * 100;
 
   const getPosterUrl = (movie: Movie) => {
     return movie.posterPath 

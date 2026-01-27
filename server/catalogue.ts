@@ -1,6 +1,6 @@
 import type { Movie } from "@shared/schema";
 import { getAllIMDbMovies, getIMDbLists } from "./imdb-scraper";
-import { resolveMovieFromTitle, discoverMovies, getTopRatedMovies, getPopularMovies } from "./tmdb";
+import { resolveMovieFromTitle, discoverMovies, getTopRatedMovies, getPopularMovies, getNowPlayingMovies } from "./tmdb";
 
 interface CatalogueCache {
   allMovies: Movie[];
@@ -69,6 +69,18 @@ async function buildCatalogueFromTMDb(): Promise<{ allMovies: Movie[]; grouped: 
   allMovies.push(...popularMovies);
   console.log(`Got ${popularMovies.length} Popular Now movies total`);
 
+  // Fetch New Releases (Now Playing - movies currently in theaters)
+  console.log("Fetching New Releases / Now Playing movies (2 pages)...");
+  const newReleaseMovies: Movie[] = [];
+  for (let page = 1; page <= 2; page++) {
+    const movies = await getNowPlayingMovies("New Releases", page);
+    newReleaseMovies.push(...movies);
+    console.log(`  Page ${page}: ${movies.length} movies`);
+  }
+  grouped["New Releases"] = newReleaseMovies;
+  allMovies.push(...newReleaseMovies);
+  console.log(`Got ${newReleaseMovies.length} New Releases movies total`);
+
   // Genre categories with their TMDb genre IDs (2 pages each)
   const genreCategories = [
     { name: "Horror", genreIds: [27], minRating: 5.5 },
@@ -136,6 +148,20 @@ async function buildCatalogue(): Promise<void> {
         grouped[listName] = listMovies;
         allMovies.push(...listMovies);
         console.log(`Resolved ${listMovies.length} movies for ${listName}`);
+      }
+      
+      // Always add New Releases from TMDb (Now Playing) even when IMDb works
+      console.log("Adding New Releases from TMDb...");
+      const newReleaseMovies: Movie[] = [];
+      for (let page = 1; page <= 2; page++) {
+        const movies = await getNowPlayingMovies("New Releases", page);
+        newReleaseMovies.push(...movies);
+        console.log(`  Page ${page}: ${movies.length} movies`);
+      }
+      if (newReleaseMovies.length > 0) {
+        grouped["New Releases"] = newReleaseMovies;
+        allMovies.push(...newReleaseMovies);
+        console.log(`Got ${newReleaseMovies.length} New Releases movies total`);
       }
     } else {
       // IMDb scraping failed, use TMDb fallback
@@ -267,35 +293,56 @@ export function getRandomMoviePair(excludeIds: Set<number> = new Set()): [Movie,
 export function getRandomMoviePairFiltered(
   genres: string[],
   includeTopPicks: boolean,
-  excludeIds: Set<number> = new Set()
+  excludeIds: Set<number> = new Set(),
+  includeNewReleases: boolean = false
 ): [Movie, Movie] | null {
   let available: Movie[];
   
-  if (genres.length === 0 && !includeTopPicks) {
+  if (genres.length === 0 && !includeTopPicks && !includeNewReleases) {
     // No filters - use all movies
     available = cache.allMovies.filter((m) => !excludeIds.has(m.id));
   } else {
-    // Filter by genres and/or top picks
+    // Filter by genres and/or top picks and/or new releases
     available = cache.allMovies.filter((m) => {
       if (excludeIds.has(m.id)) return false;
       
       // Check if movie is from top picks lists (Top Rated, Popular Now)
       const isTopPick = m.listSource === "Top Rated" || m.listSource === "Popular Now";
       
+      // Check if movie is a new release
+      const isNewRelease = m.listSource === "New Releases";
+      
       // Check if movie matches any selected genre
       const matchesGenre = genres.length > 0 && m.genres.some(g => genres.includes(g));
       
-      // If only top picks selected (no genres), only show top picks
-      if (includeTopPicks && genres.length === 0) {
-        return isTopPick;
+      // Build criteria
+      const specialFiltersOnly = genres.length === 0;
+      
+      if (specialFiltersOnly) {
+        // Only special filters selected (top picks and/or new releases)
+        if (includeTopPicks && includeNewReleases) {
+          return isTopPick || isNewRelease;
+        }
+        if (includeTopPicks) {
+          return isTopPick;
+        }
+        if (includeNewReleases) {
+          return isNewRelease;
+        }
       }
       
-      // If genres selected (with or without top picks), show matching genres OR top picks
+      // Genres selected - combine with special filters
+      if (includeTopPicks && includeNewReleases) {
+        return matchesGenre || isTopPick || isNewRelease;
+      }
       if (includeTopPicks) {
         return matchesGenre || isTopPick;
       }
+      if (includeNewReleases) {
+        return matchesGenre || isNewRelease;
+      }
       
-      // Only genres selected, no top picks
+      // Only genres selected
       return matchesGenre;
     });
   }

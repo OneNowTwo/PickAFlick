@@ -1,7 +1,7 @@
-import type { RecommendationsResponse, WatchProvidersResponse } from "@shared/schema";
+import type { RecommendationsResponse, WatchProvidersResponse, Recommendation } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Play, RefreshCw, Film, Palette, Calendar, Sparkles, ChevronLeft, ChevronRight, ThumbsUp, Bookmark, Tv, Brain } from "lucide-react";
+import { Loader2, Play, RefreshCw, Film, Palette, Calendar, Sparkles, ChevronLeft, ChevronRight, ThumbsUp, Bookmark, Tv, Brain, Eye } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -49,22 +49,87 @@ interface ResultsScreenProps {
   recommendations: RecommendationsResponse | null;
   isLoading: boolean;
   onPlayAgain: () => void;
+  sessionId?: string | null; // Needed for replacement requests
 }
 
-export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: ResultsScreenProps) {
+export function ResultsScreen({ recommendations, isLoading, onPlayAgain, sessionId }: ResultsScreenProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [likedMovies, setLikedMovies] = useState<Set<number>>(new Set());
   const [maybeMovies, setMaybeMovies] = useState<Set<number>>(new Set());
+  const [seenMovies, setSeenMovies] = useState<Set<number>>(new Set()); // Track "seen it" movies
+  const [localRecs, setLocalRecs] = useState<Recommendation[]>([]); // Local mutable recs
   const [autoPlayTrailer, setAutoPlayTrailer] = useState(true);
   const [showWatchProviders, setShowWatchProviders] = useState(false);
   const { toast } = useToast();
 
-  const currentTmdbId = recommendations?.recommendations[currentIndex]?.movie.tmdbId;
+  // Initialize local recs from recommendations
+  useEffect(() => {
+    if (recommendations?.recommendations) {
+      setLocalRecs([...recommendations.recommendations]);
+    }
+  }, [recommendations]);
+
+  // Mutation to get a replacement recommendation
+  const replacementMutation = useMutation({
+    mutationFn: async (excludeTmdbIds: number[]) => {
+      const res = await apiRequest("POST", `/api/session/${sessionId}/replacement`, { excludeTmdbIds });
+      return res.json() as Promise<Recommendation>;
+    },
+    onSuccess: (newRec) => {
+      // Add the new recommendation to the end
+      setLocalRecs(prev => [...prev, newRec]);
+      toast({
+        title: "New recommendation added",
+        description: `"${newRec.movie.title}" has been added to your picks!`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "No more recommendations",
+        description: "We couldn't find another movie to suggest.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Filter out "seen it" movies for display
+  const displayRecs = localRecs.filter(r => !seenMovies.has(r.movie.tmdbId));
+  const currentRec = displayRecs[currentIndex];
+  const currentTmdbId = currentRec?.movie.tmdbId;
 
   const { data: watchProviders, isLoading: isLoadingProviders } = useQuery<WatchProvidersResponse>({
     queryKey: [`/api/watch-providers/${currentTmdbId}`],
     enabled: showWatchProviders && !!currentTmdbId,
   });
+
+  // Handle "Seen It" - remove current and fetch replacement
+  const handleSeenIt = () => {
+    if (!currentRec || !sessionId) return;
+    
+    // Add to seen set
+    const tmdbId = currentRec.movie.tmdbId;
+    const newSeenMovies = new Set(seenMovies);
+    newSeenMovies.add(tmdbId);
+    setSeenMovies(newSeenMovies);
+    
+    // Build list of all tmdbIds to exclude (including previously seen and current recs)
+    const allExcludedIds = [
+      ...Array.from(seenMovies),
+      tmdbId,
+      ...localRecs.map(r => r.movie.tmdbId),
+    ];
+    
+    // Request a replacement
+    replacementMutation.mutate(allExcludedIds);
+    
+    // Adjust index if we were at the end
+    const newDisplayRecs = displayRecs.filter(r => r.movie.tmdbId !== tmdbId);
+    if (currentIndex >= newDisplayRecs.length && newDisplayRecs.length > 0) {
+      setCurrentIndex(newDisplayRecs.length - 1);
+    }
+    
+    setAutoPlayTrailer(true);
+  };
 
   const addToWatchlistMutation = useMutation({
     mutationFn: async (movie: { tmdbId: number; title: string; year: number | null; posterPath: string | null; genres: string[]; rating: number | null }) => {
@@ -126,7 +191,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
     );
   }
 
-  if (!recommendations || recommendations.recommendations.length === 0) {
+  if (!recommendations || displayRecs.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-6 min-h-[60vh]">
         <div className="text-center">
@@ -142,8 +207,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
   }
 
   const { preferenceProfile } = recommendations;
-  const currentRec = recommendations.recommendations[currentIndex];
-  const totalRecs = recommendations.recommendations.length;
+  const totalRecs = displayRecs.length;
   const revealMessage = generateRevealMessage(preferenceProfile);
 
   const handleNext = () => {
@@ -253,16 +317,16 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
           {currentIndex + 1} / {totalRecs}
         </span>
         <div className="flex gap-1">
-          {recommendations.recommendations.map((_, i) => (
+          {displayRecs.map((rec, i) => (
             <button
-              key={i}
+              key={rec.movie.tmdbId}
               onClick={() => { setCurrentIndex(i); setAutoPlayTrailer(true); }}
               className={`w-2 h-2 rounded-full transition-all ${
                 i === currentIndex 
                   ? "bg-primary w-4" 
-                  : likedMovies.has(recommendations.recommendations[i].movie.id)
+                  : likedMovies.has(rec.movie.id)
                     ? "bg-green-500"
-                    : maybeMovies.has(recommendations.recommendations[i].movie.id)
+                    : maybeMovies.has(rec.movie.id)
                       ? "bg-yellow-500"
                       : "bg-muted-foreground/30"
               }`}
@@ -372,6 +436,22 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain }: Resul
         >
           <Bookmark className="w-4 h-4" />
           {isLiked ? "Saved to Watchlist" : "Save to Watchlist"}
+        </Button>
+
+        <Button
+          variant="outline"
+          size="default"
+          onClick={handleSeenIt}
+          disabled={replacementMutation.isPending || !sessionId}
+          className="gap-1.5"
+          data-testid="button-seen-it"
+        >
+          {replacementMutation.isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Eye className="w-4 h-4" />
+          )}
+          Seen It
         </Button>
 
         <Button

@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { getCatalogue, getRecommendations, getHealth, initCatalogue, isCatalogueReady, getCatalogueStatus, getRandomMoviePair, getRandomMoviePairFiltered } from "./catalogue";
 import { getMovieTrailer, getWatchProviders } from "./tmdb";
 import { sessionStorage } from "./session-storage";
-import { generateRecommendations } from "./ai-recommender";
+import { generateRecommendations, generateReplacementRecommendation } from "./ai-recommender";
 import { storage } from "./storage";
 import type { RoundPairResponse, ChoiceResponse } from "@shared/schema";
 import { insertWatchlistSchema } from "@shared/schema";
@@ -49,11 +49,12 @@ export async function registerRoutes(
       // Parse genre filters from request
       const genres = Array.isArray(req.body?.genres) ? req.body.genres : [];
       const includeTopPicks = req.body?.includeTopPicks === true;
+      const includeNewReleases = req.body?.includeNewReleases === true;
 
-      const session = sessionStorage.createSession(genres, includeTopPicks);
+      const session = sessionStorage.createSession(genres, includeTopPicks, includeNewReleases);
       
       // Generate first pair using filters
-      const pair = getRandomMoviePairFiltered(genres, includeTopPicks);
+      const pair = getRandomMoviePairFiltered(genres, includeTopPicks, new Set(), includeNewReleases);
       if (!pair) {
         res.status(500).json({ error: "Not enough movies available" });
         return;
@@ -88,10 +89,13 @@ export async function registerRoutes(
       }
 
       if (session.isComplete) {
+        const baseTotalRounds = sessionStorage.getBaseTotalRounds(sessionId);
         const response: RoundPairResponse = {
           sessionId,
           round: session.currentRound,
           totalRounds: session.totalRounds,
+          baseTotalRounds,
+          choicesMade: session.choices.length,
           leftMovie: session.choices[session.choices.length - 1].leftMovie,
           rightMovie: session.choices[session.choices.length - 1].rightMovie,
           isComplete: true,
@@ -111,7 +115,7 @@ export async function registerRoutes(
         );
         const filters = sessionStorage.getSessionFilters(sessionId);
         const pair = filters 
-          ? getRandomMoviePairFiltered(filters.genres, filters.includeTopPicks, usedIds)
+          ? getRandomMoviePairFiltered(filters.genres, filters.includeTopPicks, usedIds, filters.includeNewReleases)
           : getRandomMoviePair(usedIds);
         
         if (!pair) {
@@ -134,10 +138,13 @@ export async function registerRoutes(
         rejectedMovie: choice.chosenMovieId === choice.leftMovie.id ? choice.rightMovie : choice.leftMovie,
       }));
 
+      const baseTotalRounds = sessionStorage.getBaseTotalRounds(sessionId);
       const response: RoundPairResponse = {
         sessionId,
         round: session.currentRound,
         totalRounds: session.totalRounds,
+        baseTotalRounds,
+        choicesMade: session.choices.length,
         leftMovie: currentPair.leftMovie,
         rightMovie: currentPair.rightMovie,
         isComplete: false,
@@ -207,7 +214,7 @@ export async function registerRoutes(
         );
         const filters = sessionStorage.getSessionFilters(sessionId);
         const pair = filters 
-          ? getRandomMoviePairFiltered(filters.genres, filters.includeTopPicks, usedIds)
+          ? getRandomMoviePairFiltered(filters.genres, filters.includeTopPicks, usedIds, filters.includeNewReleases)
           : getRandomMoviePair(usedIds);
         
         if (pair) {
@@ -328,6 +335,44 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error generating recommendations:", error);
       res.status(500).json({ error: "Failed to generate recommendations" });
+    }
+  });
+
+  // Get a replacement recommendation when user marks one as "seen it"
+  app.post("/api/session/:sessionId/replacement", async (req: Request, res: Response) => {
+    try {
+      const { sessionId } = req.params;
+      const { excludeTmdbIds } = req.body;
+
+      if (!Array.isArray(excludeTmdbIds)) {
+        res.status(400).json({ error: "excludeTmdbIds must be an array" });
+        return;
+      }
+
+      const session = sessionStorage.getSession(sessionId);
+      if (!session) {
+        res.status(404).json({ error: "Session not found" });
+        return;
+      }
+
+      const chosenMovies = sessionStorage.getChosenMovies(sessionId);
+      if (chosenMovies.length === 0) {
+        res.status(400).json({ error: "No choices recorded" });
+        return;
+      }
+
+      const replacement = await generateReplacementRecommendation(chosenMovies, excludeTmdbIds);
+      
+      if (!replacement) {
+        res.status(404).json({ error: "No replacement available" });
+        return;
+      }
+
+      res.set(NO_CACHE_HEADERS);
+      res.json(replacement);
+    } catch (error) {
+      console.error("Error generating replacement:", error);
+      res.status(500).json({ error: "Failed to generate replacement" });
     }
   });
 
