@@ -15,7 +15,8 @@ PickAFlick is a comparison-based movie picker where users complete 7 rounds of c
 - `/client/src/pages/watchlist.tsx` - Watchlist page showing saved/liked movies with watched toggle
 - `/client/src/components/round-picker.tsx` - Side-by-side movie comparison with round counter and progress
 - `/client/src/components/movie-choice-card.tsx` - Clickable movie poster with selection indicator
-- `/client/src/components/results-screen.tsx` - AI recommendations display with embedded trailers, Like button saves to watchlist
+- `/client/src/components/results-screen.tsx` - AI recommendations display with embedded trailers, Like button saves to watchlist, Share button
+- `/client/src/pages/share.tsx` - Shared recommendations viewer (view-only)
 
 ### Backend (Node.js + Express + TypeScript)
 - `/server/routes.ts` - API endpoints including session, catalogue, and watchlist endpoints
@@ -29,6 +30,7 @@ PickAFlick is a comparison-based movie picker where users complete 7 rounds of c
 
 ### Database
 - PostgreSQL database with `watchlist` table for persisting liked movies
+- `shared_recommendations` table for shareable recommendation links
 
 ### Shared
 - `/shared/schema.ts` - TypeScript types for Movie, Session, Watchlist, etc.
@@ -50,6 +52,10 @@ PickAFlick is a comparison-based movie picker where users complete 7 rounds of c
 
 ### Watch Providers
 - `GET /api/watch-providers/:tmdbId` - Get streaming/rent/buy options for a movie (Australia region)
+
+### Share
+- `POST /api/share` - Save recommendations and get a unique share ID
+- `GET /api/share/:shareId` - Retrieve shared recommendations for viewing
 
 ### Legacy
 - `GET /api/catalogue` - Returns 75 random movies (15 from each of 5 IMDb lists)
