@@ -61,7 +61,6 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   const [autoPlayTrailer, setAutoPlayTrailer] = useState(true);
   const [showWatchProviders, setShowWatchProviders] = useState(false);
   const [trailerError, setTrailerError] = useState(false);
-  const [shareId, setShareId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
 
@@ -164,7 +163,6 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
       return res.json() as Promise<{ shareId: string }>;
     },
     onSuccess: async (data) => {
-      setShareId(data.shareId);
       const shareUrl = `${window.location.origin}/share/${data.shareId}`;
       
       // Try native share first (mobile)
@@ -568,7 +566,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
           variant="default"
           onClick={() => shareMutation.mutate()}
           disabled={shareMutation.isPending}
-          className="gap-1.5 bg-primary"
+          className="gap-1.5"
           data-testid="button-share"
         >
           {shareMutation.isPending ? (

@@ -605,14 +605,43 @@ export async function registerRoutes(
         return;
       }
 
-      // Generate unique share ID (8 characters)
-      const shareId = Math.random().toString(36).substring(2, 10);
+      // Generate unique share ID (8 characters) with collision handling
+      const generateShareId = () => {
+        const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        let result = '';
+        for (let i = 0; i < 8; i++) {
+          result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return result;
+      };
 
-      await storage.saveSharedRecommendations(
-        shareId,
-        JSON.stringify(recommendations),
-        JSON.stringify(preferenceProfile)
-      );
+      let shareId = generateShareId();
+      let saved = false;
+      let attempts = 0;
+      const maxAttempts = 5;
+
+      // Retry with new ID if collision occurs
+      while (!saved && attempts < maxAttempts) {
+        try {
+          await storage.saveSharedRecommendations(
+            shareId,
+            JSON.stringify(recommendations),
+            JSON.stringify(preferenceProfile)
+          );
+          saved = true;
+        } catch (e: any) {
+          if (e.code === '23505') { // Unique constraint violation
+            shareId = generateShareId();
+            attempts++;
+          } else {
+            throw e;
+          }
+        }
+      }
+
+      if (!saved) {
+        throw new Error("Failed to generate unique share ID");
+      }
 
       res.json({ shareId });
     } catch (error) {

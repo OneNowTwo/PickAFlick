@@ -214,20 +214,20 @@ export default function SharePage() {
           {/* Movie Info */}
           <div className="p-3 md:p-4">
             <div className="flex items-center gap-2 min-w-0 flex-wrap">
-              <h3 className="font-bold text-base md:text-xl text-foreground">
+              <h3 className="font-bold text-base md:text-xl text-foreground" data-testid="text-movie-title">
                 {currentRec?.movie.title}
               </h3>
-              <span className="text-muted-foreground text-sm shrink-0">
+              <span className="text-muted-foreground text-sm shrink-0" data-testid="text-movie-year">
                 {currentRec?.movie.year}
               </span>
               {currentRec?.movie.rating && (
-                <Badge variant="secondary" className="bg-primary/20 text-primary border-0 shrink-0 text-sm">
+                <Badge variant="secondary" className="bg-primary/20 text-primary border-0 shrink-0 text-sm" data-testid="text-movie-rating">
                   {currentRec.movie.rating.toFixed(1)}★
                 </Badge>
               )}
             </div>
             
-            <p className="text-foreground/70 text-sm leading-relaxed mt-2 line-clamp-2">
+            <p className="text-foreground/70 text-sm leading-relaxed mt-2 line-clamp-2" data-testid="text-movie-reason">
               {currentRec?.reason}
             </p>
           </div>
