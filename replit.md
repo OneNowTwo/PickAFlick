@@ -31,6 +31,7 @@ PickAFlick is a comparison-based movie picker where users complete 7 rounds of c
 ### Database
 - PostgreSQL database with `watchlist` table for persisting liked movies
 - `shared_recommendations` table for shareable recommendation links
+- `movie_catalogue_cache` table for instant cold starts (caches entire movie catalogue)
 
 ### Shared
 - `/shared/schema.ts` - TypeScript types for Movie, Session, Watchlist, etc.
@@ -113,7 +114,7 @@ Fallback: TMDb API (when IMDb scraping fails)
 - Run with `npm run dev`
 - Frontend: Vite on port 5000
 - Backend: Express on port 5000
-- Catalogue builds on startup (takes ~1-2 minutes)
+- Startup is instant via database catalogue cache; first-time builds take ~1-2 minutes, then cached for future startups
 
 ## AI Recommendations
 - Uses GPT-4o-mini via Replit AI Integrations
