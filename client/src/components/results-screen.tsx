@@ -342,6 +342,13 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         </p>
       </div>
 
+      {/* Mobile Taste Summary - Compact version for mobile */}
+      {(preferenceProfile.visualStyle || preferenceProfile.mood) && (
+        <p className="md:hidden text-white/70 text-xs text-center px-4 max-w-sm" data-testid="mobile-taste-summary">
+          {preferenceProfile.visualStyle || preferenceProfile.mood}
+        </p>
+      )}
+
       {/* Preference Summary - Hidden on mobile for space */}
       <div className="hidden md:flex flex-wrap items-center justify-center gap-2 text-sm max-w-4xl" data-testid="preference-profile">
         {preferenceProfile.topGenres.length > 0 && (
@@ -465,16 +472,17 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
 
         {/* Movie Info */}
         <div className="p-3 md:p-4">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <h3 className="font-bold text-base md:text-xl text-foreground truncate max-w-[200px] md:max-w-none">
+          {/* Title row - stacks on mobile */}
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="font-bold text-base md:text-xl text-foreground" data-testid="text-movie-title">
                 {currentRec.movie.title}
               </h3>
-              <span className="text-muted-foreground text-sm shrink-0">
+              <span className="text-muted-foreground text-sm shrink-0" data-testid="text-movie-year">
                 {currentRec.movie.year}
               </span>
               {currentRec.movie.rating && (
-                <Badge variant="secondary" className="bg-primary/20 text-primary border-0 shrink-0 text-sm">
+                <Badge variant="secondary" className="bg-primary/20 text-primary border-0 shrink-0 text-sm" data-testid="text-movie-rating">
                   {currentRec.movie.rating.toFixed(1)}★
                 </Badge>
               )}
@@ -483,7 +491,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
               variant="default"
               size="default"
               onClick={() => setShowWatchProviders(true)}
-              className="gap-2 shrink-0"
+              className="gap-2 shrink-0 w-full md:w-auto"
               data-testid="button-watch-now"
             >
               <Tv className="w-4 h-4" />
@@ -491,7 +499,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
             </Button>
           </div>
           
-          <p className="text-foreground/70 text-sm leading-relaxed mt-2 line-clamp-2">
+          <p className="text-foreground/70 text-sm leading-relaxed mt-2 line-clamp-2" data-testid="text-movie-reason">
             {currentRec.reason}
           </p>
         </div>

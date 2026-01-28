@@ -97,7 +97,14 @@ export default function SharePage() {
           </p>
         </div>
 
-        {/* Preference Profile */}
+        {/* Mobile Taste Summary */}
+        {(preferenceProfile.visualStyle || preferenceProfile.mood) && (
+          <p className="md:hidden text-white/70 text-xs text-center px-4 max-w-sm" data-testid="mobile-taste-summary">
+            {preferenceProfile.visualStyle || preferenceProfile.mood}
+          </p>
+        )}
+
+        {/* Preference Profile - Desktop only */}
         <div className="hidden md:flex flex-wrap items-center justify-center gap-2 text-sm max-w-4xl">
           {preferenceProfile.topGenres.length > 0 && (
             <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
