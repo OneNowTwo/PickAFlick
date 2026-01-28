@@ -1,4 +1,4 @@
-import { watchlist, sharedRecommendations, type WatchlistItem, type InsertWatchlistItem, type SharedRecommendation } from "@shared/schema";
+import { watchlist, sharedRecommendations, movieCatalogueCache, type WatchlistItem, type InsertWatchlistItem, type SharedRecommendation, type MovieCatalogueCache } from "@shared/schema";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
 
@@ -10,6 +10,8 @@ export interface IStorage {
   getWatchlistByTmdbId(tmdbId: number): Promise<WatchlistItem | undefined>;
   saveSharedRecommendations(shareId: string, recommendations: string, preferenceProfile: string): Promise<SharedRecommendation>;
   getSharedRecommendations(shareId: string): Promise<SharedRecommendation | undefined>;
+  getCatalogueCache(): Promise<MovieCatalogueCache | undefined>;
+  saveCatalogueCache(movies: string, grouped: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -52,6 +54,26 @@ export class DatabaseStorage implements IStorage {
   async getSharedRecommendations(shareId: string): Promise<SharedRecommendation | undefined> {
     const [result] = await db.select().from(sharedRecommendations).where(eq(sharedRecommendations.shareId, shareId));
     return result;
+  }
+
+  async getCatalogueCache(): Promise<MovieCatalogueCache | undefined> {
+    const [result] = await db.select().from(movieCatalogueCache).where(eq(movieCatalogueCache.cacheKey, "catalogue"));
+    return result;
+  }
+
+  async saveCatalogueCache(movies: string, grouped: string): Promise<void> {
+    const existing = await this.getCatalogueCache();
+    if (existing) {
+      await db.update(movieCatalogueCache)
+        .set({ movies, grouped, updatedAt: new Date() })
+        .where(eq(movieCatalogueCache.cacheKey, "catalogue"));
+    } else {
+      await db.insert(movieCatalogueCache).values({
+        cacheKey: "catalogue",
+        movies,
+        grouped,
+      });
+    }
   }
 }
 

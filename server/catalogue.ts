@@ -1,6 +1,7 @@
 import type { Movie } from "@shared/schema";
 import { getAllIMDbMovies, getIMDbLists } from "./imdb-scraper";
 import { resolveMovieFromTitle, discoverMovies, getTopRatedMovies, getPopularMovies, getNowPlayingMovies } from "./tmdb";
+import { storage } from "./storage";
 
 interface CatalogueCache {
   allMovies: Movie[];
@@ -251,12 +252,55 @@ export function getHealth() {
 }
 
 export async function initCatalogue(): Promise<void> {
-  const cacheAge = cache.lastUpdated
-    ? (Date.now() - cache.lastUpdated.getTime()) / (1000 * 60 * 60)
-    : Infinity;
+  // First, try to load from database cache for instant startup
+  try {
+    const dbCache = await storage.getCatalogueCache();
+    
+    if (dbCache) {
+      const cacheAge = (Date.now() - new Date(dbCache.updatedAt).getTime()) / (1000 * 60 * 60);
+      console.log(`Found database cache (${cacheAge.toFixed(1)} hours old)`);
+      
+      // Load cached data immediately
+      const cachedMovies: Movie[] = JSON.parse(dbCache.movies);
+      const cachedGrouped: Record<string, Movie[]> = JSON.parse(dbCache.grouped);
+      
+      cache.allMovies = cachedMovies;
+      cache.grouped = cachedGrouped;
+      cache.lastUpdated = new Date(dbCache.updatedAt);
+      cache.buildComplete = true;
+      selectNewCatalogue();
+      
+      console.log(`Loaded ${cachedMovies.length} movies from database cache - ready to serve!`);
+      
+      // If cache is stale, rebuild in background (but don't block startup)
+      if (cacheAge > CATALOGUE_TTL_HOURS) {
+        console.log("Cache is stale, rebuilding in background...");
+        buildCatalogueAndSave().catch(err => console.error("Background rebuild failed:", err));
+      }
+      return;
+    }
+  } catch (error) {
+    console.log("No database cache found, will build fresh catalogue");
+  }
+  
+  // No database cache - build fresh (first-time setup)
+  await buildCatalogueAndSave();
+}
 
-  if (cacheAge > CATALOGUE_TTL_HOURS || cache.allMovies.length === 0) {
-    await buildCatalogue();
+async function buildCatalogueAndSave(): Promise<void> {
+  await buildCatalogue();
+  
+  // Save to database for future cold starts
+  if (cache.allMovies.length > 0) {
+    try {
+      await storage.saveCatalogueCache(
+        JSON.stringify(cache.allMovies),
+        JSON.stringify(cache.grouped)
+      );
+      console.log("Catalogue saved to database cache for instant future startups");
+    } catch (error) {
+      console.error("Failed to save catalogue to database:", error);
+    }
   }
 }
 

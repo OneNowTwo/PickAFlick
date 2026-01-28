@@ -13,6 +13,17 @@ export const sharedRecommendations = pgTable("shared_recommendations", {
 
 export type SharedRecommendation = typeof sharedRecommendations.$inferSelect;
 
+// Movie catalogue cache table for instant cold starts
+export const movieCatalogueCache = pgTable("movie_catalogue_cache", {
+  id: serial("id").primaryKey(),
+  cacheKey: text("cache_key").notNull().unique(), // "catalogue" - single row for now
+  movies: text("movies").notNull(), // JSON string of Movie[]
+  grouped: text("grouped").notNull(), // JSON string of Record<string, Movie[]>
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type MovieCatalogueCache = typeof movieCatalogueCache.$inferSelect;
+
 // Watchlist table for persisting liked movies
 export const watchlist = pgTable("watchlist", {
   id: serial("id").primaryKey(),
