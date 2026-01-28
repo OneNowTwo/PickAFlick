@@ -131,6 +131,7 @@ export type ChoiceResponse = z.infer<typeof choiceResponseSchema>;
 export const recommendationSchema = z.object({
   movie: movieSchema,
   trailerUrl: z.string().nullable(),
+  trailerUrls: z.array(z.string()).optional(), // Multiple trailer URLs for fallback
   reason: z.string(),
 });
 

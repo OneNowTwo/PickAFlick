@@ -188,59 +188,93 @@ export async function getMovieDetails(tmdbId: number): Promise<Movie | null> {
 }
 
 export async function getMovieTrailer(tmdbId: number): Promise<string | null> {
-  try {
-    // First try with AU region to get region-available videos
-    let data = await tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`, { 
-      language: "en-AU" 
-    });
+  const trailers = await getMovieTrailers(tmdbId);
+  return trailers.length > 0 ? trailers[0] : null;
+}
 
-    // If no results, try without region filter
-    if (data.results.length === 0) {
-      data = await tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`, {
+// Returns multiple trailer URLs for fallback when one is region-blocked
+export async function getMovieTrailers(tmdbId: number): Promise<string[]> {
+  try {
+    // Collect videos from multiple regions/languages for better coverage
+    const allVideos: TMDbVideoResult[] = [];
+    const seenKeys = new Set<string>();
+    
+    // Try AU region first
+    try {
+      const auData = await tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`, { 
+        language: "en-AU" 
+      });
+      for (const v of auData.results) {
+        if (!seenKeys.has(v.key)) {
+          seenKeys.add(v.key);
+          allVideos.push(v);
+        }
+      }
+    } catch (e) { /* ignore */ }
+
+    // Try US region
+    try {
+      const usData = await tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`, {
         language: "en-US"
       });
-    }
+      for (const v of usData.results) {
+        if (!seenKeys.has(v.key)) {
+          seenKeys.add(v.key);
+          allVideos.push(v);
+        }
+      }
+    } catch (e) { /* ignore */ }
     
-    // If still no results, try default (no language filter)
-    if (data.results.length === 0) {
-      data = await tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`);
-    }
+    // Try default (no language filter)
+    try {
+      const defaultData = await tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`);
+      for (const v of defaultData.results) {
+        if (!seenKeys.has(v.key)) {
+          seenKeys.add(v.key);
+          allVideos.push(v);
+        }
+      }
+    } catch (e) { /* ignore */ }
 
-    const youtubeVideos = data.results.filter((v) => v.site === "YouTube");
+    const youtubeVideos = allVideos.filter((v) => v.site === "YouTube");
+    const trailerUrls: string[] = [];
 
-    // Priority 1: Official trailer
-    const officialTrailer = youtubeVideos.find(
+    // Priority 1: Official trailers
+    const officialTrailers = youtubeVideos.filter(
       (v) => v.type === "Trailer" && v.official === true
     );
-    if (officialTrailer) {
-      return `https://www.youtube.com/embed/${officialTrailer.key}`;
+    for (const t of officialTrailers) {
+      trailerUrls.push(`https://www.youtube.com/embed/${t.key}`);
     }
 
-    // Priority 2: Any trailer (may not be marked as official)
-    const anyTrailer = youtubeVideos.find((v) => v.type === "Trailer");
-    if (anyTrailer) {
-      return `https://www.youtube.com/embed/${anyTrailer.key}`;
+    // Priority 2: Non-official trailers
+    const otherTrailers = youtubeVideos.filter(
+      (v) => v.type === "Trailer" && v.official !== true
+    );
+    for (const t of otherTrailers) {
+      trailerUrls.push(`https://www.youtube.com/embed/${t.key}`);
     }
 
-    // Priority 3: Official teaser
-    const officialTeaser = youtubeVideos.find(
+    // Priority 3: Official teasers
+    const officialTeasers = youtubeVideos.filter(
       (v) => v.type === "Teaser" && v.official === true
     );
-    if (officialTeaser) {
-      return `https://www.youtube.com/embed/${officialTeaser.key}`;
+    for (const t of officialTeasers) {
+      trailerUrls.push(`https://www.youtube.com/embed/${t.key}`);
     }
 
-    // Priority 4: Any teaser
-    const anyTeaser = youtubeVideos.find((v) => v.type === "Teaser");
-    if (anyTeaser) {
-      return `https://www.youtube.com/embed/${anyTeaser.key}`;
+    // Priority 4: Other teasers
+    const otherTeasers = youtubeVideos.filter(
+      (v) => v.type === "Teaser" && v.official !== true
+    );
+    for (const t of otherTeasers) {
+      trailerUrls.push(`https://www.youtube.com/embed/${t.key}`);
     }
 
-    // No trailer or teaser found - don't fall back to clips/scenes
-    return null;
+    return trailerUrls;
   } catch (error) {
-    console.error(`Failed to get trailer for ${tmdbId}:`, error);
-    return null;
+    console.error(`Failed to get trailers for ${tmdbId}:`, error);
+    return [];
   }
 }
 

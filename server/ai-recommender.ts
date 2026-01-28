@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { Movie, Recommendation, RecommendationsResponse } from "@shared/schema";
-import { searchMovieByTitle, getMovieTrailer, getMovieDetails } from "./tmdb";
+import { searchMovieByTitle, getMovieTrailer, getMovieTrailers, getMovieDetails } from "./tmdb";
 import { getAllMovies } from "./catalogue";
 
 const openai = new OpenAI({
@@ -182,15 +182,16 @@ CRITICAL NOTES:
           continue; // Skip if we couldn't get details
         }
 
-        // Get trailer
-        const trailerUrl = await getMovieTrailer(searchResult.id);
+        // Get all available trailers for fallback
+        const trailerUrls = await getMovieTrailers(searchResult.id);
 
         // Set the list source
         movieDetails.listSource = "ai-recommendation";
 
         recommendations.push({
           movie: movieDetails,
-          trailerUrl,
+          trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null,
+          trailerUrls,
           reason: rec.reason,
         });
 
@@ -215,11 +216,12 @@ CRITICAL NOTES:
     
     if (eligibleWildcards.length > 0) {
       const wildcardMovie = shuffleArray([...eligibleWildcards])[0];
-      const wildcardTrailer = await getMovieTrailer(wildcardMovie.tmdbId);
+      const wildcardTrailers = await getMovieTrailers(wildcardMovie.tmdbId);
       
       recommendations.push({
         movie: { ...wildcardMovie, listSource: "wildcard" },
-        trailerUrl: wildcardTrailer,
+        trailerUrl: wildcardTrailers.length > 0 ? wildcardTrailers[0] : null,
+        trailerUrls: wildcardTrailers,
         reason: `A surprise pick from our curated collection! This ${wildcardMovie.genres.slice(0, 2).join("/")} gem from ${wildcardMovie.year} might just become your next favorite.`,
       });
     }
@@ -245,10 +247,11 @@ CRITICAL NOTES:
 
     const fallbackRecs: Recommendation[] = [];
     for (const movie of fallbackMovies) {
-      const trailerUrl = await getMovieTrailer(movie.tmdbId);
+      const trailerUrls = await getMovieTrailers(movie.tmdbId);
       fallbackRecs.push({
         movie,
-        trailerUrl,
+        trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null,
+        trailerUrls,
         reason: "A great pick based on your taste!",
       });
     }
@@ -373,10 +376,11 @@ Respond in JSON:
       
       if (eligibleMovies.length > 0) {
         const fallbackMovie = shuffleArray([...eligibleMovies])[0];
-        const trailerUrl = await getMovieTrailer(fallbackMovie.tmdbId);
+        const trailerUrls = await getMovieTrailers(fallbackMovie.tmdbId);
         return {
           movie: { ...fallbackMovie, listSource: "replacement" },
-          trailerUrl,
+          trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null,
+          trailerUrls,
           reason: `A great pick based on your taste in ${fallbackMovie.genres.slice(0, 2).join(" and ")} films!`,
         };
       }
@@ -387,12 +391,13 @@ Respond in JSON:
     const movieDetails = await getMovieDetails(searchResult.id);
     if (!movieDetails) return null;
 
-    const trailerUrl = await getMovieTrailer(searchResult.id);
+    const trailerUrls = await getMovieTrailers(searchResult.id);
     movieDetails.listSource = "replacement";
 
     return {
       movie: movieDetails,
-      trailerUrl,
+      trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null,
+      trailerUrls,
       reason: result.reason,
     };
   } catch (error) {
@@ -406,10 +411,11 @@ Respond in JSON:
     
     if (eligibleMovies.length > 0) {
       const fallbackMovie = shuffleArray([...eligibleMovies])[0];
-      const trailerUrl = await getMovieTrailer(fallbackMovie.tmdbId);
+      const trailerUrls = await getMovieTrailers(fallbackMovie.tmdbId);
       return {
         movie: { ...fallbackMovie, listSource: "replacement" },
-        trailerUrl,
+        trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null,
+        trailerUrls,
         reason: `A fresh pick for your ${fallbackMovie.genres[0]} cravings!`,
       };
     }
