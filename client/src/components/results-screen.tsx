@@ -329,25 +329,41 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
       : `https://image.tmdb.org/t/p/w500${currentRec.movie.posterPath}`
     : null;
 
+  // Generate a condensed taste summary for mobile that combines visual style and mood
+  const mobileTasteSummary = (() => {
+    const parts: string[] = [];
+    if (preferenceProfile.visualStyle) {
+      parts.push(preferenceProfile.visualStyle);
+    }
+    if (preferenceProfile.mood && preferenceProfile.mood !== preferenceProfile.visualStyle) {
+      parts.push(preferenceProfile.mood);
+    }
+    if (parts.length === 0 && preferenceProfile.topGenres.length > 0) {
+      return `You're drawn to ${preferenceProfile.topGenres.slice(0, 2).join(" and ")} films.`;
+    }
+    return parts.join(" ");
+  })();
+
   return (
-    <div className="flex flex-col items-center gap-2 md:gap-3 w-full max-w-5xl mx-auto px-2 md:px-4 py-1 md:py-3">
-      {/* Compact Header */}
-      <div className="text-center">
-        <div className="flex items-center justify-center gap-2">
-          <Brain className="w-5 h-5 md:w-6 md:h-6 text-primary" />
-          <h2 className="text-lg md:text-2xl font-bold text-foreground">
+    <div className="flex flex-col items-center gap-1 md:gap-3 w-full max-w-5xl mx-auto px-2 md:px-4 py-0 md:py-3">
+      {/* Compact Header - Minimal on mobile */}
+      <div className="text-center py-1 md:py-0">
+        <div className="flex items-center justify-center gap-1.5 md:gap-2">
+          <Brain className="w-4 h-4 md:w-6 md:h-6 text-primary" />
+          <h2 className="text-base md:text-2xl font-bold text-foreground">
             We've Got It!
           </h2>
         </div>
-        <p className="text-primary font-medium text-xs md:text-sm">
+        {/* Desktop reveal message */}
+        <p className="hidden md:block text-primary font-medium text-sm">
           {revealMessage}
         </p>
       </div>
 
-      {/* Mobile Taste Summary - Compact version for mobile */}
-      {(preferenceProfile.visualStyle || preferenceProfile.mood) && (
-        <p className="md:hidden text-white/70 text-xs text-center px-4 max-w-sm" data-testid="mobile-taste-summary">
-          {preferenceProfile.visualStyle || preferenceProfile.mood}
+      {/* Mobile Taste Summary - Condensed combined line */}
+      {mobileTasteSummary && (
+        <p className="md:hidden text-white/70 text-xs text-center px-3 max-w-xs leading-snug" data-testid="mobile-taste-summary">
+          {mobileTasteSummary}
         </p>
       )}
 
