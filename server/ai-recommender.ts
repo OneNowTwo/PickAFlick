@@ -60,7 +60,9 @@ export async function generateRecommendations(
   const currentYear = new Date().getFullYear();
   const recentThreshold = currentYear - 3; // Movies from last 3 years
 
-  const prompt = `You are an expert film analyst with encyclopedic knowledge of cinema from all eras and countries. A user played a movie picker game, choosing between pairs of films. They selected these 7 movies:
+  const prompt = `You are a passionate cinema buff with encyclopedic knowledge spanning every era, genre, and corner of film history. Think like a film-obsessed friend who's seen EVERYTHING and makes brilliant, unexpected connections.
+
+A user chose these 7 movies in a head-to-head picker game:
 
 ${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}, ${m.era})
    Director: ${m.director}
@@ -69,57 +71,56 @@ ${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}, ${m.era})
    Keywords/Themes: ${m.keywords.length > 0 ? m.keywords.join(", ") : "N/A"}
    Synopsis: ${m.overview || "No synopsis available"}`).join("\n\n")}
 
-[Session: ${sessionTime} | Variation Seed: ${randomSeed}]
+[Session: ${sessionTime} | Seed: ${randomSeed}]
 
-DEEP ANALYSIS REQUIRED - Go beyond surface-level genre matching. Examine:
+=== THINK LIKE A FILM BUFF - MULTI-DIMENSIONAL ANALYSIS ===
 
-1. **Narrative DNA**: What storytelling structures resonate? (nonlinear timelines, unreliable narrators, slow burns, ensemble casts, character studies, plot-driven thrillers)
-2. **Cinematographic Fingerprint**: What visual language appeals? (long takes, handheld intimacy, symmetrical compositions, naturalistic lighting, saturated colors, desaturated palettes)
-3. **Thematic Undercurrents**: What deeper themes connect these films? (existential dread, family dysfunction, moral ambiguity, identity crisis, societal critique, redemption arcs)
-4. **Pacing & Rhythm**: Fast-paced editing or contemplative pacing? Action set-pieces or dialogue-driven scenes?
-5. **Emotional Register**: Cathartic release, intellectual stimulation, visceral thrills, melancholic beauty, dark humor?
+Don't just match genres. A true cinephile sees CONNECTIONS across many dimensions:
 
-Based on this analysis, recommend 7 films that match this taste profile (we'll show the user the top 5 that are available).
+1. **ACTOR CONNECTIONS**: "You picked Se7en with Brad Pitt - you'd love Fight Club where he's equally magnetic" or "Joaquin Phoenix in Joker? His work in The Master has that same intensity"
 
-=== CRITICAL VARIETY REQUIREMENTS ===
+2. **CINEMATOGRAPHIC STYLE**: "Blade Runner's visual poetry? Tree of Life has that same painterly eye" or "The neon-drenched look of Drive? Nicolas Winding Refn's Only God Forgives doubles down on that aesthetic"
 
-Your 5 recommendations MUST include this diversity mix:
-1. **ONE RECENT RELEASE (${recentThreshold}-${currentYear})**: A movie from the last 3 years that relates to their taste. This could be a theatrical release, streaming original, or festival hit. Think: current directors' new work, recent genre entries, or buzzy films they might have missed.
+3. **DIRECTOR SENSIBILITIES**: Same director's other gems, or directors with kindred vision. "Loved Villeneuve's Arrival? Incendies is his emotional gut-punch you haven't seen yet"
 
-2. **ONE UNDERSEEN GEM**: A critically acclaimed but lesser-known film (not a mainstream blockbuster). Could be an indie darling, festival winner, or cult classic that never got wide release.
+4. **ERA MATCHING**: If they gravitate toward 80s films, recommend 80s classics OR modern films that capture that era's spirit. "Your 80s picks show you love practical effects and synth scores - It Follows nails that retro vibe"
 
-3. **ONE CLASSIC OR OLDER FILM**: Something from before 2010 that connects thematically or stylistically.
+5. **THEMATIC RESONANCE**: Not "it's a drama" but WHY the themes connect. "These picks share themes of identity fragmentation - you'd connect with Mulholland Drive's dreamlike identity puzzles"
 
-4. **TWO FLEXIBLE PICKS**: Can be any era, but should add variety to the mix.
+6. **TONAL KINSHIP**: Dark humor, melancholic beauty, visceral tension, quiet devastation - match the FEELING
 
-=== BE A TRUE FILM BUFF ===
+7. **NARRATIVE APPROACH**: Nonlinear storytelling? Slow-burn tension? Ensemble character studies? Match how stories unfold, not just what they're about
 
-You are their personal film expert friend. Based on their 7 choices, you KNOW this person now. You understand:
-- What visual styles excite them
-- What emotional journeys they seek
-- What storytelling approaches resonate
-- What era and tone they gravitate toward
+=== VARIETY REQUIREMENTS ===
 
-Recommend films like a passionate cinephile sharing their favorites - movies you GENUINELY believe will delight this specific person. Don't just pattern-match genres. Think about WHY they chose each film and find movies that scratch the same itch.
+Your 7 recommendations MUST include:
+1. **ONE RECENT (${recentThreshold}-${currentYear})**: Something from the last 3 years matching their taste
+2. **ONE UNDERSEEN GEM**: Critically acclaimed but lesser-known - a discovery to share
+3. **ONE CLASSIC (pre-2010)**: A foundational film that connects to their preferences  
+4. **FOUR FLEXIBLE**: Mix of eras, but each with a SPECIFIC reason beyond genre
 
-If a popular film truly fits perfectly, recommend it with conviction. If a hidden gem is more appropriate, share that discovery. The goal is CONNECTION - finding films that will make them say "yes, this is exactly what I wanted."
+=== BE GENUINELY HELPFUL ===
 
-=== VARIETY IS KEY ===
+You KNOW this person now from their 7 picks. Make recommendations like sharing discoveries with a friend:
+- "Since you loved X, you HAVE to see Y because..."
+- Connect the dots - explain the WHY
+- Think laterally - what unexpected film scratches the same itch?
+- Consider: Would this genuinely delight them, or is it just surface-level similar?
 
-DIG DEEP into your film knowledge. Avoid the "first thing that comes to mind" - think of the SECOND or THIRD film that fits. Consider:
-- Different decades within the same genre
-- Films from different directors with similar sensibilities  
-- Regional variations (Australian, British, Irish cinema alongside Hollywood)
-- Debut films from directors who later became famous
-- Festival winners that never got wide release
-- Hidden gems from major studios that underperformed commercially
+=== AVOID LAZY RECOMMENDATIONS ===
 
-Use the Variation Seed [${randomSeed}] to push yourself toward DIFFERENT corners of cinema with each request.
+- NO obvious genre matching ("you liked horror, here's more horror")
+- Think about the SPECIFIC qualities of their picks, not just categories
+- Consider what makes each of their choices special and find films that share those qualities
+- Dig into your knowledge - the THIRD film that fits is often better than the obvious first choice
+
+The Seed [${randomSeed}] should push you toward DIFFERENT parts of your film knowledge each time.
 
 === QUALITY STANDARDS ===
-- All films should be English-language OR have significant English-speaking audience appeal (no obscure foreign films without mainstream crossover)
-- All films should have generally positive reception (no poorly-rated films)
-- Avoid direct-to-video quality films
+- English-language OR significant mainstream crossover appeal
+- Well-rated films only (7.0+ on major platforms)
+- No direct-to-video or poorly received films
+- No obscure foreign films without proven audience appeal
 
 === OUTPUT REQUIREMENTS ===
 
@@ -321,28 +322,31 @@ export async function generateReplacementRecommendation(
       categoryInstruction = `Pick a film from any era that genuinely fits their taste profile.`;
   }
 
-  const prompt = `You are a film expert with encyclopedic knowledge of cinema. A user selected these movies in a preference game:
+  const prompt = `You're a passionate film buff helping a friend find something new to watch. Based on their picks, you KNOW their taste:
 
-${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}) - ${m.genres.join(", ")}`).join("\n")}
+${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}) - Director: ${m.director}, Cast: ${m.cast.join(", ") || "Unknown"}`).join("\n")}
 
-They've already seen or dismissed ${excludeTmdbIds.length} movies, so we need something FRESH.
+They've dismissed ${excludeTmdbIds.length} suggestions already, so dig DEEPER into your film knowledge.
 
 ${categoryInstruction}
 
-BE A TRUE FILM BUFF:
-- You KNOW this person based on their picks
-- Recommend something you genuinely believe will delight them
-- Think about WHY they chose each film and find something that scratches the same itch
-- Should be English-language or have mainstream crossover appeal
-- Should be well-rated (quality matters)
+THINK MULTI-DIMENSIONALLY like a true cinephile:
+- Actor connections: Same performers in different roles
+- Director sensibilities: Same filmmaker or kindred vision
+- Cinematographic style: Visual language that resonates
+- Era matching: If they love 80s, suggest 80s or modern films with retro spirit
+- Thematic resonance: WHY the deeper themes connect
 
-[Variation Seed: ${randomSeed}]
+Make an unexpected but perfect connection - not just genre matching!
+English-language or mainstream crossover. Well-rated only (7.0+).
 
-Respond in JSON format:
+[Seed: ${randomSeed}]
+
+Respond in JSON:
 {
   "title": "Movie Title",
   "year": 2020,
-  "reason": "A personalized 1-2 sentence reason using 'you' and 'your'"
+  "reason": "Personalized 1-2 sentences explaining the CONNECTION using 'you' and 'your'"
 }`;
 
   try {
