@@ -173,10 +173,10 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
           className="relative w-full bg-gradient-to-br from-violet-600 via-purple-600 to-fuchsia-600 rounded-2xl overflow-hidden"
           data-testid="share-card"
         >
-          {/* Close button */}
+          {/* Close button - positioned within content bounds */}
           <button 
             onClick={onClose}
-            className="absolute top-3 right-3 z-20 w-8 h-8 rounded-full bg-black/30 flex items-center justify-center text-white/80 hover:text-white transition-colors"
+            className="absolute top-2 right-2 z-20 w-7 h-7 rounded-full bg-black/30 flex items-center justify-center text-white/80 hover:text-white transition-colors"
             data-testid="button-close-share-card"
           >
             <X className="w-4 h-4" />
