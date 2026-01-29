@@ -1,8 +1,8 @@
 import type { RecommendationsResponse, Recommendation } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { X, Download, Copy, Check, Sparkles, Film, Palette, Clock } from "lucide-react";
-import { useState, useRef } from "react";
+import { X, Copy, Check, Sparkles, Film, Palette, Clock, Zap, Heart, Compass, Glasses, Drama, Rocket, Search, Clapperboard, Moon, Smile, Wand2 } from "lucide-react";
+import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 interface ShareCardProps {
@@ -13,12 +13,15 @@ interface ShareCardProps {
   shareUrl?: string;
 }
 
-// Generate a fun movie personality type based on their taste
-function generateMoviePersonality(profile: RecommendationsResponse["preferenceProfile"]): {
+// Movie personality type with icon instead of emoji
+interface MoviePersonality {
   title: string;
-  emoji: string;
+  icon: "moon" | "zap" | "drama" | "smile" | "wand" | "clapperboard" | "glasses" | "compass" | "rocket" | "heart" | "search" | "film";
   description: string;
-} {
+}
+
+// Generate a fun movie personality type based on their taste
+function generateMoviePersonality(profile: RecommendationsResponse["preferenceProfile"]): MoviePersonality {
   const genres = profile.topGenres.map(g => g.toLowerCase());
   const mood = profile.mood?.toLowerCase() || "";
   const visual = profile.visualStyle?.toLowerCase() || "";
@@ -26,46 +29,66 @@ function generateMoviePersonality(profile: RecommendationsResponse["preferencePr
   // Match personality based on genre/mood combinations
   if (genres.some(g => g.includes("horror") || g.includes("thriller"))) {
     if (mood.includes("intense") || mood.includes("dark")) {
-      return { title: "The Night Owl", emoji: "🦉", description: "You thrive when the lights go down and the tension goes up" };
+      return { title: "The Night Owl", icon: "moon", description: "You thrive when the lights go down and the tension goes up" };
     }
-    return { title: "The Thrill Seeker", emoji: "⚡", description: "Life's too short for boring movies" };
+    return { title: "The Thrill Seeker", icon: "zap", description: "Life's too short for boring movies" };
   }
   
   if (genres.some(g => g.includes("comedy"))) {
     if (genres.some(g => g.includes("drama"))) {
-      return { title: "The Feeling Finder", emoji: "🎭", description: "You want to laugh and cry in the same sitting" };
+      return { title: "The Feeling Finder", icon: "drama", description: "You want to laugh and cry in the same sitting" };
     }
-    return { title: "The Joy Chaser", emoji: "✨", description: "Here for the good vibes and great laughs" };
+    return { title: "The Joy Chaser", icon: "smile", description: "Here for the good vibes and great laughs" };
   }
   
   if (genres.some(g => g.includes("sci-fi") || g.includes("fantasy"))) {
-    return { title: "The World Builder", emoji: "🌌", description: "Reality is just the starting point for you" };
+    return { title: "The World Builder", icon: "wand", description: "Reality is just the starting point for you" };
   }
   
   if (genres.some(g => g.includes("drama"))) {
     if (visual.includes("striking") || visual.includes("artistic")) {
-      return { title: "The Cinema Connoisseur", emoji: "🎬", description: "You appreciate the art behind every frame" };
+      return { title: "The Cinema Connoisseur", icon: "clapperboard", description: "You appreciate the art behind every frame" };
     }
     if (mood.includes("thought") || mood.includes("deep")) {
-      return { title: "The Deep Diver", emoji: "🌊", description: "Surface-level stories need not apply" };
+      return { title: "The Deep Diver", icon: "glasses", description: "Surface-level stories need not apply" };
     }
-    return { title: "The Story Chaser", emoji: "📖", description: "A great narrative is your happy place" };
+    return { title: "The Story Chaser", icon: "compass", description: "A great narrative is your happy place" };
   }
   
   if (genres.some(g => g.includes("action") || g.includes("adventure"))) {
-    return { title: "The Adrenaline Junkie", emoji: "🚀", description: "You like your movies like you like your life: exciting" };
+    return { title: "The Adrenaline Junkie", icon: "rocket", description: "You like your movies like you like your life: exciting" };
   }
   
   if (genres.some(g => g.includes("romance"))) {
-    return { title: "The Hopeless Romantic", emoji: "💕", description: "You believe in movie magic and happy endings" };
+    return { title: "The Hopeless Romantic", icon: "heart", description: "You believe in movie magic and happy endings" };
   }
   
   if (genres.some(g => g.includes("mystery") || g.includes("crime"))) {
-    return { title: "The Plot Unraveler", emoji: "🔍", description: "Nothing gets past you—except that twist ending" };
+    return { title: "The Plot Unraveler", icon: "search", description: "Nothing gets past you - except that twist ending" };
   }
   
   // Default personality
-  return { title: "The Film Explorer", emoji: "🎥", description: "Every genre is an adventure waiting to happen" };
+  return { title: "The Film Explorer", icon: "film", description: "Every genre is an adventure waiting to happen" };
+}
+
+// Render personality icon
+function PersonalityIcon({ icon, className }: { icon: MoviePersonality["icon"]; className?: string }) {
+  const iconClass = className || "w-12 h-12";
+  switch (icon) {
+    case "moon": return <Moon className={iconClass} />;
+    case "zap": return <Zap className={iconClass} />;
+    case "drama": return <Drama className={iconClass} />;
+    case "smile": return <Smile className={iconClass} />;
+    case "wand": return <Wand2 className={iconClass} />;
+    case "clapperboard": return <Clapperboard className={iconClass} />;
+    case "glasses": return <Glasses className={iconClass} />;
+    case "compass": return <Compass className={iconClass} />;
+    case "rocket": return <Rocket className={iconClass} />;
+    case "heart": return <Heart className={iconClass} />;
+    case "search": return <Search className={iconClass} />;
+    case "film": return <Film className={iconClass} />;
+    default: return <Film className={iconClass} />;
+  }
 }
 
 // Generate quirky stats based on their choices
@@ -109,7 +132,6 @@ function generateQuirkyStats(profile: RecommendationsResponse["preferenceProfile
 
 export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile, shareUrl }: ShareCardProps) {
   const [copied, setCopied] = useState(false);
-  const cardRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   
   const personality = generateMoviePersonality(preferenceProfile);
@@ -126,7 +148,7 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
   };
   
   const handleShare = async () => {
-    const shareText = `🎬 I'm "${personality.title}" ${personality.emoji}\n${personality.description}\n\nMy picks:\n${topMovies.map(r => `• ${r.movie.title} (${r.movie.year})`).join('\n')}\n\nFind your movie personality:`;
+    const shareText = `I'm "${personality.title}"\n${personality.description}\n\nMy picks:\n${topMovies.map(r => `${r.movie.title} (${r.movie.year})`).join('\n')}\n\nFind your movie personality:`;
     
     if (navigator.share && shareUrl) {
       try {
@@ -148,14 +170,13 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md p-0 overflow-hidden bg-transparent border-0">
         <div 
-          ref={cardRef}
           className="relative w-full bg-gradient-to-br from-violet-600 via-purple-600 to-fuchsia-600 rounded-2xl overflow-hidden"
           data-testid="share-card"
         >
           {/* Close button */}
           <button 
             onClick={onClose}
-            className="absolute top-3 right-3 z-20 w-8 h-8 rounded-full bg-black/30 flex items-center justify-center text-white/80 hover:text-white hover:bg-black/50 transition-colors"
+            className="absolute top-3 right-3 z-20 w-8 h-8 rounded-full bg-black/30 flex items-center justify-center text-white/80 hover:text-white transition-colors"
             data-testid="button-close-share-card"
           >
             <X className="w-4 h-4" />
@@ -173,9 +194,11 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
             {/* Header */}
             <div className="text-center mb-6">
               <div className="inline-block px-3 py-1 bg-white/20 rounded-full text-xs font-medium mb-3">
-                PICKAFLICK 2024 WRAPPED
+                PICKAFLICK WRAPPED
               </div>
-              <div className="text-5xl mb-2">{personality.emoji}</div>
+              <div className="mb-2 flex justify-center">
+                <PersonalityIcon icon={personality.icon} className="w-12 h-12" />
+              </div>
               <h2 className="text-2xl font-bold mb-1">{personality.title}</h2>
               <p className="text-white/80 text-sm">{personality.description}</p>
             </div>
@@ -233,7 +256,7 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
                     </span>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{rec.movie.title}</p>
-                      <p className="text-xs text-white/60">{rec.movie.year} • {rec.movie.genres.slice(0, 2).join(", ")}</p>
+                      <p className="text-xs text-white/60">{rec.movie.year} {rec.movie.genres.length > 0 && `· ${rec.movie.genres.slice(0, 2).join(", ")}`}</p>
                     </div>
                   </div>
                 ))}
@@ -263,7 +286,8 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
               <div className="flex gap-2">
                 <Button
                   onClick={handleShare}
-                  className="flex-1 bg-white text-purple-700 hover:bg-white/90 font-semibold"
+                  variant="secondary"
+                  className="flex-1 bg-white text-purple-700 border-0 font-semibold"
                   data-testid="button-share-card"
                 >
                   {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
