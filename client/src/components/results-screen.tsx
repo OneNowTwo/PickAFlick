@@ -7,6 +7,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ShareCard } from "./share-card";
 
 // Generate personalized reveal message based on preference profile
 function generateRevealMessage(profile: RecommendationsResponse["preferenceProfile"]): string {
@@ -63,6 +64,8 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   const [trailerIndex, setTrailerIndex] = useState(0); // Track which trailer we're trying
   const [allTrailersFailed, setAllTrailersFailed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showShareCard, setShowShareCard] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Reset trailer state when changing movies
@@ -154,7 +157,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
     },
   });
 
-  // Share mutation
+  // Share mutation - generates link and shows share card
   const shareMutation = useMutation({
     mutationFn: async () => {
       if (!recommendations) throw new Error("No recommendations to share");
@@ -165,37 +168,9 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
       return res.json() as Promise<{ shareId: string }>;
     },
     onSuccess: async (data) => {
-      const shareUrl = `${window.location.origin}/share/${data.shareId}`;
-      
-      // Try native share first (mobile)
-      if (navigator.share) {
-        try {
-          await navigator.share({
-            title: "Check out my PickAFlick recommendations!",
-            text: "PickAFlick figured out my movie taste in just 7 rounds. Here are my personalized picks:",
-            url: shareUrl,
-          });
-          return;
-        } catch (e) {
-          // User cancelled or error - fall through to copy
-        }
-      }
-      
-      // Fallback to clipboard
-      try {
-        await navigator.clipboard.writeText(shareUrl);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-        toast({
-          title: "Link copied!",
-          description: "Share link copied to clipboard",
-        });
-      } catch (e) {
-        toast({
-          title: "Share link",
-          description: shareUrl,
-        });
-      }
+      const url = `${window.location.origin}/share/${data.shareId}`;
+      setShareUrl(url);
+      setShowShareCard(true);
     },
     onError: () => {
       toast({
@@ -744,6 +719,17 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
           </div>
         </DialogContent>
       </Dialog>
+      
+      {/* Share Card Modal */}
+      {recommendations && (
+        <ShareCard
+          isOpen={showShareCard}
+          onClose={() => setShowShareCard(false)}
+          recommendations={displayRecs}
+          preferenceProfile={recommendations.preferenceProfile}
+          shareUrl={shareUrl || undefined}
+        />
+      )}
     </div>
   );
 }
