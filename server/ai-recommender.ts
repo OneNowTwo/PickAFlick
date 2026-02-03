@@ -60,7 +60,7 @@ export async function generateRecommendations(
   const currentYear = new Date().getFullYear();
   const recentThreshold = currentYear - 3; // Movies from last 3 years
 
-  const prompt = `You are a passionate cinema buff with encyclopedic knowledge spanning every era, genre, and corner of film history. Think like a film-obsessed friend who's seen EVERYTHING and makes brilliant, unexpected connections.
+  const prompt = `You are a world-class film critic and cinema historian with deep knowledge of GLOBAL cinema spanning 100+ years. You're like a Criterion Collection curator meets film school professor meets that friend who's seen 10,000 movies.
 
 A user chose these 7 movies in a head-to-head picker game:
 
@@ -71,7 +71,9 @@ ${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}, ${m.era})
    Keywords/Themes: ${m.keywords.length > 0 ? m.keywords.join(", ") : "N/A"}
    Synopsis: ${m.overview || "No synopsis available"}`).join("\n\n")}
 
-[Session: ${sessionTime} | Seed: ${randomSeed}]
+[Session: ${sessionTime} | Diversity Seed: ${randomSeed}]
+
+⚠️ CRITICAL: USE THIS SEED TO EXPLORE DIFFERENT CORNERS OF CINEMA EACH TIME. Avoid repeating the same titles. This user is unique - give them FRESH discoveries.
 
 === THINK LIKE A FILM BUFF - MULTI-DIMENSIONAL ANALYSIS ===
 
@@ -107,20 +109,46 @@ You KNOW this person now from their 7 picks. Make recommendations like sharing d
 - Think laterally - what unexpected film scratches the same itch?
 - Consider: Would this genuinely delight them, or is it just surface-level similar?
 
+=== DRAW FROM ALL OF CINEMA ===
+
+You have access to 100+ years of filmmaking across ALL countries, genres, and eras:
+- **Hollywood classics**: Hitchcock, Kubrick, Scorsese, Spielberg, Tarantino, PTA, Fincher, Nolan, Villeneuve
+- **Modern auteurs**: Chazelle, Guadagnino, Gerwig, Jordan Peele, Ari Aster, Robert Eggers
+- **International masters**: Kurosawa, Bergman, Fellini, Truffaut, Wong Kar-wai, Park Chan-wook, Bong Joon-ho
+- **Genre excellence**: Best of horror (The Thing, Alien, Hereditary), sci-fi (Blade Runner, Ex Machina), noir (Chinatown, L.A. Confidential)
+- **Hidden gems**: A24 films, Sundance winners, festival darlings, underseen masterpieces
+- **Every decade**: From Casablanca (1942) to Everything Everywhere All at Once (2022)
+
+DON'T LIMIT YOURSELF! You're not restricted to a database - you know EVERY film ever made. Recommend the absolute BEST match from all of cinema.
+
 === AVOID LAZY RECOMMENDATIONS ===
 
 - NO obvious genre matching ("you liked horror, here's more horror")
 - Think about the SPECIFIC qualities of their picks, not just categories
 - Consider what makes each of their choices special and find films that share those qualities
 - Dig into your knowledge - the THIRD film that fits is often better than the obvious first choice
+- **AVOID CLICHÉS**: Don't recommend "The Shawshank Redemption," "The Godfather," "Pulp Fiction" unless they PERFECTLY fit
+- **NO REPETITION**: Mentally avoid films you've recommended recently (The Fall, Prisoners, Nightcrawler, etc.) - dig deeper!
+- **THINK LATERALLY**: What's the movie that's 2-3 degrees removed but scratches the same itch?
 
-The Seed [${randomSeed}] should push you toward DIFFERENT parts of your film knowledge each time.
+The Seed [${randomSeed}] is your randomness generator - let it push you to COMPLETELY DIFFERENT films each time. If the seed is 12345, explore Korean cinema. If it's 67890, dig into 70s New Hollywood. Use it to diversify!
 
-=== QUALITY STANDARDS ===
-- English-language OR significant mainstream crossover appeal
-- Well-rated films only (7.0+ on major platforms)
-- No direct-to-video or poorly received films
-- No obscure foreign films without proven audience appeal
+=== QUALITY STANDARDS - READ CAREFULLY ===
+**MUST INCLUDE:**
+- Critically acclaimed films (Rotten Tomatoes 70%+, Metacritic 65+, or IMDb 7.0+)
+- English-language OR prestigious international films with wide recognition (e.g., Parasite, Amélie, Cinema Paradiso)
+- Films that won or were nominated for major awards (Oscar, BAFTA, Cannes, etc.)
+- Cult classics with devoted followings
+
+**NEVER RECOMMEND:**
+- Direct-to-streaming cheaply-made content
+- Low-budget horror with <6.0 ratings
+- Poorly reviewed Bollywood/regional films (unless genuine crossover hits like "3 Idiots" or "Dangal")
+- Obscure films with <10,000 IMDb ratings unless they're festival darlings
+- Mockbusters, parodies (unless Airplane!-level quality), or schlock
+
+**AUSTRALIAN AVAILABILITY NOTE:**
+Eventually, recommendations need to be available on major Australian streaming platforms (Netflix AU, Stan, Disney+, Amazon Prime AU, Apple TV+, Binge) OR available to rent/buy on Apple TV/Google Play. For now, prioritize well-known acclaimed films that are LIKELY to be available somewhere.
 
 === OUTPUT REQUIREMENTS ===
 
@@ -162,46 +190,47 @@ CRITICAL NOTES:
     const content = response.choices[0]?.message?.content || "{}";
     const analysis: AIAnalysis = JSON.parse(content);
 
-    // Resolve recommended movies through TMDb with FULL DETAILS
-    const recommendations: Recommendation[] = [];
+    // Resolve recommended movies through TMDb with FULL DETAILS - PARALLELIZED for speed
     const chosenTmdbIds = new Set(chosenMovies.map((m) => m.tmdbId));
 
-    for (const rec of analysis.recommendations) {
+    // Fetch all recommendations in parallel
+    const recPromises = analysis.recommendations.map(async (rec) => {
       try {
         // Search for the movie on TMDb
         const searchResult = await searchMovieByTitle(rec.title, rec.year);
         
         if (!searchResult || chosenTmdbIds.has(searchResult.id)) {
-          continue; // Skip if not found or already chosen
+          return null; // Skip if not found or already chosen
         }
 
-        // Get FULL movie details from TMDb (this gets poster, overview, etc.)
-        const movieDetails = await getMovieDetails(searchResult.id);
+        // Get movie details and trailers in parallel
+        const [movieDetails, trailerUrls] = await Promise.all([
+          getMovieDetails(searchResult.id),
+          getMovieTrailers(searchResult.id),
+        ]);
         
         if (!movieDetails) {
-          continue; // Skip if we couldn't get details
+          return null; // Skip if we couldn't get details
         }
-
-        // Get all available trailers for fallback
-        const trailerUrls = await getMovieTrailers(searchResult.id);
 
         // Set the list source
         movieDetails.listSource = "ai-recommendation";
 
-        recommendations.push({
+        return {
           movie: movieDetails,
           trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null,
           trailerUrls,
           reason: rec.reason,
-        });
-
-        // Stop once we have 5 recommendations
-        if (recommendations.length >= 5) break;
+        };
       } catch (error) {
         console.error(`Failed to resolve recommendation "${rec.title}":`, error);
-        continue;
+        return null;
       }
-    }
+    });
+
+    // Wait for all promises and filter out nulls
+    const resolvedRecs = await Promise.all(recPromises);
+    const recommendations = resolvedRecs.filter((r): r is Recommendation => r !== null).slice(0, 5);
 
     // Add a "wildcard" random pick from the catalogue for variety
     const allMovies = getAllMovies();

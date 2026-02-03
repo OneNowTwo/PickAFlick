@@ -427,21 +427,13 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                 <div className="relative w-full h-full">
                   <iframe
                     key={currentTrailerUrl} // Force re-mount when URL changes
-                    src={`${currentTrailerUrl}?autoplay=1&mute=1&origin=${window.location.origin}`}
+                    src={`${currentTrailerUrl}?autoplay=1&mute=0&origin=${window.location.origin}`}
                     className="w-full h-full"
                     allow="autoplay; encrypted-media"
                     allowFullScreen
                     title={`${currentRec.movie.title} Trailer`}
                     onError={handleTrailerError}
                   />
-                  {/* Button to manually report broken trailer */}
-                  <button
-                    onClick={handleTrailerError}
-                    className="absolute bottom-2 right-2 text-xs text-white/60 hover:text-white/90 bg-black/50 px-2 py-1 rounded"
-                    data-testid="button-trailer-not-working"
-                  >
-                    Trailer not working?
-                  </button>
                 </div>
               );
             } else if (posterUrl) {

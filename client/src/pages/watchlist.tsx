@@ -4,7 +4,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, Trash2, Check, Film, Clapperboard, Bookmark, Tv } from "lucide-react";
+import { Loader2, Trash2, Check, Film, Clapperboard, Bookmark, Tv, ArrowLeft } from "lucide-react";
 import { Link } from "wouter";
 import type { WatchlistItem, WatchProvidersResponse } from "@shared/schema";
 
@@ -61,9 +61,23 @@ export default function Watchlist() {
               <h1 className="text-xl font-bold text-foreground">PickAFlick</h1>
             </a>
           </Link>
-          <div className="flex items-center gap-2">
-            <Bookmark className="w-4 h-4 text-primary" />
-            <span className="font-medium text-foreground">My Watchlist</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Bookmark className="w-4 h-4 text-primary" />
+              <span className="font-medium text-foreground hidden sm:inline">My Watchlist</span>
+            </div>
+            <Link href="/">
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="gap-2"
+                data-testid="button-back-to-recommendations"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span className="hidden sm:inline">Get More Recommendations</span>
+                <span className="sm:hidden">Discover</span>
+              </Button>
+            </Link>
           </div>
         </div>
       </header>
