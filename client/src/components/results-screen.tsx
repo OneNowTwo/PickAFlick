@@ -2,7 +2,7 @@ import type { RecommendationsResponse, WatchProvidersResponse, Recommendation } 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Play, RefreshCw, Film, Palette, Calendar, Sparkles, ChevronLeft, ChevronRight, ThumbsUp, Bookmark, Tv, Brain, Eye, Share2, Check, Copy } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -66,6 +66,8 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   const [copied, setCopied] = useState(false);
   const [showShareCard, setShowShareCard] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingStage, setLoadingStage] = useState("Analyzing your choices...");
   const { toast } = useToast();
 
   // Reset trailer state when changing movies
@@ -73,6 +75,35 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
     setTrailerIndex(0);
     setAllTrailersFailed(false);
   }, [currentIndex]);
+
+  // Simulated loading progress with realistic stages
+  useEffect(() => {
+    if (!isLoading) {
+      setLoadingProgress(0);
+      setLoadingStage("Analyzing your choices...");
+      return;
+    }
+
+    // Simulate progress with realistic timing
+    const stages = [
+      { progress: 20, message: "Analyzing your choices...", duration: 2000 },
+      { progress: 40, message: "Exploring film history...", duration: 3000 },
+      { progress: 60, message: "Finding hidden gems...", duration: 3000 },
+      { progress: 75, message: "Checking availability...", duration: 2500 },
+      { progress: 90, message: "Almost there...", duration: 2000 },
+    ];
+
+    let currentStage = 0;
+    const interval = setInterval(() => {
+      if (currentStage < stages.length) {
+        setLoadingProgress(stages[currentStage].progress);
+        setLoadingStage(stages[currentStage].message);
+        currentStage++;
+      }
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [isLoading]);
 
   // Initialize local recs from recommendations
   useEffect(() => {
@@ -185,10 +216,10 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
     return (
       <div className="flex flex-col items-center justify-center gap-6 min-h-[60vh]" data-testid="loading-recommendations">
         {/* Dark backdrop for better text visibility */}
-        <div className="bg-black/60 backdrop-blur-sm rounded-2xl p-8 flex flex-col items-center gap-6 min-w-[280px]">
+        <div className="bg-black/60 backdrop-blur-sm rounded-2xl p-8 flex flex-col items-center gap-6 min-w-[320px] max-w-md">
           <div className="relative" style={{ width: 120, height: 120 }}>
             {/* Animated closing ring */}
-            <svg className="transform -rotate-90 animate-pulse" width={120} height={120}>
+            <svg className="transform -rotate-90" width={120} height={120}>
               <circle
                 cx={60}
                 cy={60}
@@ -206,11 +237,10 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                 strokeWidth={8}
                 fill="none"
                 strokeLinecap="round"
-                className="text-white"
+                className="text-white transition-all duration-500 ease-out"
                 style={{
                   strokeDasharray: 339.292,
-                  strokeDashoffset: 0,
-                  animation: "ring-close 2s ease-in-out infinite",
+                  strokeDashoffset: 339.292 * (1 - loadingProgress / 100),
                 }}
               />
             </svg>
@@ -218,19 +248,18 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
               <Brain className="w-10 h-10 text-white animate-pulse" />
             </div>
           </div>
-          <div className="text-center">
-            <h2 className="text-xl md:text-2xl font-bold text-white mb-2">Analyzing your taste...</h2>
-            <p className="text-white/80 text-sm md:text-base">Finding your perfect match</p>
-            <div className="mt-4 w-full max-w-xs">
-              {/* Progress bar */}
-              <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-gradient-to-r from-primary to-primary/60 rounded-full transition-all duration-1000 ease-out animate-pulse"
-                  style={{ width: '70%' }}
-                />
-              </div>
-              <p className="text-white/60 text-xs mt-2">This takes a few seconds...</p>
+          <div className="text-center w-full px-4">
+            <h2 className="text-xl md:text-2xl font-bold text-white mb-2">Hold a tic...</h2>
+            <p className="text-white/80 text-sm md:text-base mb-4">{loadingStage}</p>
+            
+            {/* Progress Bar */}
+            <div className="w-full bg-white/20 rounded-full h-2 overflow-hidden">
+              <div 
+                className="h-full bg-gradient-to-r from-primary via-primary/80 to-primary/60 rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${loadingProgress}%` }}
+              />
             </div>
+            <p className="text-white/60 text-xs mt-3">{loadingProgress}% complete</p>
           </div>
         </div>
       </div>
@@ -402,12 +431,6 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
               data-testid={`dot-indicator-${i}`}
             />
           ))}
-          {totalRecs === 1 && (
-            <div className="flex items-center gap-1 ml-1">
-              <Loader2 className="w-3 h-3 animate-spin text-primary" />
-              <span className="text-xs text-muted-foreground">Loading more...</span>
-            </div>
-          )}
         </div>
       </div>
 

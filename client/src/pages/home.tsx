@@ -87,37 +87,17 @@ export default function Home() {
     onSuccess: async (data) => {
       if (data.isComplete) {
         setGameState("loading-recommendations");
-        
-        // PROGRESSIVE LOADING: Fetch first recommendation quickly, then load the rest
+        // Fetch recommendations
         try {
-          // Step 1: Get first recommendation fast (3-4 seconds)
-          const firstRes = await fetch(`/api/session/${sessionId}/recommendations?quick=true`);
-          if (firstRes.ok) {
-            const firstRec = await firstRes.json() as RecommendationsResponse;
-            setRecommendations(firstRec); // Show the first one immediately
-            setGameState("results");
-          }
-          
-          // Step 2: Load remaining recommendations in background (8-10 seconds)
-          const fullRes = await fetch(`/api/session/${sessionId}/recommendations`);
-          if (fullRes.ok) {
-            const fullRecs = await fullRes.json() as RecommendationsResponse;
-            setRecommendations(fullRecs); // Replace with full set
+          const res = await fetch(`/api/session/${sessionId}/recommendations`);
+          if (res.ok) {
+            const recs = await res.json() as RecommendationsResponse;
+            setRecommendations(recs);
           }
         } catch (error) {
           console.error("Failed to get recommendations:", error);
-          // Fallback to regular loading if progressive fails
-          try {
-            const res = await fetch(`/api/session/${sessionId}/recommendations`);
-            if (res.ok) {
-              const recs = await res.json() as RecommendationsResponse;
-              setRecommendations(recs);
-            }
-          } catch (fallbackError) {
-            console.error("Fallback also failed:", fallbackError);
-          }
-          setGameState("results");
         }
+        setGameState("results");
       } else {
         // Refetch to get next round
         roundQuery.refetch();
