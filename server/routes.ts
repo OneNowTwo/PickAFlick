@@ -309,6 +309,7 @@ export async function registerRoutes(
   app.get("/api/session/:sessionId/recommendations", async (req: Request, res: Response) => {
     try {
       const { sessionId } = req.params;
+      const quickMode = req.query.quick === "true"; // Quick mode returns just 1 rec
       const session = sessionStorage.getSession(sessionId);
 
       if (!session) {
@@ -328,7 +329,7 @@ export async function registerRoutes(
         return;
       }
 
-      const recommendations = await generateRecommendations(chosenMovies);
+      const recommendations = await generateRecommendations(chosenMovies, quickMode);
 
       res.set(NO_CACHE_HEADERS);
       res.json(recommendations);

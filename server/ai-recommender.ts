@@ -37,7 +37,8 @@ function getEra(year: number | null): string {
 }
 
 export async function generateRecommendations(
-  chosenMovies: Movie[]
+  chosenMovies: Movie[],
+  quickMode: boolean = false // If true, only return 1 recommendation for speed
 ): Promise<RecommendationsResponse> {
   // Build a rich profile of what the user chose with extended metadata
   const movieDescriptions = chosenMovies.map((m) => ({
@@ -171,10 +172,10 @@ Respond in this exact JSON format:
 }
 
 CRITICAL NOTES:
-- Provide exactly 7 recommendations (5 main + 2 backups in case some aren't available)
-- The first recommendation MUST be from ${recentThreshold}-${currentYear} (labeled "recent")
+- Provide exactly ${quickMode ? '1 recommendation' : '7 recommendations (5 main + 2 backups in case some aren\'t available)'}
+${quickMode ? '- The recommendation MUST be from ' + recentThreshold + '-' + currentYear + ' (a recent film that matches their taste)' : `- The first recommendation MUST be from ${recentThreshold}-${currentYear} (labeled "recent")
 - One recommendation MUST be a lesser-known gem (labeled "underseen")
-- One recommendation MUST be from before 2010 (labeled "classic")
+- One recommendation MUST be from before 2010 (labeled "classic")`}
 - Keep visualStyle and mood SHORT (one punchy sentence each)
 - Address the user as "you" and "your" in reasons`;
 
@@ -183,7 +184,7 @@ CRITICAL NOTES:
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
-      max_tokens: 1200, // Optimized balance between speed and quality
+      max_tokens: quickMode ? 400 : 1200, // Quick mode uses fewer tokens for faster response
       temperature: 0.95, // Higher temperature for more variety
     });
 
@@ -228,32 +229,24 @@ CRITICAL NOTES:
       }
     });
 
-    // Wait for all AI recommendations and prepare wildcard in parallel
-    const allMovies = getAllMovies();
+    // Wait for all AI recommendations
+    const resolvedRecs = await Promise.all(recPromises);
+    const recommendations = resolvedRecs.filter((r): r is Recommendation => r !== null).slice(0, quickMode ? 1 : 5);
     
-    // Fetch AI recommendations and prepare wildcard simultaneously
-    const [resolvedRecs, wildcardMovie] = await Promise.all([
-      Promise.all(recPromises),
-      Promise.resolve().then(() => {
-        const usedTmdbIds = new Set(chosenTmdbIds);
-        const eligibleWildcards = allMovies.filter(
-          (m) => !usedTmdbIds.has(m.tmdbId) && m.rating && m.rating >= 7.0
-        );
-        return eligibleWildcards.length > 0 ? shuffleArray([...eligibleWildcards])[0] : null;
-      })
-    ]);
-    
-    const recommendations = resolvedRecs.filter((r): r is Recommendation => r !== null).slice(0, 5);
-    
-    // Fetch wildcard trailer in parallel with final processing if we have a wildcard
-    if (wildcardMovie) {
+    // Only add wildcard in full mode (not quick mode)
+    if (!quickMode) {
+      const allMovies = getAllMovies();
       const finalUsedIds = new Set([
         ...Array.from(chosenTmdbIds),
         ...recommendations.map((r) => r.movie.tmdbId),
       ]);
       
-      // Only add if not duplicate
-      if (!finalUsedIds.has(wildcardMovie.tmdbId)) {
+      const eligibleWildcards = allMovies.filter(
+        (m) => !finalUsedIds.has(m.tmdbId) && m.rating && m.rating >= 7.0
+      );
+      
+      if (eligibleWildcards.length > 0) {
+        const wildcardMovie = shuffleArray([...eligibleWildcards])[0];
         const wildcardTrailers = await getMovieTrailers(wildcardMovie.tmdbId);
         
         recommendations.push({

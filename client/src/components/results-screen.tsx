@@ -185,7 +185,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
     return (
       <div className="flex flex-col items-center justify-center gap-6 min-h-[60vh]" data-testid="loading-recommendations">
         {/* Dark backdrop for better text visibility */}
-        <div className="bg-black/60 backdrop-blur-sm rounded-2xl p-8 flex flex-col items-center gap-6">
+        <div className="bg-black/60 backdrop-blur-sm rounded-2xl p-8 flex flex-col items-center gap-6 min-w-[280px]">
           <div className="relative" style={{ width: 120, height: 120 }}>
             {/* Animated closing ring */}
             <svg className="transform -rotate-90 animate-pulse" width={120} height={120}>
@@ -219,8 +219,18 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
             </div>
           </div>
           <div className="text-center">
-            <h2 className="text-xl md:text-2xl font-bold text-white mb-2">Hold a tic...</h2>
-            <p className="text-white/80 text-sm md:text-base">We're picking your perfect movies!</p>
+            <h2 className="text-xl md:text-2xl font-bold text-white mb-2">Analyzing your taste...</h2>
+            <p className="text-white/80 text-sm md:text-base">Finding your perfect match</p>
+            <div className="mt-4 w-full max-w-xs">
+              {/* Progress bar */}
+              <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-primary to-primary/60 rounded-full transition-all duration-1000 ease-out animate-pulse"
+                  style={{ width: '70%' }}
+                />
+              </div>
+              <p className="text-white/60 text-xs mt-2">This takes a few seconds...</p>
+            </div>
           </div>
         </div>
       </div>
@@ -392,6 +402,12 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
               data-testid={`dot-indicator-${i}`}
             />
           ))}
+          {totalRecs === 1 && (
+            <div className="flex items-center gap-1 ml-1">
+              <Loader2 className="w-3 h-3 animate-spin text-primary" />
+              <span className="text-xs text-muted-foreground">Loading more...</span>
+            </div>
+          )}
         </div>
       </div>
 
