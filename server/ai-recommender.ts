@@ -40,11 +40,13 @@ export async function generateRecommendations(
   chosenMovies: Movie[]
 ): Promise<RecommendationsResponse> {
   // Build a rich profile of what the user chose with extended metadata
+  // Focus on PRIMARY genre (first in list) for more precise matching
   const movieDescriptions = chosenMovies.map((m) => ({
     title: m.title,
     year: m.year,
     era: getEra(m.year),
-    genres: m.genres,
+    primaryGenre: m.genres[0] || "Unknown", // PRIMARY genre is first
+    allGenres: m.genres,
     overview: m.overview,
     director: m.director || "Unknown",
     cast: m.cast?.slice(0, 3) || [],
@@ -67,7 +69,8 @@ A user chose these 7 movies in a head-to-head picker game:
 ${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}, ${m.era})
    Director: ${m.director}
    Cast: ${m.cast.length > 0 ? m.cast.join(", ") : "Unknown"}
-   Genres: ${m.genres.join(", ")}
+   PRIMARY Genre: ${m.primaryGenre} (focus on this!)
+   Secondary Genres: ${m.allGenres.slice(1).join(", ") || "None"}
    Keywords/Themes: ${m.keywords.length > 0 ? m.keywords.join(", ") : "N/A"}
    Synopsis: ${m.overview || "No synopsis available"}`).join("\n\n")}
 
@@ -77,7 +80,9 @@ ${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}, ${m.era})
 
 === THINK LIKE A FILM BUFF - MULTI-DIMENSIONAL ANALYSIS ===
 
-Don't just match genres. A true cinephile sees CONNECTIONS across many dimensions:
+⚠️ **PRIMARY GENRE FOCUS**: Pay special attention to each movie's PRIMARY genre (listed first). If they picked Crime, focus on Crime films - not just "anything with crime elements". Be precise with genre matching while still considering style, mood, and quality.
+
+Don't just match genres mechanically. A true cinephile sees CONNECTIONS across many dimensions:
 
 1. **ACTOR CONNECTIONS**: "You picked Se7en with Brad Pitt - you'd love Fight Club where he's equally magnetic" or "Joaquin Phoenix in Joker? His work in The Master has that same intensity"
 

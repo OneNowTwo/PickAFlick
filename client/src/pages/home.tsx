@@ -11,15 +11,22 @@ import { Link } from "wouter";
 
 type GameState = "start" | "playing" | "loading-recommendations" | "results";
 
-// Mood/genre options for users to select
+// Individual genre options for precise matching
 const MOOD_OPTIONS = [
-  { id: "action", label: "Action & Adventure", genres: ["Action", "Adventure"] },
+  { id: "action", label: "Action", genres: ["Action"] },
+  { id: "adventure", label: "Adventure", genres: ["Adventure"] },
   { id: "comedy", label: "Comedy", genres: ["Comedy"] },
+  { id: "crime", label: "Crime", genres: ["Crime"] },
   { id: "drama", label: "Drama", genres: ["Drama"] },
-  { id: "horror", label: "Horror & Thriller", genres: ["Horror", "Thriller"] },
-  { id: "scifi", label: "Sci-Fi & Fantasy", genres: ["Science Fiction", "Fantasy"] },
+  { id: "fantasy", label: "Fantasy", genres: ["Fantasy"] },
+  { id: "horror", label: "Horror", genres: ["Horror"] },
+  { id: "mystery", label: "Mystery", genres: ["Mystery"] },
   { id: "romance", label: "Romance", genres: ["Romance"] },
-  { id: "mystery", label: "Mystery & Crime", genres: ["Mystery", "Crime"] },
+  { id: "scifi", label: "Sci-Fi", genres: ["Science Fiction"] },
+  { id: "thriller", label: "Thriller", genres: ["Thriller"] },
+  { id: "war", label: "War", genres: ["War"] },
+  { id: "western", label: "Western", genres: ["Western"] },
+  { id: "animation", label: "Animation", genres: ["Animation"] },
   { id: "top", label: "Top Picks", genres: [] }, // Special case - top rated/popular
 ];
 

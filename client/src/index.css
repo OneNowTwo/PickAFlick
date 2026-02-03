@@ -43,7 +43,9 @@
   --chart-3: 262 52% 47%;
   --chart-4: 197 71% 42%;
   --chart-5: 142 69% 38%;
-  --font-sans: Inter, system-ui, sans-serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-display: 'Bebas Neue', 'Oswald', sans-serif;
+  --font-cinematic: 'Cinzel', serif;
   --font-serif: Georgia, serif;
   --font-mono: Menlo, monospace;
   --radius: .5rem;
@@ -172,6 +174,18 @@
 
   body {
     @apply font-sans antialiased bg-background text-foreground;
+  }
+
+  /* Hollywood cinematic typography */
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    letter-spacing: 0.02em;
+    font-weight: 700;
+  }
+
+  h4, h5, h6 {
+    font-family: var(--font-cinematic);
+    letter-spacing: 0.01em;
   }
 }
 
