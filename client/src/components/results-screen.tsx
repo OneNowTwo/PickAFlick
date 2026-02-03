@@ -74,7 +74,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
     setAllTrailersFailed(false);
     
     // Lazy load trailers for current movie if not already loaded
-    const currentMovie = displayRecs[currentIndex];
+    const currentMovie = localRecs.filter(r => !seenMovies.has(r.movie.tmdbId))[currentIndex];
     if (currentMovie && (!currentMovie.trailerUrls || currentMovie.trailerUrls.length === 0)) {
       // Fetch trailers on-demand
       fetch(`/api/movie/${currentMovie.movie.tmdbId}/trailers`)
@@ -89,7 +89,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         })
         .catch(err => console.error('Failed to lazy-load trailers:', err));
     }
-  }, [currentIndex, displayRecs]);
+  }, [currentIndex, localRecs, seenMovies]);
 
   // Initialize local recs from recommendations
   useEffect(() => {
