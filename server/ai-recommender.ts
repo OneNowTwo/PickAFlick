@@ -183,7 +183,7 @@ CRITICAL NOTES:
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
-      max_tokens: 800, // Reduced for faster response time
+      max_tokens: 1200, // Optimized balance between speed and quality
       temperature: 0.95, // Higher temperature for more variety
     });
 
@@ -193,8 +193,8 @@ CRITICAL NOTES:
     // Resolve recommended movies through TMDb with FULL DETAILS - PARALLELIZED for speed
     const chosenTmdbIds = new Set(chosenMovies.map((m) => m.tmdbId));
 
-    // Fetch all recommendations in parallel - LAZY LOAD TRAILERS for speed
-    const recPromises = analysis.recommendations.map(async (rec, index) => {
+    // Fetch all recommendations in parallel with full details and trailers
+    const recPromises = analysis.recommendations.map(async (rec) => {
       try {
         // Search for the movie on TMDb
         const searchResult = await searchMovieByTitle(rec.title, rec.year);
@@ -203,8 +203,11 @@ CRITICAL NOTES:
           return null; // Skip if not found or already chosen
         }
 
-        // Get movie details immediately, but only fetch trailer for FIRST recommendation
-        const movieDetails = await getMovieDetails(searchResult.id);
+        // Get movie details and trailers in parallel
+        const [movieDetails, trailerUrls] = await Promise.all([
+          getMovieDetails(searchResult.id),
+          getMovieTrailers(searchResult.id),
+        ]);
         
         if (!movieDetails) {
           return null; // Skip if we couldn't get details
@@ -213,20 +216,9 @@ CRITICAL NOTES:
         // Set the list source
         movieDetails.listSource = "ai-recommendation";
 
-        // Lazy load: only fetch trailers for the first recommendation
-        // Others will be fetched on-demand when user navigates to them
-        let trailerUrls: string[] = [];
-        let trailerUrl: string | null = null;
-        
-        if (index === 0) {
-          // First recommendation - fetch trailer immediately for instant playback
-          trailerUrls = await getMovieTrailers(searchResult.id);
-          trailerUrl = trailerUrls.length > 0 ? trailerUrls[0] : null;
-        }
-
         return {
           movie: movieDetails,
-          trailerUrl,
+          trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null,
           trailerUrls,
           reason: rec.reason,
         };
@@ -236,31 +228,41 @@ CRITICAL NOTES:
       }
     });
 
-    // Wait for all promises and filter out nulls
-    const resolvedRecs = await Promise.all(recPromises);
-    const recommendations = resolvedRecs.filter((r): r is Recommendation => r !== null).slice(0, 5);
-
-    // Add a "wildcard" random pick from the catalogue for variety
+    // Wait for all AI recommendations and prepare wildcard in parallel
     const allMovies = getAllMovies();
-    const usedTmdbIds = new Set([
-      ...Array.from(chosenTmdbIds),
-      ...recommendations.map((r) => r.movie.tmdbId),
+    
+    // Fetch AI recommendations and prepare wildcard simultaneously
+    const [resolvedRecs, wildcardMovie] = await Promise.all([
+      Promise.all(recPromises),
+      Promise.resolve().then(() => {
+        const usedTmdbIds = new Set(chosenTmdbIds);
+        const eligibleWildcards = allMovies.filter(
+          (m) => !usedTmdbIds.has(m.tmdbId) && m.rating && m.rating >= 7.0
+        );
+        return eligibleWildcards.length > 0 ? shuffleArray([...eligibleWildcards])[0] : null;
+      })
     ]);
     
-    const eligibleWildcards = allMovies.filter(
-      (m) => !usedTmdbIds.has(m.tmdbId) && m.rating && m.rating >= 7.0
-    );
+    const recommendations = resolvedRecs.filter((r): r is Recommendation => r !== null).slice(0, 5);
     
-    if (eligibleWildcards.length > 0) {
-      const wildcardMovie = shuffleArray([...eligibleWildcards])[0];
-      const wildcardTrailers = await getMovieTrailers(wildcardMovie.tmdbId);
+    // Fetch wildcard trailer in parallel with final processing if we have a wildcard
+    if (wildcardMovie) {
+      const finalUsedIds = new Set([
+        ...Array.from(chosenTmdbIds),
+        ...recommendations.map((r) => r.movie.tmdbId),
+      ]);
       
-      recommendations.push({
-        movie: { ...wildcardMovie, listSource: "wildcard" },
-        trailerUrl: wildcardTrailers.length > 0 ? wildcardTrailers[0] : null,
-        trailerUrls: wildcardTrailers,
-        reason: `A surprise pick from our curated collection! This ${wildcardMovie.genres.slice(0, 2).join("/")} gem from ${wildcardMovie.year} might just become your next favorite.`,
-      });
+      // Only add if not duplicate
+      if (!finalUsedIds.has(wildcardMovie.tmdbId)) {
+        const wildcardTrailers = await getMovieTrailers(wildcardMovie.tmdbId);
+        
+        recommendations.push({
+          movie: { ...wildcardMovie, listSource: "wildcard" },
+          trailerUrl: wildcardTrailers.length > 0 ? wildcardTrailers[0] : null,
+          trailerUrls: wildcardTrailers,
+          reason: `A surprise pick from our curated collection! This ${wildcardMovie.genres.slice(0, 2).join("/")} gem from ${wildcardMovie.year} might just become your next favorite.`,
+        });
+      }
     }
 
     return {
