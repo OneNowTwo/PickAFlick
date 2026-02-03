@@ -6,5 +6,7 @@ vite.config.ts.*
 *.tar.gz
 .env
 .local/
+*.zip
+*.mp4
 .env
 .local/
