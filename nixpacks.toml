@@ -5,7 +5,7 @@ nixPkgs = ["nodejs_20", "postgresql"]
 cmds = ["npm ci"]
 
 [phases.build]
-cmds = ["npm run build"]
+cmds = ["NODE_OPTIONS='--max-old-space-size=4096' npm run build"]
 
 [start]
 cmd = "npm start"
