@@ -68,11 +68,28 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const { toast } = useToast();
 
-  // Reset trailer state when changing movies
+  // Reset trailer state and lazy-load trailers when changing movies
   useEffect(() => {
     setTrailerIndex(0);
     setAllTrailersFailed(false);
-  }, [currentIndex]);
+    
+    // Lazy load trailers for current movie if not already loaded
+    const currentMovie = displayRecs[currentIndex];
+    if (currentMovie && (!currentMovie.trailerUrls || currentMovie.trailerUrls.length === 0)) {
+      // Fetch trailers on-demand
+      fetch(`/api/movie/${currentMovie.movie.tmdbId}/trailers`)
+        .then(res => res.json())
+        .then(data => {
+          // Update the local recommendations with the fetched trailers
+          setLocalRecs(prev => prev.map(rec => 
+            rec.movie.tmdbId === currentMovie.movie.tmdbId
+              ? { ...rec, trailerUrls: data.trailerUrls, trailerUrl: data.trailerUrl }
+              : rec
+          ));
+        })
+        .catch(err => console.error('Failed to lazy-load trailers:', err));
+    }
+  }, [currentIndex, displayRecs]);
 
   // Initialize local recs from recommendations
   useEffect(() => {

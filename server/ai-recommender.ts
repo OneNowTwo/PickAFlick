@@ -183,7 +183,7 @@ CRITICAL NOTES:
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
-      max_tokens: 2000,
+      max_tokens: 800, // Reduced for faster response time
       temperature: 0.95, // Higher temperature for more variety
     });
 
@@ -193,8 +193,8 @@ CRITICAL NOTES:
     // Resolve recommended movies through TMDb with FULL DETAILS - PARALLELIZED for speed
     const chosenTmdbIds = new Set(chosenMovies.map((m) => m.tmdbId));
 
-    // Fetch all recommendations in parallel
-    const recPromises = analysis.recommendations.map(async (rec) => {
+    // Fetch all recommendations in parallel - LAZY LOAD TRAILERS for speed
+    const recPromises = analysis.recommendations.map(async (rec, index) => {
       try {
         // Search for the movie on TMDb
         const searchResult = await searchMovieByTitle(rec.title, rec.year);
@@ -203,11 +203,8 @@ CRITICAL NOTES:
           return null; // Skip if not found or already chosen
         }
 
-        // Get movie details and trailers in parallel
-        const [movieDetails, trailerUrls] = await Promise.all([
-          getMovieDetails(searchResult.id),
-          getMovieTrailers(searchResult.id),
-        ]);
+        // Get movie details immediately, but only fetch trailer for FIRST recommendation
+        const movieDetails = await getMovieDetails(searchResult.id);
         
         if (!movieDetails) {
           return null; // Skip if we couldn't get details
@@ -216,9 +213,20 @@ CRITICAL NOTES:
         // Set the list source
         movieDetails.listSource = "ai-recommendation";
 
+        // Lazy load: only fetch trailers for the first recommendation
+        // Others will be fetched on-demand when user navigates to them
+        let trailerUrls: string[] = [];
+        let trailerUrl: string | null = null;
+        
+        if (index === 0) {
+          // First recommendation - fetch trailer immediately for instant playback
+          trailerUrls = await getMovieTrailers(searchResult.id);
+          trailerUrl = trailerUrls.length > 0 ? trailerUrls[0] : null;
+        }
+
         return {
           movie: movieDetails,
-          trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null,
+          trailerUrl,
           trailerUrls,
           reason: rec.reason,
         };
@@ -386,7 +394,7 @@ Respond in JSON:
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
-      max_tokens: 300,
+      max_tokens: 200, // Reduced for faster response
       temperature: 0.95,
     });
 

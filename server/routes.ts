@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { getCatalogue, getRecommendations, getHealth, initCatalogue, isCatalogueReady, getCatalogueStatus, getRandomMoviePair, getRandomMoviePairFiltered } from "./catalogue";
-import { getMovieTrailer, getWatchProviders } from "./tmdb";
+import { getMovieTrailer, getMovieTrailers, getWatchProviders } from "./tmdb";
 import { sessionStorage } from "./session-storage";
 import { generateRecommendations, generateReplacementRecommendation } from "./ai-recommender";
 import { storage } from "./storage";
@@ -442,6 +442,30 @@ export async function registerRoutes(
       res.json(trailers);
     } catch (error) {
       console.error("Error fetching trailers:", error);
+      res.status(500).json({ error: "Failed to fetch trailers" });
+    }
+  });
+
+  // Fetch all trailers for a single movie (for lazy loading)
+  app.get("/api/movie/:tmdbId/trailers", async (req: Request, res: Response) => {
+    try {
+      const tmdbId = parseInt(req.params.tmdbId);
+      
+      if (isNaN(tmdbId)) {
+        res.status(400).json({ error: "Invalid tmdbId" });
+        return;
+      }
+
+      const trailerUrls = await getMovieTrailers(tmdbId);
+      
+      res.set(NO_CACHE_HEADERS);
+      res.json({ 
+        tmdbId,
+        trailerUrls,
+        trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null
+      });
+    } catch (error) {
+      console.error(`Error fetching trailers for movie ${req.params.tmdbId}:`, error);
       res.status(500).json({ error: "Failed to fetch trailers" });
     }
   });
