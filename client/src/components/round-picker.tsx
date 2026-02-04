@@ -408,11 +408,9 @@ export function RoundPicker({
           <p className="text-primary font-semibold text-sm md:text-base">
             Round {round} of {totalRounds}
           </p>
-          {selectedGenres.length > 0 && (
-            <p className="text-primary text-sm md:text-base font-semibold mb-1">
-              {selectedGenres.join(" • ")}
-            </p>
-          )}
+          <p className="text-primary text-sm md:text-base font-semibold mb-1">
+            {selectedGenres.length > 0 ? selectedGenres.join(" • ") : "All Genres"}
+          </p>
           <p className="text-muted-foreground text-xs md:text-sm max-w-xs">
             {insight}
           </p>
