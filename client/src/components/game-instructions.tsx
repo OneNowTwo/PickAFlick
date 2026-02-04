@@ -57,11 +57,13 @@ export function GameInstructions({ onStart }: GameInstructionsProps) {
                   : "opacity-0 translate-y-4"
               }`}
             >
-              <div className="flex items-start gap-3">
-                <span className="flex-shrink-0 text-white/40 font-normal text-lg mt-0.5">
-                  {stepItem.number}.
-                </span>
-                <p className="text-lg text-white/90 font-normal leading-relaxed">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center">
+                  <span className="text-primary font-bold text-lg">
+                    {stepItem.number}
+                  </span>
+                </div>
+                <p className="text-xl text-white font-bold pt-1.5 leading-relaxed">
                   {stepItem.text}
                 </p>
               </div>
@@ -78,7 +80,7 @@ export function GameInstructions({ onStart }: GameInstructionsProps) {
             <Button
               onClick={onStart}
               disabled={!allStepsShown}
-              className="w-full text-base py-5"
+              className="w-full text-base h-10"
             >
               Got it
             </Button>
