@@ -4,7 +4,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, Trash2, Check, Film, Clapperboard, Bookmark, Tv, ArrowLeft } from "lucide-react";
+import { Loader2, Trash2, Check, Film, Bookmark, Tv, ArrowLeft } from "lucide-react";
 import { Link } from "wouter";
 import type { WatchlistItem, WatchProvidersResponse } from "@shared/schema";
 
@@ -57,7 +57,7 @@ export default function Watchlist() {
               className="flex items-center gap-2 hover-elevate rounded-md px-2 py-1 -ml-2 transition-colors"
               data-testid="button-logo-home"
             >
-              <Clapperboard className="w-6 h-6 text-primary" />
+              <Film className="w-6 h-6 text-primary" />
               <h1 className="text-xl font-bold text-foreground">PickAFlick</h1>
             </a>
           </Link>

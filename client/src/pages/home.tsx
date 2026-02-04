@@ -7,7 +7,7 @@ import { ResultsScreen } from "@/components/results-screen";
 import { PosterGridBackground } from "@/components/poster-grid-background";
 import { GameInstructions } from "@/components/game-instructions";
 import { Button } from "@/components/ui/button";
-import { Clapperboard, Loader2, Bookmark } from "lucide-react";
+import { Film, Loader2, Bookmark } from "lucide-react";
 import { Link } from "wouter";
 
 type GameState = "start" | "instructions" | "playing" | "loading-recommendations" | "results";
@@ -161,7 +161,7 @@ export default function Home() {
             className="flex items-center gap-2 hover-elevate rounded-md px-2 py-1 -ml-2 transition-colors"
             data-testid="button-logo-home"
           >
-            <Clapperboard className="w-6 h-6 text-primary" />
+            <Film className="w-6 h-6 text-primary" />
             <h1 className="text-xl font-bold text-foreground">PickAFlick</h1>
           </button>
           <Link href="/watchlist">
@@ -223,7 +223,7 @@ export default function Home() {
                   </>
                 ) : (
                   <>
-                    <Clapperboard className="w-5 h-5 mr-2" />
+                    <Film className="w-5 h-5 mr-2" />
                     {selectedMoods.length > 0 ? "Start Picking" : "Surprise Me"}
                   </>
                 )}
