@@ -20,6 +20,7 @@ const MOOD_OPTIONS = [
   { id: "drama", label: "Drama", genres: ["Drama"] },
   { id: "fantasy", label: "Fantasy", genres: ["Fantasy"] },
   { id: "horror", label: "Horror", genres: ["Horror"] },
+  { id: "indie", label: "Indie", genres: ["Indie"] }, // Special list-based filter
   { id: "mystery", label: "Mystery", genres: ["Mystery"] },
   { id: "romance", label: "Romance", genres: ["Romance"] },
   { id: "scifi", label: "Sci-Fi", genres: ["Science Fiction"] },

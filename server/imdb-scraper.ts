@@ -19,9 +19,14 @@ function decodeHtmlEntities(text: string): string {
 const IMDB_LISTS = [
   { id: "ls094921320", name: "Top 250 Movies" },
   { id: "ls003501243", name: "Best Horror Movies" },
+  { id: "ls561898139", name: "Horror Classics" }, // Additional horror list
   { id: "ls002065120", name: "Classic Movies" },
   { id: "ls000873904", name: "Best Comedies" },
   { id: "ls005747458", name: "Critically Acclaimed" },
+  { id: "ls006660717", name: "Indie Films" }, // Indie/Arthouse films
+  { id: "ls4156672710", name: "Indie Films" }, // A24 Movies (2026+)
+  { id: "ls000942888", name: "Indie Films" }, // Indie Top 50
+  { id: "ls000551942", name: "Indie Films" }, // 50 Greatest Independent Films
 ];
 
 async function fetchIMDbList(listId: string): Promise<IMDbListItem[]> {

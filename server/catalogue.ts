@@ -356,16 +356,22 @@ export function getRandomMoviePairFiltered(
       // Check if movie is a new release
       const isNewRelease = m.listSource === "New Releases";
       
+      // Check if movie is from indie lists (Indie Films)
+      const isIndie = genres.includes("Indie") && m.listSource === "Indie Films";
+      
       // Check if movie's PRIMARY genres (first 2 only) match any selected genre
-      // This prevents movies like Pulp Fiction (Crime/Thriller) from showing up for "Comedy" just because it has dark humor
+      // Filter out "Indie" since it's list-based, not genre-based
+      const genreFilters = genres.filter(g => g !== "Indie");
       const primaryGenres = m.genres.slice(0, 2);
-      const matchesGenre = genres.length > 0 && primaryGenres.some(g => genres.includes(g));
+      const matchesGenre = genreFilters.length > 0 && primaryGenres.some(g => genreFilters.includes(g));
       
       // Build criteria
-      const specialFiltersOnly = genres.length === 0;
+      const specialFiltersOnly = genreFilters.length === 0;
       
       if (specialFiltersOnly) {
-        // Only special filters selected (top picks and/or new releases)
+        // Only special filters selected (top picks and/or new releases and/or indie)
+        if (isIndie) return true; // Indie is always included when selected
+        
         if (includeTopPicks && includeNewReleases) {
           return isTopPick || isNewRelease;
         }
@@ -378,25 +384,35 @@ export function getRandomMoviePairFiltered(
       }
       
       // Genres selected - combine with special filters
-      if (includeTopPicks && includeNewReleases) {
-        return matchesGenre || isTopPick || isNewRelease;
-      }
-      if (includeTopPicks) {
-        return matchesGenre || isTopPick;
-      }
-      if (includeNewReleases) {
-        return matchesGenre || isNewRelease;
-      }
-      
-      // Only genres selected
-      return matchesGenre;
+      const matchesAny = matchesGenre || isIndie || (includeTopPicks && isTopPick) || (includeNewReleases && isNewRelease);
+      return matchesAny;
     });
   }
   
+  // IMPROVED FALLBACK: Instead of showing ALL movies, relax filters gradually
   if (available.length < 2) {
-    // Fallback to all movies if not enough matches
-    console.log("Not enough filtered movies, falling back to all movies");
-    available = cache.allMovies.filter((m) => !excludeIds.has(m.id));
+    console.log(`Not enough filtered movies (${available.length}), expanding search...`);
+    
+    // Try expanding to ALL genres (not just primary 2) - still respect Horror/Indie/etc filters
+    available = cache.allMovies.filter((m) => {
+      if (excludeIds.has(m.id)) return false;
+      
+      const isTopPick = m.listSource === "Top Rated" || m.listSource === "Popular Now";
+      const isNewRelease = m.listSource === "New Releases";
+      const isIndie = genres.includes("Indie") && m.listSource === "Indie Films";
+      
+      // Check ALL genres instead of just primary 2
+      const genreFilters = genres.filter(g => g !== "Indie");
+      const matchesGenre = genreFilters.length > 0 && m.genres.some(g => genreFilters.includes(g));
+      
+      return matchesGenre || isIndie || (includeTopPicks && isTopPick) || (includeNewReleases && isNewRelease);
+    });
+    
+    // If STILL not enough, only then use all movies
+    if (available.length < 2) {
+      console.log("Still not enough, using all available movies");
+      available = cache.allMovies.filter((m) => !excludeIds.has(m.id));
+    }
   }
   
   if (available.length < 2) {
