@@ -255,6 +255,7 @@ export default function Home() {
             isSubmitting={choiceMutation.isPending}
             isSkipping={skipMutation.isPending}
             choiceHistory={roundQuery.data.choiceHistory}
+            selectedGenres={selectedMoods.map(id => MOOD_OPTIONS.find(m => m.id === id)?.label).filter(Boolean) as string[]}
           />
         )}
 

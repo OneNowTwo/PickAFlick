@@ -15,6 +15,7 @@ interface RoundPickerProps {
   isSubmitting: boolean;
   isSkipping?: boolean;
   choiceHistory?: ChoiceHistory[];
+  selectedGenres?: string[]; // Genre filters for display
 }
 
 // Generate personalized insight based on choices made
@@ -189,6 +190,7 @@ export function RoundPicker({
   isSubmitting,
   isSkipping = false,
   choiceHistory = [],
+  selectedGenres = []
 }: RoundPickerProps) {
   const [selectedSide, setSelectedSide] = useState<"left" | "right" | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -290,6 +292,7 @@ export function RoundPicker({
         className={`
           relative w-[42%] md:w-full max-w-[300px] aspect-[2/3] rounded-lg md:rounded-xl overflow-hidden 
           transition-all duration-500 ease-out cursor-pointer
+          hover:-translate-y-2 hover:shadow-xl
           ${selectedSide === side 
             ? `z-20 scale-105 md:scale-110 ${side === "left" ? "md:translate-x-[60%]" : "md:-translate-x-[60%]"} shadow-2xl shadow-primary/30` 
             : selectedSide !== null 
@@ -405,6 +408,11 @@ export function RoundPicker({
           <p className="text-primary font-semibold text-sm md:text-base">
             Round {round} of {totalRounds}
           </p>
+          {selectedGenres.length > 0 && (
+            <p className="text-primary/70 text-xs md:text-sm font-medium">
+              {selectedGenres.join(" • ")}
+            </p>
+          )}
           <p className="text-muted-foreground text-xs md:text-sm max-w-xs">
             {insight}
           </p>
@@ -423,7 +431,7 @@ export function RoundPicker({
         {renderMovieCard(leftMovie, "left", leftPosterUrl)}
 
         <div className={`flex items-center justify-center transition-opacity duration-300 ${selectedSide ? "opacity-0" : "opacity-100"}`}>
-          <span className="text-lg md:text-4xl font-bold text-muted-foreground/30">VS</span>
+          <span className="text-3xl md:text-6xl font-black text-primary/40 drop-shadow-lg">VS</span>
         </div>
 
         {renderMovieCard(rightMovie, "right", rightPosterUrl)}
