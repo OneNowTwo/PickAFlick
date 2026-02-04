@@ -19,12 +19,18 @@ const SESSION_TTL_MS = 60 * 60 * 1000;
 // Clean up old sessions periodically
 setInterval(() => {
   const now = Date.now();
+  let deletedCount = 0;
   Array.from(sessions.entries()).forEach(([sessionId, session]) => {
     // Sessions older than TTL get removed
     if (session._createdAt && now - session._createdAt > SESSION_TTL_MS) {
       sessions.delete(sessionId);
+      deletedCount++;
+      console.log(`🗑️  [SESSION CLEANUP] Deleted expired session ${sessionId}`);
     }
   });
+  if (deletedCount > 0) {
+    console.log(`🗑️  [SESSION CLEANUP] Deleted ${deletedCount} sessions. Remaining: ${sessions.size}`);
+  }
 }, 5 * 60 * 1000); // Every 5 minutes
 
 export const sessionStorage = {
@@ -43,7 +49,8 @@ export const sessionStorage = {
       _baseTotalRounds: 7, // Original total rounds
     };
     sessions.set(sessionId, session);
-    console.log(`[SESSION] Created session ${sessionId}. Total sessions: ${sessions.size}`);
+    console.log(`🟢 [SESSION CREATE] ID: ${sessionId} | Total: ${sessions.size} | Genres: ${genres.join(',')}`);
+    console.log(`🟢 [SESSION CREATE] All IDs: ${Array.from(sessions.keys()).join(', ')}`);
     return session;
   },
 
@@ -60,9 +67,12 @@ export const sessionStorage = {
 
   getSession(sessionId: string): Session | undefined {
     const session = sessions.get(sessionId);
-    console.log(`[SESSION] Get session ${sessionId}: ${session ? 'FOUND' : 'NOT FOUND'}. Total sessions: ${sessions.size}`);
-    if (!session) {
-      console.log(`[SESSION] Available sessions:`, Array.from(sessions.keys()));
+    if (session) {
+      console.log(`✅ [SESSION GET] ID: ${sessionId} | FOUND | Total: ${sessions.size}`);
+    } else {
+      console.log(`❌ [SESSION GET] ID: ${sessionId} | NOT FOUND | Total: ${sessions.size}`);
+      console.log(`❌ [SESSION GET] Available IDs: ${Array.from(sessions.keys()).join(', ') || 'NONE'}`);
+      console.log(`❌ [SESSION GET] Map has: ${sessions.has(sessionId)}`);
     }
     return session;
   },
