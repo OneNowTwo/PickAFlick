@@ -10,10 +10,27 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  // Serve static files with proper cache headers
+  app.use(express.static(distPath, {
+    setHeaders: (res, filePath) => {
+      // JS/CSS files with hashes can be cached forever
+      if (filePath.match(/\.(js|css)$/)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      } 
+      // HTML and other files should always check for updates
+      else if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+      }
+    }
+  }));
 
-  // fall through to index.html if the file doesn't exist
+  // fall through to index.html if the file doesn't exist - with no-cache headers
   app.use("*", (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
