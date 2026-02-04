@@ -356,6 +356,22 @@ export function RoundPicker({
 
   return (
     <div className="flex flex-col items-center gap-2 md:gap-4 w-full max-w-4xl mx-auto px-2 md:px-4">
+      {/* DEBUG TEST - MUST BE VISIBLE */}
+      <div style={{ 
+        position: 'fixed', 
+        top: 0, 
+        left: 0, 
+        right: 0, 
+        background: 'yellow', 
+        color: 'black', 
+        padding: '20px', 
+        fontSize: '24px',
+        fontWeight: 'bold',
+        zIndex: 9999,
+        textAlign: 'center'
+      }}>
+        TEST: Round {round} of {totalRounds} | {selectedGenres?.join(", ") || "No genres"}
+      </div>
       {/* Synopsis overlay */}
       {synopsisMovie && (
         <div 
