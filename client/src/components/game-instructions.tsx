@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Clapperboard } from "lucide-react";
 
 interface GameInstructionsProps {
   onStart: () => void;
@@ -46,9 +45,9 @@ export function GameInstructions({ onStart }: GameInstructionsProps) {
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-      <div className="relative max-w-2xl mx-4 p-8 md:p-12 bg-gradient-to-br from-gray-900 to-black border border-primary/20 rounded-2xl shadow-2xl">
-        <div className="space-y-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm">
+      <div className="relative max-w-xl mx-4 p-8 bg-black/90 border border-white/10 rounded-lg">
+        <div className="space-y-5">
           {steps.map((stepItem, index) => (
             <div
               key={index}
@@ -58,11 +57,11 @@ export function GameInstructions({ onStart }: GameInstructionsProps) {
                   : "opacity-0 translate-y-4"
               }`}
             >
-              <div className="flex items-start gap-4">
-                <div className="flex-shrink-0 w-12 h-12 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-xl">
-                  {stepItem.number}
-                </div>
-                <p className="text-xl md:text-2xl text-white font-medium pt-2 leading-relaxed">
+              <div className="flex items-start gap-3">
+                <span className="flex-shrink-0 text-white/40 font-normal text-lg mt-0.5">
+                  {stepItem.number}.
+                </span>
+                <p className="text-lg text-white/90 font-normal leading-relaxed">
                   {stepItem.text}
                 </p>
               </div>
@@ -70,20 +69,18 @@ export function GameInstructions({ onStart }: GameInstructionsProps) {
           ))}
 
           <div
-            className={`transform transition-all duration-500 mt-8 ${
+            className={`transform transition-all duration-500 pt-4 ${
               allStepsShown
                 ? "opacity-100 translate-y-0"
                 : "opacity-0 translate-y-4"
             }`}
           >
             <Button
-              size="lg"
               onClick={onStart}
               disabled={!allStepsShown}
-              className="w-full text-lg py-6"
+              className="w-full text-base py-5"
             >
-              <Clapperboard className="w-5 h-5 mr-2" />
-              Got it! Let's Go
+              Got it
             </Button>
           </div>
         </div>
