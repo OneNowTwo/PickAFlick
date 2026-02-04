@@ -5,11 +5,12 @@ import type { StartSessionResponse, RoundPairResponse, ChoiceResponse, Recommend
 import { RoundPicker } from "@/components/round-picker";
 import { ResultsScreen } from "@/components/results-screen";
 import { PosterGridBackground } from "@/components/poster-grid-background";
+import { GameInstructions } from "@/components/game-instructions";
 import { Button } from "@/components/ui/button";
 import { Clapperboard, Loader2, Bookmark } from "lucide-react";
 import { Link } from "wouter";
 
-type GameState = "start" | "playing" | "loading-recommendations" | "results";
+type GameState = "start" | "instructions" | "playing" | "loading-recommendations" | "results";
 
 // Individual genre options for precise matching
 const MOOD_OPTIONS = [
@@ -69,7 +70,7 @@ export default function Home() {
     },
     onSuccess: (data) => {
       setSessionId(data.sessionId);
-      setGameState("playing");
+      setGameState("instructions");
     },
   });
 
@@ -144,6 +145,10 @@ export default function Home() {
     setRecommendations(null);
     setSelectedMoods([]);
     setGameState("start");
+  }, []);
+
+  const handleStartPlaying = useCallback(() => {
+    setGameState("playing");
   }, []);
 
   return (
@@ -231,6 +236,10 @@ export default function Home() {
               )}
             </div>
           </div>
+        )}
+
+        {gameState === "instructions" && (
+          <GameInstructions onStart={handleStartPlaying} />
         )}
 
         {gameState === "playing" && roundQuery.data && !roundQuery.data.isComplete && (
