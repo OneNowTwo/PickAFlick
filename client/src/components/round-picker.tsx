@@ -403,12 +403,12 @@ export function RoundPicker({
 
       {/* Progress ring and insight header */}
       <div className="flex flex-col items-center gap-3">
-        {/* ROUND AND GENRE INFO - ALWAYS VISIBLE */}
-        <div className="text-center space-y-2">
-          <h2 className="text-primary font-bold text-lg md:text-xl">
+        {/* ROUND AND GENRE INFO - FORCED VISIBLE WITH RED */}
+        <div className="text-center space-y-2" style={{ color: '#ff0000' }}>
+          <h2 className="font-bold text-2xl" style={{ color: '#ff0000' }}>
             Round {round} of {totalRounds}
           </h2>
-          <h3 className="text-primary text-base md:text-lg font-semibold">
+          <h3 className="text-xl font-semibold" style={{ color: '#ff0000' }}>
             {selectedGenres?.length ? selectedGenres.join(" • ") : "All Genres"}
           </h3>
         </div>
