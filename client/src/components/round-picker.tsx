@@ -403,30 +403,6 @@ export function RoundPicker({
 
       {/* Progress ring and insight header */}
       <div className="flex flex-col items-center gap-3">
-        <div
-          style={{
-            position: "fixed",
-            top: "88px",
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 40,
-            background: "rgba(0,0,0,0.55)",
-            border: "1px solid rgba(255,255,255,0.25)",
-            borderRadius: "10px",
-            padding: "8px 14px",
-            textAlign: "center",
-            color: "#FFFFFF",
-            textShadow: "0 2px 4px rgba(0,0,0,0.6)",
-          }}
-        >
-          <div style={{ fontSize: "1rem", fontWeight: "700" }}>
-            Round {round} of {totalRounds}
-          </div>
-          <div style={{ fontSize: "0.9rem", fontWeight: "600" }}>
-            {selectedGenres?.length ? selectedGenres.join(" • ") : "All Genres"}
-          </div>
-        </div>
-
         <ProgressRing progress={progress} round={round} size={80} />
 
         <p className="text-muted-foreground text-xs md:text-sm max-w-xs text-center">
@@ -450,6 +426,16 @@ export function RoundPicker({
         </div>
 
         {renderMovieCard(rightMovie, "right", rightPosterUrl)}
+      </div>
+
+      {/* Round + Genre badge (font matches movie title) */}
+      <div className="text-center space-y-1 mt-1">
+        <h3 className="text-white font-bold text-sm md:text-xl">
+          Round {round} of {totalRounds}
+        </h3>
+        <p className="text-white/80 font-semibold text-xs md:text-sm">
+          {selectedGenres?.length ? selectedGenres.join(" • ") : "All Genres"}
+        </p>
       </div>
 
       {/* Skip button - bold and prominent */}
