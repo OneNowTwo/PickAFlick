@@ -92,6 +92,11 @@ async function buildCatalogueFromTMDb(): Promise<{ allMovies: Movie[]; grouped: 
     { name: "Romance", genreIds: [10749], minRating: 6.0 },
     { name: "Mystery & Crime", genreIds: [9648, 80], minRating: 6.5 },
     { name: "Animation", genreIds: [16], minRating: 6.5 },
+    { name: "Thriller", genreIds: [53], minRating: 6.0 },
+    { name: "Western", genreIds: [37], minRating: 6.0 },
+    { name: "War", genreIds: [10752], minRating: 6.5 },
+    { name: "Documentary", genreIds: [99], minRating: 6.5 },
+    { name: "Family", genreIds: [10751], minRating: 6.0 },
   ];
 
   for (const category of genreCategories) {
@@ -356,8 +361,17 @@ export function getRandomMoviePairFiltered(
       // Check if movie is a new release
       const isNewRelease = m.listSource === "New Releases";
       
-      // Check if movie is from indie lists (Indie Films)
+      // Check if movie is from special list-based filters
       const isIndie = genres.includes("Indie") && m.listSource === "Indie Films";
+      const isFromGenreList = genres.some(g => 
+        g !== "Indie" && (
+          m.listSource === g || // Direct match (e.g., "Western" list for "Western" genre)
+          (g === "Thriller" && m.listSource === "Thriller") ||
+          (g === "War" && m.listSource === "War") ||
+          (g === "Documentary" && m.listSource === "Documentary") ||
+          (g === "Family" && m.listSource === "Family")
+        )
+      );
       
       // Check if movie's PRIMARY genres (first 2 only) match any selected genre
       // Filter out "Indie" since it's list-based, not genre-based
@@ -383,8 +397,8 @@ export function getRandomMoviePairFiltered(
         }
       }
       
-      // Genres selected - combine with special filters
-      const matchesAny = matchesGenre || isIndie || (includeTopPicks && isTopPick) || (includeNewReleases && isNewRelease);
+      // Genres selected - combine with special filters and genre lists
+      const matchesAny = matchesGenre || isIndie || isFromGenreList || (includeTopPicks && isTopPick) || (includeNewReleases && isNewRelease);
       return matchesAny;
     });
   }
@@ -400,12 +414,21 @@ export function getRandomMoviePairFiltered(
       const isTopPick = m.listSource === "Top Rated" || m.listSource === "Popular Now";
       const isNewRelease = m.listSource === "New Releases";
       const isIndie = genres.includes("Indie") && m.listSource === "Indie Films";
+      const isFromGenreList = genres.some(g => 
+        g !== "Indie" && (
+          m.listSource === g || // Direct match for genre-based lists
+          (g === "Thriller" && m.listSource === "Thriller") ||
+          (g === "War" && m.listSource === "War") ||
+          (g === "Documentary" && m.listSource === "Documentary") ||
+          (g === "Family" && m.listSource === "Family")
+        )
+      );
       
       // Check ALL genres instead of just primary 2
       const genreFilters = genres.filter(g => g !== "Indie");
       const matchesGenre = genreFilters.length > 0 && m.genres.some(g => genreFilters.includes(g));
       
-      return matchesGenre || isIndie || (includeTopPicks && isTopPick) || (includeNewReleases && isNewRelease);
+      return matchesGenre || isIndie || isFromGenreList || (includeTopPicks && isTopPick) || (includeNewReleases && isNewRelease);
     });
     
     // If STILL not enough, only then use all movies

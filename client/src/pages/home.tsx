@@ -15,19 +15,21 @@ type GameState = "start" | "playing" | "loading-recommendations" | "results";
 const MOOD_OPTIONS = [
   { id: "action", label: "Action", genres: ["Action"] },
   { id: "adventure", label: "Adventure", genres: ["Adventure"] },
+  { id: "animation", label: "Animation", genres: ["Animation"] },
   { id: "comedy", label: "Comedy", genres: ["Comedy"] },
   { id: "crime", label: "Crime", genres: ["Crime"] },
+  { id: "documentary", label: "Documentary", genres: ["Documentary"] },
   { id: "drama", label: "Drama", genres: ["Drama"] },
+  { id: "family", label: "Family", genres: ["Family"] },
   { id: "fantasy", label: "Fantasy", genres: ["Fantasy"] },
   { id: "horror", label: "Horror", genres: ["Horror"] },
   { id: "indie", label: "Indie", genres: ["Indie"] }, // Special list-based filter
   { id: "mystery", label: "Mystery", genres: ["Mystery"] },
   { id: "romance", label: "Romance", genres: ["Romance"] },
-  { id: "scifi", label: "Sci-Fi", genres: ["Science Fiction"] },
+  { id: "scifi", label: "Sci-Fi", genres: ["Sci-Fi"] },
   { id: "thriller", label: "Thriller", genres: ["Thriller"] },
   { id: "war", label: "War", genres: ["War"] },
   { id: "western", label: "Western", genres: ["Western"] },
-  { id: "animation", label: "Animation", genres: ["Animation"] },
   { id: "top", label: "Top Picks", genres: [] }, // Special case - top rated/popular
 ];
 

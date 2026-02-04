@@ -37,22 +37,45 @@ function getEra(year: number | null): string {
 }
 
 export async function generateRecommendations(
-  chosenMovies: Movie[]
+  chosenMovies: Movie[],
+  rejectedMovies: Movie[] = [],
+  initialGenreFilters: string[] = []
 ): Promise<RecommendationsResponse> {
   // Build a rich profile of what the user chose with extended metadata
   // Focus on PRIMARY genre (first in list) for more precise matching
-  const movieDescriptions = chosenMovies.map((m) => ({
-    title: m.title,
-    year: m.year,
-    era: getEra(m.year),
-    primaryGenre: m.genres[0] || "Unknown", // PRIMARY genre is first
-    allGenres: m.genres,
-    overview: m.overview,
-    director: m.director || "Unknown",
-    cast: m.cast?.slice(0, 3) || [],
-    keywords: m.keywords?.slice(0, 5) || [],
-    rating: m.rating,
-  }));
+  // Later rounds weighted more heavily (rounds 5-7 are 1.5x more important)
+  const movieDescriptions = chosenMovies.map((m, index) => {
+    const round = index + 1;
+    const weight = round >= 5 ? 1.5 : 1.0; // Recency weighting
+    return {
+      title: m.title,
+      year: m.year,
+      era: getEra(m.year),
+      primaryGenre: m.genres[0] || "Unknown", // PRIMARY genre is first
+      allGenres: m.genres,
+      overview: m.overview,
+      director: m.director || "Unknown",
+      cast: m.cast?.slice(0, 5) || [], // Increased from 3 to 5
+      keywords: m.keywords?.slice(0, 10) || [], // Increased from 5 to 10
+      rating: m.rating,
+      round,
+      weight, // Include weight in data for AI context
+    };
+  });
+
+  // Build rejection context - what they passed on and WHY (what beat it)
+  const rejectionContext = rejectedMovies.map((m, index) => {
+    const chosenMovie = chosenMovies[index];
+    return {
+      title: m.title,
+      year: m.year,
+      primaryGenre: m.genres[0] || "Unknown",
+      allGenres: m.genres,
+      director: m.director || "Unknown",
+      lostTo: chosenMovie ? `"${chosenMovie.title}" (${chosenMovie.genres[0]})` : "unknown",
+      round: index + 1,
+    };
+  });
 
   // Add randomization seed to encourage varied responses
   const randomSeed = Math.floor(Math.random() * 100000);
@@ -62,17 +85,31 @@ export async function generateRecommendations(
   const currentYear = new Date().getFullYear();
   const recentThreshold = currentYear - 3; // Movies from last 3 years
 
+  // Build initial filter context
+  const filterContext = initialGenreFilters.length > 0 
+    ? `\n🎯 **USER'S INITIAL MOOD/GENRE FILTERS**: They specifically chose to explore ${initialGenreFilters.join(", ")} films. This tells you their starting intent - honor it but don't be constrained by it.\n`
+    : "";
+
   const prompt = `You are a world-class film critic and cinema historian with deep knowledge of GLOBAL cinema spanning 100+ years. You're like a Criterion Collection curator meets film school professor meets that friend who's seen 10,000 movies.
 
-A user chose these 7 movies in a head-to-head picker game:
+A user played a head-to-head picker game where they chose 7 movies (and rejected 7 others). This gives you BOTH positive and negative signals about their taste.${filterContext}
 
-${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}, ${m.era})
+=== MOVIES THEY CHOSE (Positive Signal) ===
+
+${movieDescriptions.map((m, i) => `Round ${m.round}${m.weight > 1 ? " 🔥 (WEIGHTED - later choice, stronger signal)" : ""}
+"${m.title}" (${m.year}, ${m.era}) - Rating: ${m.rating || "N/A"}/10
    Director: ${m.director}
    Cast: ${m.cast.length > 0 ? m.cast.join(", ") : "Unknown"}
    PRIMARY Genre: ${m.primaryGenre} (focus on this!)
    Secondary Genres: ${m.allGenres.slice(1).join(", ") || "None"}
    Keywords/Themes: ${m.keywords.length > 0 ? m.keywords.join(", ") : "N/A"}
    Synopsis: ${m.overview || "No synopsis available"}`).join("\n\n")}
+
+=== MOVIES THEY REJECTED (Negative Signal - Avoid Similar) ===
+
+${rejectionContext.length > 0 ? rejectionContext.map((m) => `Round ${m.round}: "${m.title}" (${m.year}) - ${m.primaryGenre}
+   Rejected in favor of: ${m.lostTo}
+   Why this matters: They actively chose something else, suggesting they're NOT drawn to ${m.primaryGenre === chosenMovies[m.round - 1]?.genres[0] ? "this style/tone" : m.primaryGenre} in this context`).join("\n\n") : "No rejections tracked (older session)"}
 
 [Session: ${sessionTime} | Diversity Seed: ${randomSeed}]
 
@@ -81,6 +118,10 @@ ${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}, ${m.era})
 === THINK LIKE A FILM BUFF - MULTI-DIMENSIONAL ANALYSIS ===
 
 ⚠️ **PRIMARY GENRE FOCUS**: Pay special attention to each movie's PRIMARY genre (listed first). If they picked Crime, focus on Crime films - not just "anything with crime elements". Be precise with genre matching while still considering style, mood, and quality.
+
+⚠️ **USE THE REJECTION DATA**: The movies they REJECTED tell you what they DON'T want. If they rejected a rom-com for a thriller, avoid romantic comedies. If they rejected action for drama, they want substance over spectacle. The rejections are NEGATIVE SIGNALS - learn from them!
+
+⚠️ **RECENCY WEIGHTING**: Later rounds (5-7) marked with 🔥 are MORE IMPORTANT - their taste refined as they went. Weight these choices more heavily in your analysis.
 
 Don't just match genres mechanically. A true cinephile sees CONNECTIONS across many dimensions:
 
@@ -324,16 +365,27 @@ function extractTopGenres(movies: Movie[]): string[] {
 // Generate a single replacement recommendation when user marks one as "seen it"
 export async function generateReplacementRecommendation(
   chosenMovies: Movie[],
-  excludeTmdbIds: number[]
+  excludeTmdbIds: number[],
+  rejectedMovies: Movie[] = []
 ): Promise<Recommendation | null> {
-  const movieDescriptions = chosenMovies.map((m) => ({
-    title: m.title,
-    year: m.year,
-    genres: m.genres,
-    director: m.director || "Unknown",
-    cast: m.cast?.slice(0, 3) || [],
-    keywords: m.keywords?.slice(0, 5) || [],
-  }));
+  const movieDescriptions = chosenMovies.map((m, index) => {
+    const round = index + 1;
+    const weight = round >= 5 ? 1.5 : 1.0;
+    return {
+      title: m.title,
+      year: m.year,
+      genres: m.genres,
+      director: m.director || "Unknown",
+      cast: m.cast?.slice(0, 5) || [], // Increased from 3 to 5
+      keywords: m.keywords?.slice(0, 10) || [], // Increased from 5 to 10
+      round,
+      weight,
+    };
+  });
+
+  const rejectionHints = rejectedMovies.length > 0
+    ? `\n\nThey REJECTED: ${rejectedMovies.slice(0, 3).map(m => `"${m.title}" (${m.genres[0]})`).join(", ")} - avoid similar styles.`
+    : "";
 
   const randomSeed = Math.floor(Math.random() * 100000);
 
@@ -361,7 +413,7 @@ export async function generateReplacementRecommendation(
 
   const prompt = `You're a passionate film buff helping a friend find something new to watch. Based on their picks, you KNOW their taste:
 
-${movieDescriptions.map((m, i) => `${i + 1}. "${m.title}" (${m.year}) - Director: ${m.director}, Cast: ${m.cast.join(", ") || "Unknown"}`).join("\n")}
+${movieDescriptions.map((m) => `Round ${m.round}${m.weight > 1 ? " 🔥" : ""}: "${m.title}" (${m.year}) - Director: ${m.director}, Cast: ${m.cast.join(", ") || "Unknown"}, Themes: ${m.keywords.join(", ") || "N/A"}`).join("\n")}${rejectionHints}
 
 They've dismissed ${excludeTmdbIds.length} suggestions already, so dig DEEPER into your film knowledge.
 

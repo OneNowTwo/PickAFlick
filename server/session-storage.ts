@@ -107,6 +107,28 @@ export const sessionStorage = {
     });
   },
 
+  getRejectedMovies(sessionId: string): Movie[] {
+    const session = sessions.get(sessionId);
+    if (!session) return [];
+
+    return session.choices.map((choice) => {
+      return choice.chosenMovieId === choice.leftMovie.id
+        ? choice.rightMovie
+        : choice.leftMovie;
+    });
+  },
+
+  getChoicesWithContext(sessionId: string): Array<{ round: number; chosen: Movie; rejected: Movie }> {
+    const session = sessions.get(sessionId);
+    if (!session) return [];
+
+    return session.choices.map((choice) => ({
+      round: choice.round,
+      chosen: choice.chosenMovieId === choice.leftMovie.id ? choice.leftMovie : choice.rightMovie,
+      rejected: choice.chosenMovieId === choice.leftMovie.id ? choice.rightMovie : choice.leftMovie,
+    }));
+  },
+
   deleteSession(sessionId: string): void {
     sessions.delete(sessionId);
   },

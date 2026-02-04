@@ -27,6 +27,11 @@ const IMDB_LISTS = [
   { id: "ls4156672710", name: "Indie Films" }, // A24 Movies (2026+)
   { id: "ls000942888", name: "Indie Films" }, // Indie Top 50
   { id: "ls000551942", name: "Indie Films" }, // 50 Greatest Independent Films
+  { id: "ls000045692", name: "Western" }, // The Top 50 Best Western Movies
+  { id: "ls021031406", name: "Thriller" }, // Best Thrillers of All Time
+  { id: "ls055731784", name: "War" }, // Top 25 Greatest War Movies of All Time
+  { id: "ls000032409", name: "Documentary" }, // Top 250 Documentaries
+  { id: "ls072723334", name: "Family" }, // Best Rated Family Movies
 ];
 
 async function fetchIMDbList(listId: string): Promise<IMDbListItem[]> {

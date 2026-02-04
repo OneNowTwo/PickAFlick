@@ -322,13 +322,20 @@ export async function registerRoutes(
       }
 
       const chosenMovies = sessionStorage.getChosenMovies(sessionId);
+      const rejectedMovies = sessionStorage.getRejectedMovies(sessionId);
+      const filters = sessionStorage.getSessionFilters(sessionId);
+      const initialGenreFilters = filters?.genres || [];
       
       if (chosenMovies.length === 0) {
         res.status(400).json({ error: "No choices recorded" });
         return;
       }
 
-      const recommendations = await generateRecommendations(chosenMovies);
+      const recommendations = await generateRecommendations(
+        chosenMovies,
+        rejectedMovies,
+        initialGenreFilters
+      );
 
       res.set(NO_CACHE_HEADERS);
       res.json(recommendations);
@@ -356,12 +363,14 @@ export async function registerRoutes(
       }
 
       const chosenMovies = sessionStorage.getChosenMovies(sessionId);
+      const rejectedMovies = sessionStorage.getRejectedMovies(sessionId);
+      
       if (chosenMovies.length === 0) {
         res.status(400).json({ error: "No choices recorded" });
         return;
       }
 
-      const replacement = await generateReplacementRecommendation(chosenMovies, excludeTmdbIds);
+      const replacement = await generateReplacementRecommendation(chosenMovies, excludeTmdbIds, rejectedMovies);
       
       if (!replacement) {
         res.status(404).json({ error: "No replacement available" });
@@ -693,6 +702,30 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error getting shared recommendations:", error);
       res.status(500).json({ error: "Failed to get shared recommendations" });
+    }
+  });
+
+  // Admin endpoint to force cache rebuild (temporary - for testing new lists)
+  app.post("/api/admin/rebuild-cache", async (_req: Request, res: Response) => {
+    try {
+      console.log("Manual cache rebuild requested - clearing database cache");
+      
+      // Clear the database cache
+      await storage.clearCatalogueCache();
+      
+      // Trigger rebuild
+      console.log("Starting catalogue rebuild with new lists...");
+      initCatalogue().catch((error) => {
+        console.error("Failed to rebuild catalogue:", error);
+      });
+      
+      res.json({ 
+        success: true, 
+        message: "Cache cleared! Catalogue rebuild started. Check logs in 5-10 minutes for progress." 
+      });
+    } catch (error) {
+      console.error("Error clearing cache:", error);
+      res.status(500).json({ error: "Failed to clear cache" });
     }
   });
 

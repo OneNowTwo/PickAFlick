@@ -12,6 +12,7 @@ export interface IStorage {
   getSharedRecommendations(shareId: string): Promise<SharedRecommendation | undefined>;
   getCatalogueCache(): Promise<MovieCatalogueCache | undefined>;
   saveCatalogueCache(movies: string, grouped: string): Promise<void>;
+  clearCatalogueCache(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -74,6 +75,10 @@ export class DatabaseStorage implements IStorage {
         grouped,
       });
     }
+  }
+
+  async clearCatalogueCache(): Promise<void> {
+    await db.delete(movieCatalogueCache).where(eq(movieCatalogueCache.cacheKey, "catalogue"));
   }
 }
 
