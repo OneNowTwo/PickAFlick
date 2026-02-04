@@ -428,16 +428,6 @@ export function RoundPicker({
         {renderMovieCard(rightMovie, "right", rightPosterUrl)}
       </div>
 
-      {/* Round + Genre badge (font matches movie title) */}
-      <div className="text-center space-y-1 mt-1">
-        <h3 className="text-white font-bold text-sm md:text-xl">
-          Round {round} of {totalRounds}
-        </h3>
-        <p className="text-white/80 font-semibold text-xs md:text-sm">
-          {selectedGenres?.length ? selectedGenres.join(" • ") : "All Genres"}
-        </p>
-      </div>
-
       {/* Skip button - bold and prominent */}
       {onSkip && !selectedSide && (
         <Button
