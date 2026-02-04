@@ -43,6 +43,7 @@ export const sessionStorage = {
       _baseTotalRounds: 7, // Original total rounds
     };
     sessions.set(sessionId, session);
+    console.log(`[SESSION] Created session ${sessionId}. Total sessions: ${sessions.size}`);
     return session;
   },
 
@@ -58,7 +59,12 @@ export const sessionStorage = {
   },
 
   getSession(sessionId: string): Session | undefined {
-    return sessions.get(sessionId);
+    const session = sessions.get(sessionId);
+    console.log(`[SESSION] Get session ${sessionId}: ${session ? 'FOUND' : 'NOT FOUND'}. Total sessions: ${sessions.size}`);
+    if (!session) {
+      console.log(`[SESSION] Available sessions:`, Array.from(sessions.keys()));
+    }
+    return session;
   },
 
   updateSession(sessionId: string, update: Partial<Session>): Session | undefined {
