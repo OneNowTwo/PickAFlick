@@ -409,7 +409,7 @@ export function RoundPicker({
             Round {round} of {totalRounds}
           </p>
           {selectedGenres.length > 0 && (
-            <p className="text-primary/70 text-xs md:text-sm font-medium">
+            <p className="text-primary text-sm md:text-base font-semibold mb-1">
               {selectedGenres.join(" • ")}
             </p>
           )}
@@ -431,7 +431,7 @@ export function RoundPicker({
         {renderMovieCard(leftMovie, "left", leftPosterUrl)}
 
         <div className={`flex items-center justify-center transition-opacity duration-300 ${selectedSide ? "opacity-0" : "opacity-100"}`}>
-          <span className="text-3xl md:text-6xl font-black text-primary/40 drop-shadow-lg">VS</span>
+          <span className="text-3xl md:text-6xl font-black text-primary/90 drop-shadow-lg">VS</span>
         </div>
 
         {renderMovieCard(rightMovie, "right", rightPosterUrl)}
