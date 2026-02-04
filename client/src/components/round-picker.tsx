@@ -404,10 +404,10 @@ export function RoundPicker({
       {/* Progress ring and insight header */}
       <div className="flex flex-col items-center gap-3">
         <div className="text-center space-y-2">
-          <h2 className="text-white drop-shadow-lg font-bold text-xl md:text-2xl">
+          <h2 style={{ color: '#FFFFFF', fontSize: '1.5rem', fontWeight: 'bold', textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
             Round {round} of {totalRounds}
           </h2>
-          <h3 className="text-white drop-shadow-lg text-lg md:text-xl font-semibold">
+          <h3 style={{ color: '#FFFFFF', fontSize: '1.25rem', fontWeight: '600', textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
             {selectedGenres?.length ? selectedGenres.join(" • ") : "All Genres"}
           </h3>
         </div>
