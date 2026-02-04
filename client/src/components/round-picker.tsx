@@ -403,16 +403,31 @@ export function RoundPicker({
 
       {/* Progress ring and insight header */}
       <div className="flex flex-col items-center gap-3">
-        <ProgressRing progress={progress} round={round} size={80} />
-
-        <div className="text-center space-y-2 mt-1">
-          <h2 style={{ color: '#FFFFFF', fontSize: '1.5rem', fontWeight: 'bold', textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
+        <div
+          style={{
+            position: "fixed",
+            top: "88px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 40,
+            background: "rgba(0,0,0,0.55)",
+            border: "1px solid rgba(255,255,255,0.25)",
+            borderRadius: "10px",
+            padding: "8px 14px",
+            textAlign: "center",
+            color: "#FFFFFF",
+            textShadow: "0 2px 4px rgba(0,0,0,0.6)",
+          }}
+        >
+          <div style={{ fontSize: "1rem", fontWeight: "700" }}>
             Round {round} of {totalRounds}
-          </h2>
-          <h3 style={{ color: '#FFFFFF', fontSize: '1.25rem', fontWeight: '600', textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
+          </div>
+          <div style={{ fontSize: "0.9rem", fontWeight: "600" }}>
             {selectedGenres?.length ? selectedGenres.join(" • ") : "All Genres"}
-          </h3>
+          </div>
         </div>
+
+        <ProgressRing progress={progress} round={round} size={80} />
 
         <p className="text-muted-foreground text-xs md:text-sm max-w-xs text-center">
           {insight}
