@@ -356,22 +356,6 @@ export function RoundPicker({
 
   return (
     <div className="flex flex-col items-center gap-2 md:gap-4 w-full max-w-4xl mx-auto px-2 md:px-4">
-      {/* DEBUG TEST - MUST BE VISIBLE */}
-      <div style={{ 
-        position: 'fixed', 
-        top: 0, 
-        left: 0, 
-        right: 0, 
-        background: 'yellow', 
-        color: 'black', 
-        padding: '20px', 
-        fontSize: '24px',
-        fontWeight: 'bold',
-        zIndex: 9999,
-        textAlign: 'center'
-      }}>
-        TEST: Round {round} of {totalRounds} | {selectedGenres?.join(", ") || "No genres"}
-      </div>
       {/* Synopsis overlay */}
       {synopsisMovie && (
         <div 
@@ -419,12 +403,11 @@ export function RoundPicker({
 
       {/* Progress ring and insight header */}
       <div className="flex flex-col items-center gap-3">
-        {/* ROUND AND GENRE INFO - FORCED VISIBLE WITH RED */}
-        <div className="text-center space-y-2" style={{ color: '#ff0000' }}>
-          <h2 className="font-bold text-2xl" style={{ color: '#ff0000' }}>
+        <div className="text-center space-y-2">
+          <h2 className="text-primary font-bold text-xl md:text-2xl">
             Round {round} of {totalRounds}
           </h2>
-          <h3 className="text-xl font-semibold" style={{ color: '#ff0000' }}>
+          <h3 className="text-primary text-lg md:text-xl font-semibold">
             {selectedGenres?.length ? selectedGenres.join(" • ") : "All Genres"}
           </h3>
         </div>
