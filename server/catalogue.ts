@@ -83,20 +83,24 @@ async function buildCatalogueFromTMDb(): Promise<{ allMovies: Movie[]; grouped: 
   console.log(`Got ${newReleaseMovies.length} New Releases movies total`);
 
   // Genre categories with their TMDb genre IDs (2 pages each)
+  // Each genre gets its own separate category - no combining!
   const genreCategories = [
-    { name: "Horror", genreIds: [27], minRating: 5.5 },
-    { name: "Comedy", genreIds: [35], minRating: 6.0 },
-    { name: "Sci-Fi & Fantasy", genreIds: [878, 14], minRating: 6.0 },
-    { name: "Drama", genreIds: [18], minRating: 7.0 },
-    { name: "Action & Adventure", genreIds: [28, 12], minRating: 6.0 },
-    { name: "Romance", genreIds: [10749], minRating: 6.0 },
-    { name: "Mystery & Crime", genreIds: [9648, 80], minRating: 6.5 },
+    { name: "Action", genreIds: [28], minRating: 6.0 },
+    { name: "Adventure", genreIds: [12], minRating: 6.0 },
     { name: "Animation", genreIds: [16], minRating: 6.5 },
-    { name: "Thriller", genreIds: [53], minRating: 6.0 },
-    { name: "Western", genreIds: [37], minRating: 6.0 },
-    { name: "War", genreIds: [10752], minRating: 6.5 },
+    { name: "Comedy", genreIds: [35], minRating: 6.0 },
+    { name: "Crime", genreIds: [80], minRating: 6.5 },
     { name: "Documentary", genreIds: [99], minRating: 6.5 },
+    { name: "Drama", genreIds: [18], minRating: 7.0 },
     { name: "Family", genreIds: [10751], minRating: 6.0 },
+    { name: "Fantasy", genreIds: [14], minRating: 6.0 },
+    { name: "Horror", genreIds: [27], minRating: 5.5 },
+    { name: "Mystery", genreIds: [9648], minRating: 6.5 },
+    { name: "Romance", genreIds: [10749], minRating: 6.0 },
+    { name: "Sci-Fi", genreIds: [878], minRating: 6.0 },
+    { name: "Thriller", genreIds: [53], minRating: 6.0 },
+    { name: "War", genreIds: [10752], minRating: 6.5 },
+    { name: "Western", genreIds: [37], minRating: 6.0 },
   ];
 
   for (const category of genreCategories) {
@@ -364,33 +368,16 @@ export function getRandomMoviePairFiltered(
       // Check if movie is from special list-based filters
       const isIndie = genres.includes("Indie") && m.listSource === "Indie Films";
       
-      // Check if movie's list source matches or partially matches selected genres
+      // Check if movie's list source matches selected genre (exact match only)
       const isFromGenreList = genres.some(g => {
         if (g === "Indie") return false; // Handled separately
-        
-        // Exact match
-        if (m.listSource === g) return true;
-        
-        // Partial match for combined list sources (e.g., "Sci-Fi & Fantasy" contains "Sci-Fi")
-        if (m.listSource.includes(g)) return true;
-        
-        return false;
+        return m.listSource === g;
       });
       
-      // Check if movie's actual genres (from TMDB) match selected genres
-      // Check all genres, not just primary, for better matching
+      // Check if movie's actual genres (from TMDB) match selected genres (exact match)
       const genreFilters = genres.filter(g => g !== "Indie");
       const matchesGenre = genreFilters.length > 0 && m.genres.some(movieGenre => 
-        genreFilters.some(selectedGenre => {
-          // Exact match
-          if (movieGenre === selectedGenre) return true;
-          
-          // Handle "Sci-Fi" matching "Science Fiction" (TMDB returns "Sci-Fi" but just in case)
-          if ((selectedGenre === "Sci-Fi" && movieGenre === "Science Fiction") ||
-              (selectedGenre === "Science Fiction" && movieGenre === "Sci-Fi")) return true;
-          
-          return false;
-        })
+        genreFilters.includes(movieGenre)
       );
       
       // Build criteria
@@ -429,22 +416,15 @@ export function getRandomMoviePairFiltered(
       const isNewRelease = m.listSource === "New Releases";
       const isIndie = genres.includes("Indie") && m.listSource === "Indie Films";
       
-      // Check list source with partial matching
+      // Check list source (exact match only)
       const isFromGenreList = genres.some(g => {
         if (g === "Indie") return false;
-        return m.listSource === g || m.listSource.includes(g);
+        return m.listSource === g;
       });
       
-      // Check ALL movie genres with improved matching
+      // Check ALL movie genres (exact match)
       const genreFilters = genres.filter(g => g !== "Indie");
-      const matchesGenre = genreFilters.length > 0 && m.genres.some(movieGenre => 
-        genreFilters.some(selectedGenre => {
-          if (movieGenre === selectedGenre) return true;
-          if ((selectedGenre === "Sci-Fi" && movieGenre === "Science Fiction") ||
-              (selectedGenre === "Science Fiction" && movieGenre === "Sci-Fi")) return true;
-          return false;
-        })
-      );
+      const matchesGenre = genreFilters.length > 0 && m.genres.some(g => genreFilters.includes(g));
       
       return matchesGenre || isIndie || isFromGenreList || (includeTopPicks && isTopPick) || (includeNewReleases && isNewRelease);
     });
