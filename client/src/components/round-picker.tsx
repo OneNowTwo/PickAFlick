@@ -403,15 +403,18 @@ export function RoundPicker({
 
       {/* Progress ring and insight header */}
       <div className="flex flex-col items-center gap-3">
-        <div className="text-center space-y-1">
-          <p className="text-primary font-bold text-base md:text-lg">
+        {/* ROUND AND GENRE INFO - ALWAYS VISIBLE */}
+        <div className="text-center space-y-2">
+          <h2 className="text-primary font-bold text-lg md:text-xl">
             Round {round} of {totalRounds}
-          </p>
-          <p className="text-primary text-base md:text-lg font-bold">
-            {selectedGenres && selectedGenres.length > 0 ? selectedGenres.join(" • ") : "All Genres"}
-          </p>
+          </h2>
+          <h3 className="text-primary text-base md:text-lg font-semibold">
+            {selectedGenres?.length ? selectedGenres.join(" • ") : "All Genres"}
+          </h3>
         </div>
+        
         <ProgressRing progress={progress} round={round} size={80} />
+        
         <p className="text-muted-foreground text-xs md:text-sm max-w-xs text-center">
           {insight}
         </p>
