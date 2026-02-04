@@ -374,11 +374,10 @@ export function getRandomMoviePairFiltered(
         return m.listSource === g;
       });
       
-      // Check if movie's actual genres (from TMDB) match selected genres (exact match)
+      // Check if movie's PRIMARY genre (first in array) matches selected genres
       const genreFilters = genres.filter(g => g !== "Indie");
-      const matchesGenre = genreFilters.length > 0 && m.genres.some(movieGenre => 
-        genreFilters.includes(movieGenre)
-      );
+      const matchesGenre = genreFilters.length > 0 && m.genres.length > 0 && 
+        genreFilters.includes(m.genres[0]);
       
       // Build criteria
       const specialFiltersOnly = genreFilters.length === 0;
@@ -422,9 +421,9 @@ export function getRandomMoviePairFiltered(
         return m.listSource === g;
       });
       
-      // Check ALL movie genres (exact match)
+      // Check PRIMARY movie genre (first in array)
       const genreFilters = genres.filter(g => g !== "Indie");
-      const matchesGenre = genreFilters.length > 0 && m.genres.some(g => genreFilters.includes(g));
+      const matchesGenre = genreFilters.length > 0 && m.genres.length > 0 && genreFilters.includes(m.genres[0]);
       
       return matchesGenre || isIndie || isFromGenreList || (includeTopPicks && isTopPick) || (includeNewReleases && isNewRelease);
     });
