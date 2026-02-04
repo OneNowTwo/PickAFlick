@@ -71,7 +71,7 @@ export function GameInstructions({ onStart }: GameInstructionsProps) {
           ))}
 
           <div
-            className={`transform transition-all duration-500 pt-4 ${
+            className={`transform transition-all duration-500 pt-4 flex justify-center ${
               allStepsShown
                 ? "opacity-100 translate-y-0"
                 : "opacity-0 translate-y-4"
@@ -80,7 +80,7 @@ export function GameInstructions({ onStart }: GameInstructionsProps) {
             <Button
               onClick={onStart}
               disabled={!allStepsShown}
-              className="w-full text-base h-10"
+              className="text-base h-10 px-12 hover:scale-105 hover:brightness-110 transition-all"
             >
               Got it
             </Button>
