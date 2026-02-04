@@ -84,23 +84,24 @@ async function buildCatalogueFromTMDb(): Promise<{ allMovies: Movie[]; grouped: 
 
   // Genre categories with their TMDb genre IDs (2 pages each)
   // Each genre gets its own separate category - no combining!
+  // Minimum ratings raised to 7.0+ for quality (except Horror which tends lower)
   const genreCategories = [
-    { name: "Action", genreIds: [28], minRating: 6.0 },
-    { name: "Adventure", genreIds: [12], minRating: 6.0 },
-    { name: "Animation", genreIds: [16], minRating: 6.5 },
-    { name: "Comedy", genreIds: [35], minRating: 6.0 },
-    { name: "Crime", genreIds: [80], minRating: 6.5 },
-    { name: "Documentary", genreIds: [99], minRating: 6.5 },
-    { name: "Drama", genreIds: [18], minRating: 7.0 },
-    { name: "Family", genreIds: [10751], minRating: 6.0 },
-    { name: "Fantasy", genreIds: [14], minRating: 6.0 },
-    { name: "Horror", genreIds: [27], minRating: 5.5 },
-    { name: "Mystery", genreIds: [9648], minRating: 6.5 },
-    { name: "Romance", genreIds: [10749], minRating: 6.0 },
-    { name: "Sci-Fi", genreIds: [878], minRating: 6.0 },
-    { name: "Thriller", genreIds: [53], minRating: 6.0 },
-    { name: "War", genreIds: [10752], minRating: 6.5 },
-    { name: "Western", genreIds: [37], minRating: 6.0 },
+    { name: "Action", genreIds: [28], minRating: 7.0 },
+    { name: "Adventure", genreIds: [12], minRating: 7.0 },
+    { name: "Animation", genreIds: [16], minRating: 7.0 },
+    { name: "Comedy", genreIds: [35], minRating: 7.0 },
+    { name: "Crime", genreIds: [80], minRating: 7.0 },
+    { name: "Documentary", genreIds: [99], minRating: 7.0 },
+    { name: "Drama", genreIds: [18], minRating: 7.5 },
+    { name: "Family", genreIds: [10751], minRating: 7.0 },
+    { name: "Fantasy", genreIds: [14], minRating: 7.0 },
+    { name: "Horror", genreIds: [27], minRating: 6.5 },
+    { name: "Mystery", genreIds: [9648], minRating: 7.0 },
+    { name: "Romance", genreIds: [10749], minRating: 7.0 },
+    { name: "Sci-Fi", genreIds: [878], minRating: 7.0 },
+    { name: "Thriller", genreIds: [53], minRating: 7.0 },
+    { name: "War", genreIds: [10752], minRating: 7.0 },
+    { name: "Western", genreIds: [37], minRating: 7.0 },
   ];
 
   for (const category of genreCategories) {
