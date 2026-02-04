@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import type { Movie, ChoiceHistory } from "@shared/schema";
-import { Loader2, Star, Shuffle, X, Brain } from "lucide-react";
+import { Loader2, Star, Shuffle, X, Brain, Bookmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 
 interface RoundPickerProps {
   round: number;
@@ -196,8 +198,25 @@ export function RoundPicker({
   const [isAnimating, setIsAnimating] = useState(false);
   const [showSynopsis, setShowSynopsis] = useState<"left" | "right" | null>(null);
   const [insight, setInsight] = useState("");
+  const [addedToWatchlist, setAddedToWatchlist] = useState<Set<number>>(new Set());
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const didShowSynopsisRef = useRef(false);
+
+  const addToWatchlistMutation = useMutation({
+    mutationFn: async (movie: Movie) => {
+      return await apiRequest("POST", "/api/watchlist", {
+        tmdbId: movie.tmdbId,
+        title: movie.title,
+        year: movie.year,
+        posterPath: movie.posterPath,
+        genres: movie.genres,
+        rating: movie.rating,
+      });
+    },
+    onSuccess: (_data, movie) => {
+      setAddedToWatchlist(prev => new Set(prev).add(movie.tmdbId));
+    },
+  });
 
   const handleSelect = (side: "left" | "right", movieId: number) => {
     if (isSubmitting || isAnimating || isSkipping || showSynopsis || didShowSynopsisRef.current) {
@@ -279,6 +298,14 @@ export function RoundPicker({
   const renderMovieCard = (movie: Movie, side: "left" | "right", posterUrl: string | null) => {
     const leadActors = getLeadActors(movie);
     const highlyRated = isHighlyRated(movie);
+    const isAdded = addedToWatchlist.has(movie.tmdbId);
+
+    const handleAddToWatchlist = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!isAdded) {
+        addToWatchlistMutation.mutate(movie);
+      }
+    };
 
     return (
       <button
@@ -323,6 +350,21 @@ export function RoundPicker({
             <span>Acclaimed</span>
           </div>
         )}
+        
+        {/* Add to Watchlist button */}
+        <button
+          onClick={handleAddToWatchlist}
+          disabled={isAdded}
+          className={`absolute top-2 right-2 md:top-3 md:right-3 flex items-center gap-1 px-2 py-1 rounded text-[10px] md:text-xs font-semibold transition-all ${
+            isAdded 
+              ? "bg-green-600 text-white" 
+              : "bg-black/60 text-white/90 hover:bg-black/80 hover:text-white"
+          }`}
+          data-testid={`button-add-watchlist-${side}`}
+        >
+          <Bookmark className={`w-3 h-3 ${isAdded ? "fill-current" : ""}`} />
+          <span>{isAdded ? "Added!" : "Save"}</span>
+        </button>
         
         <div className="absolute bottom-0 left-0 right-0 p-2 md:p-4 text-left">
           <h3 className="text-white font-bold text-sm md:text-xl line-clamp-2">
