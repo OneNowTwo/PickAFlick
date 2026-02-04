@@ -403,10 +403,9 @@ export function RoundPicker({
 
       {/* Progress ring and insight header */}
       <div className="flex flex-col items-center gap-3">
-        <div style={{ position: 'fixed', top: '10px', right: '10px', background: 'lime', color: 'black', padding: '4px 8px', fontSize: '12px', zIndex: 9999, fontWeight: 'bold' }}>
-          v2.0 LOADED
-        </div>
-        <div className="text-center space-y-2">
+        <ProgressRing progress={progress} round={round} size={80} />
+
+        <div className="text-center space-y-2 mt-1">
           <h2 style={{ color: '#FFFFFF', fontSize: '1.5rem', fontWeight: 'bold', textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
             Round {round} of {totalRounds}
           </h2>
@@ -414,9 +413,7 @@ export function RoundPicker({
             {selectedGenres?.length ? selectedGenres.join(" • ") : "All Genres"}
           </h3>
         </div>
-        
-        <ProgressRing progress={progress} round={round} size={80} />
-        
+
         <p className="text-muted-foreground text-xs md:text-sm max-w-xs text-center">
           {insight}
         </p>
