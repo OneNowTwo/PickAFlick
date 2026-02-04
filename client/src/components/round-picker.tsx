@@ -115,6 +115,30 @@ function generateInsight(choiceHistory: ChoiceHistory[], round: number): string 
   return defaults[round % defaults.length];
 }
 
+function normalizeGenre(genre: string): string {
+  return genre.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function getDisplayGenres(genres: string[], selectedGenres?: string[]): string[] {
+  if (!selectedGenres || selectedGenres.length === 0 || genres.length === 0) {
+    return genres;
+  }
+
+  const normalizedSelected = selectedGenres.map(normalizeGenre);
+  const matchIndex = genres.findIndex((genre) =>
+    normalizedSelected.includes(normalizeGenre(genre)),
+  );
+
+  if (matchIndex <= 0) {
+    return genres;
+  }
+
+  const reordered = [...genres];
+  const [matched] = reordered.splice(matchIndex, 1);
+  reordered.unshift(matched);
+  return reordered;
+}
+
 // Get fun status message based on progress
 function getProgressMessage(progress: number, round: number): string {
   if (progress === 0) return "Let's go!";
@@ -279,6 +303,7 @@ export function RoundPicker({
   const renderMovieCard = (movie: Movie, side: "left" | "right", posterUrl: string | null) => {
     const leadActors = getLeadActors(movie);
     const highlyRated = isHighlyRated(movie);
+    const displayGenres = getDisplayGenres(movie.genres, selectedGenres);
 
     return (
       <button
@@ -337,7 +362,7 @@ export function RoundPicker({
             </p>
           )}
           <p className="text-white/50 text-[10px] md:text-xs mt-0.5 line-clamp-1 hidden md:block">
-            {movie.genres.slice(0, 3).join(" • ")}
+            {displayGenres.slice(0, 3).join(" • ")}
           </p>
         </div>
         
