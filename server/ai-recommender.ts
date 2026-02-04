@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { Movie, Recommendation, RecommendationsResponse } from "@shared/schema";
-import { searchMovieByTitle, getMovieTrailer, getMovieTrailers, getMovieDetails } from "./tmdb";
+import { searchMovieByTitle, getMovieTrailer, getMovieTrailers, getMovieDetails, getWatchProviders } from "./tmdb";
 import { getAllMovies } from "./catalogue";
 
 const openai = new OpenAI({
@@ -249,14 +249,21 @@ CRITICAL NOTES:
           return null; // Skip if not found or already chosen
         }
 
-        // Get movie details and trailers in parallel
-        const [movieDetails, trailerUrls] = await Promise.all([
+        // Get movie details, trailers, and watch providers in parallel
+        const [movieDetails, trailerUrls, watchProviders] = await Promise.all([
           getMovieDetails(searchResult.id),
           getMovieTrailers(searchResult.id),
+          getWatchProviders(searchResult.id),
         ]);
         
         if (!movieDetails) {
           return null; // Skip if we couldn't get details
+        }
+        
+        // Skip movies with NO trailer AND NO watch providers (poor UX)
+        if (trailerUrls.length === 0 && watchProviders.providers.length === 0) {
+          console.log(`Skipping "${movieDetails.title}" - no trailer or watch providers`);
+          return null;
         }
 
         // Set the list source
@@ -291,14 +298,20 @@ CRITICAL NOTES:
     
     if (eligibleWildcards.length > 0) {
       const wildcardMovie = shuffleArray([...eligibleWildcards])[0];
-      const wildcardTrailers = await getMovieTrailers(wildcardMovie.tmdbId);
+      const [wildcardTrailers, wildcardProviders] = await Promise.all([
+        getMovieTrailers(wildcardMovie.tmdbId),
+        getWatchProviders(wildcardMovie.tmdbId),
+      ]);
       
-      recommendations.push({
-        movie: { ...wildcardMovie, listSource: "wildcard" },
-        trailerUrl: wildcardTrailers.length > 0 ? wildcardTrailers[0] : null,
-        trailerUrls: wildcardTrailers,
-        reason: `A surprise pick from our curated collection! This ${wildcardMovie.genres.slice(0, 2).join("/")} gem from ${wildcardMovie.year} might just become your next favorite.`,
-      });
+      // Only add wildcard if it has trailer OR watch providers
+      if (wildcardTrailers.length > 0 || wildcardProviders.providers.length > 0) {
+        recommendations.push({
+          movie: { ...wildcardMovie, listSource: "wildcard" },
+          trailerUrl: wildcardTrailers.length > 0 ? wildcardTrailers[0] : null,
+          trailerUrls: wildcardTrailers,
+          reason: `A surprise pick from our curated collection! This ${wildcardMovie.genres.slice(0, 2).join("/")} gem from ${wildcardMovie.year} might just become your next favorite.`,
+        });
+      }
     }
 
     return {
@@ -462,7 +475,16 @@ Respond in JSON:
       
       if (eligibleMovies.length > 0) {
         const fallbackMovie = shuffleArray([...eligibleMovies])[0];
-        const trailerUrls = await getMovieTrailers(fallbackMovie.tmdbId);
+        const [trailerUrls, watchProviders] = await Promise.all([
+          getMovieTrailers(fallbackMovie.tmdbId),
+          getWatchProviders(fallbackMovie.tmdbId),
+        ]);
+        
+        // Skip if no trailer AND no watch providers
+        if (trailerUrls.length === 0 && watchProviders.providers.length === 0) {
+          return null;
+        }
+        
         return {
           movie: { ...fallbackMovie, listSource: "replacement" },
           trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null,
@@ -473,11 +495,21 @@ Respond in JSON:
       return null;
     }
 
-    // Get full movie details
-    const movieDetails = await getMovieDetails(searchResult.id);
+    // Get full movie details, trailers, and watch providers
+    const [movieDetails, trailerUrls, watchProviders] = await Promise.all([
+      getMovieDetails(searchResult.id),
+      getMovieTrailers(searchResult.id),
+      getWatchProviders(searchResult.id),
+    ]);
+    
     if (!movieDetails) return null;
+    
+    // Skip if no trailer AND no watch providers
+    if (trailerUrls.length === 0 && watchProviders.providers.length === 0) {
+      console.log(`Skipping replacement "${movieDetails.title}" - no trailer or watch providers`);
+      return null;
+    }
 
-    const trailerUrls = await getMovieTrailers(searchResult.id);
     movieDetails.listSource = "replacement";
 
     return {
@@ -497,7 +529,16 @@ Respond in JSON:
     
     if (eligibleMovies.length > 0) {
       const fallbackMovie = shuffleArray([...eligibleMovies])[0];
-      const trailerUrls = await getMovieTrailers(fallbackMovie.tmdbId);
+      const [trailerUrls, watchProviders] = await Promise.all([
+        getMovieTrailers(fallbackMovie.tmdbId),
+        getWatchProviders(fallbackMovie.tmdbId),
+      ]);
+      
+      // Skip if no trailer AND no watch providers
+      if (trailerUrls.length === 0 && watchProviders.providers.length === 0) {
+        return null;
+      }
+      
       return {
         movie: { ...fallbackMovie, listSource: "replacement" },
         trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null,
