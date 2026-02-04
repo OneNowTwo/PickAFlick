@@ -85,12 +85,18 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || "5000", 10);
+  const SERVER_START_ID = Math.random().toString(36).substring(2, 8);
   httpServer.listen(
     {
       port,
       host: "0.0.0.0",
     },
     () => {
+      console.log(`\n🚀 ========================================`);
+      console.log(`🚀 SERVER STARTED - ID: ${SERVER_START_ID}`);
+      console.log(`🚀 Port: ${port}`);
+      console.log(`🚀 Time: ${new Date().toISOString()}`);
+      console.log(`🚀 ========================================\n`);
       log(`serving on port ${port}`);
     },
   );
