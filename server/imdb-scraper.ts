@@ -31,6 +31,8 @@ const IMDB_LISTS = [
   { id: "ls549966710", name: "Action" },
   { id: "ls063897780", name: "Action" },
   { id: "ls4103540912", name: "Romance" },
+  { id: "ls072723203", name: "Romance" },
+  { id: "ls000485502", name: "Romance" },
   { id: "ls055874673", name: "Sci-Fi" },
   { id: "ls091410558", name: "Sci-Fi" },
   { id: "ls000045692", name: "Western" }, // The Top 50 Best Western Movies
