@@ -359,30 +359,34 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   })();
 
   return (
-    <div className="flex flex-col items-center gap-1 md:gap-3 w-full max-w-5xl mx-auto px-2 md:px-4 py-0 md:py-3">
-      {/* Compact Header - Minimal on mobile */}
-      <div className="text-center py-1 md:py-0">
-        <div className="flex items-center justify-center gap-1.5 md:gap-2">
-          <Brain className="w-4 h-4 md:w-6 md:h-6 text-primary" />
-          <h2 className="text-base md:text-2xl font-bold text-foreground">
-            We've Got It!
-          </h2>
+    <div className="flex flex-col items-center gap-2 md:gap-3 w-full max-w-5xl mx-auto px-2 md:px-4 pt-2 md:pt-3 pb-4 md:pb-6">
+      {/* Movie Counter - Moved to top on mobile */}
+      <div className="flex items-center gap-2 order-1 md:order-3">
+        <span className="text-xs md:text-sm font-medium text-muted-foreground">
+          {currentIndex + 1} / {totalRecs}
+        </span>
+        <div className="flex gap-1">
+          {displayRecs.map((rec, i) => (
+            <button
+              key={rec.movie.tmdbId}
+              onClick={() => { setCurrentIndex(i); setAutoPlayTrailer(true); }}
+              className={`w-2 h-2 rounded-full transition-all ${
+                i === currentIndex 
+                  ? "bg-primary w-4" 
+                  : likedMovies.has(rec.movie.id)
+                    ? "bg-green-500"
+                    : maybeMovies.has(rec.movie.id)
+                      ? "bg-yellow-500"
+                      : "bg-muted-foreground/30"
+              }`}
+              data-testid={`dot-indicator-${i}`}
+            />
+          ))}
         </div>
-        {/* Desktop reveal message */}
-        <p className="hidden md:block text-primary font-medium text-sm">
-          {revealMessage}
-        </p>
       </div>
 
-      {/* Mobile Taste Summary - Condensed combined line */}
-      {mobileTasteSummary && (
-        <p className="md:hidden text-white/70 text-xs text-center px-3 max-w-xs leading-snug" data-testid="mobile-taste-summary">
-          {mobileTasteSummary}
-        </p>
-      )}
-
       {/* Preference Summary - Hidden on mobile for space */}
-      <div className="hidden md:flex flex-wrap items-center justify-center gap-2 text-sm max-w-4xl" data-testid="preference-profile">
+      <div className="hidden md:flex flex-wrap items-center justify-center gap-2 text-sm max-w-4xl order-2" data-testid="preference-profile">
         {preferenceProfile.topGenres.length > 0 && (
           <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
             <Film className="w-4 h-4 text-primary" />
@@ -409,38 +413,13 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         )}
       </div>
 
-      {/* Movie Counter */}
-      <div className="flex items-center gap-2">
-        <span className="text-xs md:text-sm font-medium text-muted-foreground">
-          {currentIndex + 1} / {totalRecs}
-        </span>
-        <div className="flex gap-1">
-          {displayRecs.map((rec, i) => (
-            <button
-              key={rec.movie.tmdbId}
-              onClick={() => { setCurrentIndex(i); setAutoPlayTrailer(true); }}
-              className={`w-2 h-2 rounded-full transition-all ${
-                i === currentIndex 
-                  ? "bg-primary w-4" 
-                  : likedMovies.has(rec.movie.id)
-                    ? "bg-green-500"
-                    : maybeMovies.has(rec.movie.id)
-                      ? "bg-yellow-500"
-                      : "bg-muted-foreground/30"
-              }`}
-              data-testid={`dot-indicator-${i}`}
-            />
-          ))}
-        </div>
-      </div>
-
       {/* Current Recommendation */}
       <div 
         className="w-full max-w-4xl bg-card/50 border border-border/50 rounded-xl md:rounded-2xl overflow-hidden backdrop-blur-sm"
         data-testid={`recommendation-card-${currentIndex}`}
       >
-        {/* Trailer / Poster Area - Constrained height for viewport fit */}
-        <div className="aspect-video max-h-[40vh] md:max-h-[50vh] relative">
+        {/* Trailer / Poster Area - Optimized height for mobile */}
+        <div className="aspect-video max-h-[50vh] md:max-h-[50vh] relative">
           {(() => {
             // Get available trailers - use trailerUrls array or fall back to single trailerUrl
             const availableTrailers = currentRec.trailerUrls?.length 
@@ -551,7 +530,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
             </Button>
           </div>
           
-          <p className="text-foreground/70 text-sm leading-relaxed mt-2 line-clamp-2" data-testid="text-movie-reason">
+          <p className="text-foreground/70 text-sm leading-relaxed mt-2" data-testid="text-movie-reason">
             {currentRec.reason}
           </p>
         </div>

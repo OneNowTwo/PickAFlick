@@ -260,10 +260,11 @@ CRITICAL NOTES:
           return null; // Skip if we couldn't get details
         }
         
-        // Skip movies with NO trailer AND NO watch providers (poor UX)
-        if (trailerUrls.length === 0 && watchProviders.providers.length === 0) {
-          console.log(`Skipping "${movieDetails.title}" - no trailer or watch providers`);
-          return null;
+        // If TMDb has no trailer, construct YouTube search URL as fallback
+        if (trailerUrls.length === 0) {
+          const searchQuery = encodeURIComponent(`${movieDetails.title} ${movieDetails.year || ''} official trailer`);
+          trailerUrls = [`https://www.youtube.com/results?search_query=${searchQuery}`];
+          console.log(`No TMDb trailer for "${movieDetails.title}", using YouTube search URL`);
         }
 
         // Set the list source
@@ -480,9 +481,10 @@ Respond in JSON:
           getWatchProviders(fallbackMovie.tmdbId),
         ]);
         
-        // Skip if no trailer AND no watch providers
-        if (trailerUrls.length === 0 && watchProviders.providers.length === 0) {
-          return null;
+        // If TMDb has no trailer, construct YouTube search URL
+        if (trailerUrls.length === 0) {
+          const searchQuery = encodeURIComponent(`${fallbackMovie.title} ${fallbackMovie.year || ''} official trailer`);
+          trailerUrls = [`https://www.youtube.com/results?search_query=${searchQuery}`];
         }
         
         return {
@@ -504,10 +506,11 @@ Respond in JSON:
     
     if (!movieDetails) return null;
     
-    // Skip if no trailer AND no watch providers
-    if (trailerUrls.length === 0 && watchProviders.providers.length === 0) {
-      console.log(`Skipping replacement "${movieDetails.title}" - no trailer or watch providers`);
-      return null;
+    // If TMDb has no trailer, construct YouTube search URL
+    if (trailerUrls.length === 0) {
+      const searchQuery = encodeURIComponent(`${movieDetails.title} ${movieDetails.year || ''} official trailer`);
+      trailerUrls = [`https://www.youtube.com/results?search_query=${searchQuery}`];
+      console.log(`No TMDb trailer for "${movieDetails.title}", using YouTube search URL`);
     }
 
     movieDetails.listSource = "replacement";
