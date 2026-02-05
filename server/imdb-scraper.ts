@@ -202,7 +202,11 @@ export async function getAllIMDbMovies(): Promise<Map<string, IMDbListItem[]>> {
 
   for (const list of IMDB_LISTS) {
     const items = await fetchIMDbList(list.id);
-    results.set(list.name, items);
+    
+    // Append to existing list if name already exists
+    const existing = results.get(list.name) || [];
+    results.set(list.name, [...existing, ...items]);
+    
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
