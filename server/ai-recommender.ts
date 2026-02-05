@@ -250,7 +250,7 @@ CRITICAL NOTES:
         }
 
         // Get movie details, trailers, and watch providers in parallel
-        const [movieDetails, trailerUrls, watchProviders] = await Promise.all([
+        const [movieDetails, tmdbTrailers, watchProviders] = await Promise.all([
           getMovieDetails(searchResult.id),
           getMovieTrailers(searchResult.id),
           getWatchProviders(searchResult.id),
@@ -261,9 +261,11 @@ CRITICAL NOTES:
         }
         
         // If TMDb has no trailer, construct YouTube search URL as fallback
-        if (trailerUrls.length === 0) {
-          const searchQuery = encodeURIComponent(`${movieDetails.title} ${movieDetails.year || ''} official trailer`);
-          trailerUrls = [`https://www.youtube.com/results?search_query=${searchQuery}`];
+        const trailerUrls = tmdbTrailers.length === 0
+          ? [`https://www.youtube.com/results?search_query=${encodeURIComponent(`${movieDetails.title} ${movieDetails.year || ''} official trailer`)}`]
+          : tmdbTrailers;
+        
+        if (tmdbTrailers.length === 0) {
           console.log(`No TMDb trailer for "${movieDetails.title}", using YouTube search URL`);
         }
 
@@ -476,16 +478,15 @@ Respond in JSON:
       
       if (eligibleMovies.length > 0) {
         const fallbackMovie = shuffleArray([...eligibleMovies])[0];
-        const [trailerUrls, watchProviders] = await Promise.all([
+        const [tmdbTrailers, watchProviders] = await Promise.all([
           getMovieTrailers(fallbackMovie.tmdbId),
           getWatchProviders(fallbackMovie.tmdbId),
         ]);
         
         // If TMDb has no trailer, construct YouTube search URL
-        if (trailerUrls.length === 0) {
-          const searchQuery = encodeURIComponent(`${fallbackMovie.title} ${fallbackMovie.year || ''} official trailer`);
-          trailerUrls = [`https://www.youtube.com/results?search_query=${searchQuery}`];
-        }
+        const trailerUrls = tmdbTrailers.length === 0
+          ? [`https://www.youtube.com/results?search_query=${encodeURIComponent(`${fallbackMovie.title} ${fallbackMovie.year || ''} official trailer`)}`]
+          : tmdbTrailers;
         
         return {
           movie: { ...fallbackMovie, listSource: "replacement" },
@@ -498,7 +499,7 @@ Respond in JSON:
     }
 
     // Get full movie details, trailers, and watch providers
-    const [movieDetails, trailerUrls, watchProviders] = await Promise.all([
+    const [movieDetails, tmdbTrailers, watchProviders] = await Promise.all([
       getMovieDetails(searchResult.id),
       getMovieTrailers(searchResult.id),
       getWatchProviders(searchResult.id),
@@ -507,9 +508,11 @@ Respond in JSON:
     if (!movieDetails) return null;
     
     // If TMDb has no trailer, construct YouTube search URL
-    if (trailerUrls.length === 0) {
-      const searchQuery = encodeURIComponent(`${movieDetails.title} ${movieDetails.year || ''} official trailer`);
-      trailerUrls = [`https://www.youtube.com/results?search_query=${searchQuery}`];
+    const trailerUrls = tmdbTrailers.length === 0
+      ? [`https://www.youtube.com/results?search_query=${encodeURIComponent(`${movieDetails.title} ${movieDetails.year || ''} official trailer`)}`]
+      : tmdbTrailers;
+    
+    if (tmdbTrailers.length === 0) {
       console.log(`No TMDb trailer for "${movieDetails.title}", using YouTube search URL`);
     }
 
