@@ -35,6 +35,10 @@ const IMDB_LISTS = [
   { id: "ls000485502", name: "Romance" },
   { id: "ls055874673", name: "Sci-Fi" },
   { id: "ls091410558", name: "Sci-Fi" },
+  { id: "ls056141474", name: "Sci-Fi" },
+  { id: "ls027138048", name: "Sci-Fi" },
+  { id: "ls092675159", name: "Sci-Fi" },
+  { id: "ls538933235", name: "Sci-Fi" },
   { id: "ls000045692", name: "Western" }, // The Top 50 Best Western Movies
   { id: "ls021031406", name: "Thriller" }, // Best Thrillers of All Time
   { id: "ls055731784", name: "War" }, // Top 25 Greatest War Movies of All Time
