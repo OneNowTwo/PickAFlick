@@ -144,21 +144,34 @@ async function buildCatalogue(): Promise<void> {
 
     if (imdbTotalCount > 0) {
       // IMDb scraping worked, use it
+      // Apply quality filters: 7.0+ rating for most genres, 6.5+ for horror
+      const MIN_RATING_DEFAULT = 7.0;
+      const MIN_RATING_HORROR = 6.5;
+      
       for (const [listName, items] of Array.from(imdbMovies.entries())) {
         console.log(`Processing ${listName}: ${items.length} movies`);
         const listMovies: Movie[] = [];
+        const minRating = listName.toLowerCase().includes('horror') ? MIN_RATING_HORROR : MIN_RATING_DEFAULT;
 
         for (const item of items.slice(0, 50)) {
           const movie = await resolveMovieFromTitle(item.title, item.year, listName);
           if (movie) {
-            listMovies.push(movie);
+            // Apply rating filter to maintain quality standards
+            if (movie.rating && movie.rating >= minRating) {
+              listMovies.push(movie);
+            } else if (!movie.rating) {
+              // If no rating data, still include it (might be too new)
+              listMovies.push(movie);
+            } else {
+              console.log(`Filtered out "${movie.title}" (${movie.rating?.toFixed(1)}) - below ${minRating} threshold`);
+            }
           }
           await new Promise((resolve) => setTimeout(resolve, 100));
         }
 
         grouped[listName] = listMovies;
         allMovies.push(...listMovies);
-        console.log(`Resolved ${listMovies.length} movies for ${listName}`);
+        console.log(`Resolved ${listMovies.length} movies for ${listName} (min rating: ${minRating})`);
       }
       
       // Always add New Releases from TMDb (Now Playing) even when IMDb works

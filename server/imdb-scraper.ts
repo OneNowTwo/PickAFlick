@@ -27,9 +27,9 @@ const IMDB_LISTS = [
   { id: "ls4156672710", name: "Indie Films" }, // A24 Movies (2026+)
   { id: "ls000942888", name: "Indie Films" }, // Indie Top 50
   { id: "ls000551942", name: "Indie Films" }, // 50 Greatest Independent Films
-  { id: "ls058457359", name: "Action" }, // 100 Greatest Action Movies
-  { id: "ls000094404", name: "Romance" }, // AFI's 100 Greatest Love Stories
-  { id: "ls057608548", name: "Sci-Fi" }, // 100 Best Sci-Fi Movies
+  { id: "ls000093103", name: "Action" }, // Top 100 Action Movies
+  { id: "ls006639119", name: "Romance" }, // Best Romance Movies
+  { id: "ls000093512", name: "Sci-Fi" }, // Top Rated Sci-Fi Movies
   { id: "ls000045692", name: "Western" }, // The Top 50 Best Western Movies
   { id: "ls021031406", name: "Thriller" }, // Best Thrillers of All Time
   { id: "ls055731784", name: "War" }, // Top 25 Greatest War Movies of All Time
