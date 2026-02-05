@@ -25,11 +25,6 @@ const IMDB_LISTS = [
   { id: "ls004043006", name: "Horror" },
   { id: "ls064647874", name: "Horror" },
   { id: "ls045568293", name: "Horror" },
-  { id: "ls006339065", name: "Horror" },
-  { id: "ls062655785", name: "Horror" },
-  { id: "ls004043006", name: "Horror" },
-  { id: "ls064647874", name: "Horror" },
-  { id: "ls045568293", name: "Horror" },
   { id: "ls002065120", name: "Classic Movies" },
   { id: "ls058726648", name: "Comedy" },
   { id: "ls592119934", name: "Comedy" },
@@ -59,6 +54,9 @@ const IMDB_LISTS = [
   { id: "ls024427769", name: "Documentary" },
   { id: "ls079181605", name: "Documentary" },
   { id: "ls592350792", name: "Documentary" },
+  { id: "ls595254906", name: "New Releases" },
+  { id: "ls596414359", name: "New Releases" },
+  { id: "ls543298865", name: "New Releases" },
   { id: "ls072723334", name: "Family" }, // Best Rated Family Movies
 ];
 
