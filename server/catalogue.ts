@@ -84,24 +84,24 @@ async function buildCatalogueFromTMDb(): Promise<{ allMovies: Movie[]; grouped: 
 
   // Genre categories with their TMDb genre IDs (2 pages each)
   // Each genre gets its own separate category - no combining!
-  // Minimum ratings raised to 7.0+ for quality (except Horror which tends lower)
+  // Minimum ratings set to 5.5 across the board for better variety
   const genreCategories = [
-    { name: "Action", genreIds: [28], minRating: 7.0 },
-    { name: "Adventure", genreIds: [12], minRating: 7.0 },
-    { name: "Animation", genreIds: [16], minRating: 7.0 },
-    { name: "Comedy", genreIds: [35], minRating: 7.0 },
-    { name: "Crime", genreIds: [80], minRating: 7.0 },
-    { name: "Documentary", genreIds: [99], minRating: 7.0 },
-    { name: "Drama", genreIds: [18], minRating: 7.5 },
-    { name: "Family", genreIds: [10751], minRating: 7.0 },
-    { name: "Fantasy", genreIds: [14], minRating: 7.0 },
-    { name: "Horror", genreIds: [27], minRating: 6.5 },
-    { name: "Mystery", genreIds: [9648], minRating: 7.0 },
-    { name: "Romance", genreIds: [10749], minRating: 7.0 },
-    { name: "Sci-Fi", genreIds: [878], minRating: 7.0 },
-    { name: "Thriller", genreIds: [53], minRating: 7.0 },
-    { name: "War", genreIds: [10752], minRating: 7.0 },
-    { name: "Western", genreIds: [37], minRating: 7.0 },
+    { name: "Action", genreIds: [28], minRating: 5.5 },
+    { name: "Adventure", genreIds: [12], minRating: 5.5 },
+    { name: "Animation", genreIds: [16], minRating: 5.5 },
+    { name: "Comedy", genreIds: [35], minRating: 5.5 },
+    { name: "Crime", genreIds: [80], minRating: 5.5 },
+    { name: "Documentary", genreIds: [99], minRating: 5.5 },
+    { name: "Drama", genreIds: [18], minRating: 5.5 },
+    { name: "Family", genreIds: [10751], minRating: 5.5 },
+    { name: "Fantasy", genreIds: [14], minRating: 5.5 },
+    { name: "Horror", genreIds: [27], minRating: 5.5 },
+    { name: "Mystery", genreIds: [9648], minRating: 5.5 },
+    { name: "Romance", genreIds: [10749], minRating: 5.5 },
+    { name: "Sci-Fi", genreIds: [878], minRating: 5.5 },
+    { name: "Thriller", genreIds: [53], minRating: 5.5 },
+    { name: "War", genreIds: [10752], minRating: 5.5 },
+    { name: "Western", genreIds: [37], minRating: 5.5 },
   ];
 
   for (const category of genreCategories) {
@@ -144,9 +144,9 @@ async function buildCatalogue(): Promise<void> {
 
     if (imdbTotalCount > 0) {
       // IMDb scraping worked, use it
-      // Apply quality filters: 7.0+ rating for most genres, 6.5+ for horror
-      const MIN_RATING_DEFAULT = 7.0;
-      const MIN_RATING_HORROR = 6.5;
+      // Apply quality filters: 5.5+ rating across all genres for better variety
+      const MIN_RATING_DEFAULT = 5.5;
+      const MIN_RATING_HORROR = 5.5;
       
       for (const [listName, items] of Array.from(imdbMovies.entries())) {
         console.log(`Processing ${listName}: ${items.length} movies`);
