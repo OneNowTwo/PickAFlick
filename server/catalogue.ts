@@ -150,7 +150,7 @@ async function buildCatalogue(): Promise<void> {
         console.log(`Processing ${listName}: ${items.length} movies`);
         const listMovies: Movie[] = [];
 
-        for (const item of items.slice(0, 50)) {
+        for (const item of items.slice(0, 200)) {
           const movie = await resolveMovieFromTitle(item.title, item.year, listName);
           if (movie) {
             listMovies.push(movie);
