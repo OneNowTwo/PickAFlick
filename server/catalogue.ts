@@ -84,24 +84,24 @@ async function buildCatalogueFromTMDb(): Promise<{ allMovies: Movie[]; grouped: 
 
   // Genre categories with their TMDb genre IDs (2 pages each)
   // Each genre gets its own separate category - no combining!
-  // Minimum ratings set to 5.5 across the board for better variety
+  // NO rating filters - get maximum variety
   const genreCategories = [
-    { name: "Action", genreIds: [28], minRating: 5.5 },
-    { name: "Adventure", genreIds: [12], minRating: 5.5 },
-    { name: "Animation", genreIds: [16], minRating: 5.5 },
-    { name: "Comedy", genreIds: [35], minRating: 5.5 },
-    { name: "Crime", genreIds: [80], minRating: 5.5 },
-    { name: "Documentary", genreIds: [99], minRating: 5.5 },
-    { name: "Drama", genreIds: [18], minRating: 5.5 },
-    { name: "Family", genreIds: [10751], minRating: 5.5 },
-    { name: "Fantasy", genreIds: [14], minRating: 5.5 },
-    { name: "Horror", genreIds: [27], minRating: 5.5 },
-    { name: "Mystery", genreIds: [9648], minRating: 5.5 },
-    { name: "Romance", genreIds: [10749], minRating: 5.5 },
-    { name: "Sci-Fi", genreIds: [878], minRating: 5.5 },
-    { name: "Thriller", genreIds: [53], minRating: 5.5 },
-    { name: "War", genreIds: [10752], minRating: 5.5 },
-    { name: "Western", genreIds: [37], minRating: 5.5 },
+    { name: "Action", genreIds: [28], minRating: 0 },
+    { name: "Adventure", genreIds: [12], minRating: 0 },
+    { name: "Animation", genreIds: [16], minRating: 0 },
+    { name: "Comedy", genreIds: [35], minRating: 0 },
+    { name: "Crime", genreIds: [80], minRating: 0 },
+    { name: "Documentary", genreIds: [99], minRating: 0 },
+    { name: "Drama", genreIds: [18], minRating: 0 },
+    { name: "Family", genreIds: [10751], minRating: 0 },
+    { name: "Fantasy", genreIds: [14], minRating: 0 },
+    { name: "Horror", genreIds: [27], minRating: 0 },
+    { name: "Mystery", genreIds: [9648], minRating: 0 },
+    { name: "Romance", genreIds: [10749], minRating: 0 },
+    { name: "Sci-Fi", genreIds: [878], minRating: 0 },
+    { name: "Thriller", genreIds: [53], minRating: 0 },
+    { name: "War", genreIds: [10752], minRating: 0 },
+    { name: "Western", genreIds: [37], minRating: 0 },
   ];
 
   for (const category of genreCategories) {
@@ -144,34 +144,23 @@ async function buildCatalogue(): Promise<void> {
 
     if (imdbTotalCount > 0) {
       // IMDb scraping worked, use it
-      // Apply quality filters: 5.5+ rating across all genres for better variety
-      const MIN_RATING_DEFAULT = 5.5;
-      const MIN_RATING_HORROR = 5.5;
+      // NO rating filters - accept all movies from curated IMDb lists
       
       for (const [listName, items] of Array.from(imdbMovies.entries())) {
         console.log(`Processing ${listName}: ${items.length} movies`);
         const listMovies: Movie[] = [];
-        const minRating = listName.toLowerCase().includes('horror') ? MIN_RATING_HORROR : MIN_RATING_DEFAULT;
 
         for (const item of items.slice(0, 50)) {
           const movie = await resolveMovieFromTitle(item.title, item.year, listName);
           if (movie) {
-            // Apply rating filter to maintain quality standards
-            if (movie.rating && movie.rating >= minRating) {
-              listMovies.push(movie);
-            } else if (!movie.rating) {
-              // If no rating data, still include it (might be too new)
-              listMovies.push(movie);
-            } else {
-              console.log(`Filtered out "${movie.title}" (${movie.rating?.toFixed(1)}) - below ${minRating} threshold`);
-            }
+            listMovies.push(movie);
           }
           await new Promise((resolve) => setTimeout(resolve, 100));
         }
 
         grouped[listName] = listMovies;
         allMovies.push(...listMovies);
-        console.log(`Resolved ${listMovies.length} movies for ${listName} (min rating: ${minRating})`);
+        console.log(`Resolved ${listMovies.length} movies for ${listName}`);
       }
       
       // Always add New Releases from TMDb (Now Playing) even when IMDb works

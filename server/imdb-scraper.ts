@@ -21,16 +21,18 @@ const IMDB_LISTS = [
   { id: "ls003501243", name: "Horror" }, // Best Horror Movies
   { id: "ls561898139", name: "Horror" }, // Horror Classics
   { id: "ls002065120", name: "Classic Movies" },
-  { id: "ls068097561", name: "Comedy" }, // Best Comedy Movies
-  { id: "ls025826708", name: "Comedy" }, // Top Rated Comedy Movies
+  { id: "ls058726648", name: "Comedy" },
+  { id: "ls592119934", name: "Comedy" },
   { id: "ls005747458", name: "Critically Acclaimed" },
   { id: "ls006660717", name: "Indie Films" }, // Indie/Arthouse films
   { id: "ls4156672710", name: "Indie Films" }, // A24 Movies (2026+)
   { id: "ls000942888", name: "Indie Films" }, // Indie Top 50
   { id: "ls000551942", name: "Indie Films" }, // 50 Greatest Independent Films
-  { id: "ls000093103", name: "Action" }, // Top 100 Action Movies
-  { id: "ls006639119", name: "Romance" }, // Best Romance Movies
-  { id: "ls000093512", name: "Sci-Fi" }, // Top Rated Sci-Fi Movies
+  { id: "ls549966710", name: "Action" },
+  { id: "ls063897780", name: "Action" },
+  { id: "ls4103540912", name: "Romance" },
+  { id: "ls055874673", name: "Sci-Fi" },
+  { id: "ls091410558", name: "Sci-Fi" },
   { id: "ls000045692", name: "Western" }, // The Top 50 Best Western Movies
   { id: "ls021031406", name: "Thriller" }, // Best Thrillers of All Time
   { id: "ls055731784", name: "War" }, // Top 25 Greatest War Movies of All Time
