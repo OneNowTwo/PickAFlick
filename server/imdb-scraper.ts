@@ -18,8 +18,18 @@ function decodeHtmlEntities(text: string): string {
 
 const IMDB_LISTS = [
   { id: "ls094921320", name: "Top 250 Movies" },
-  { id: "ls003501243", name: "Horror" }, // Best Horror Movies
-  { id: "ls561898139", name: "Horror" }, // Horror Classics
+  { id: "ls003501243", name: "Horror" },
+  { id: "ls561898139", name: "Horror" },
+  { id: "ls006339065", name: "Horror" },
+  { id: "ls062655785", name: "Horror" },
+  { id: "ls004043006", name: "Horror" },
+  { id: "ls064647874", name: "Horror" },
+  { id: "ls045568293", name: "Horror" },
+  { id: "ls006339065", name: "Horror" },
+  { id: "ls062655785", name: "Horror" },
+  { id: "ls004043006", name: "Horror" },
+  { id: "ls064647874", name: "Horror" },
+  { id: "ls045568293", name: "Horror" },
   { id: "ls002065120", name: "Classic Movies" },
   { id: "ls058726648", name: "Comedy" },
   { id: "ls592119934", name: "Comedy" },
@@ -42,7 +52,13 @@ const IMDB_LISTS = [
   { id: "ls000045692", name: "Western" }, // The Top 50 Best Western Movies
   { id: "ls021031406", name: "Thriller" }, // Best Thrillers of All Time
   { id: "ls055731784", name: "War" }, // Top 25 Greatest War Movies of All Time
+  { id: "ls052424174", name: "War" },
   { id: "ls000032409", name: "Documentary" }, // Top 250 Documentaries
+  { id: "ls068305490", name: "Documentary" },
+  { id: "ls574334648", name: "Documentary" },
+  { id: "ls024427769", name: "Documentary" },
+  { id: "ls079181605", name: "Documentary" },
+  { id: "ls592350792", name: "Documentary" },
   { id: "ls072723334", name: "Family" }, // Best Rated Family Movies
 ];
 
