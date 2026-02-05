@@ -113,9 +113,29 @@ ${rejectionContext.length > 0 ? rejectionContext.map((m) => `Round ${m.round}: "
 
 [Session: ${sessionTime} | Diversity Seed: ${randomSeed}]
 
-⚠️ CRITICAL: USE THIS SEED TO EXPLORE DIFFERENT CORNERS OF CINEMA EACH TIME. Avoid repeating the same titles. This user is unique - give them FRESH discoveries.
+⚠️ CRITICAL: USE THIS SEED TO EXPLORE DIFFERENT CORNERS OF CINEMA EACH TIME. Avoid repeating the same titles - think laterally and dig deeper into cinema history. Every user is unique and deserves FRESH discoveries tailored to their specific A/B test choices.
 
 === THINK LIKE A FILM BUFF - MULTI-DIMENSIONAL ANALYSIS ===
+
+⚠️ **DEEPLY ANALYZE THE A/B TEST RESULTS - THIS IS THE WHOLE POINT**:
+
+Every round tells you something SPECIFIC about the user's preferences. You must examine:
+
+1. **Genre Signals**: Not just "they like Action" but what TYPE of action? Gritty realism vs CGI spectacle? Character-driven vs set pieces?
+
+2. **Era/Period Preferences**: Are they drawn to 70s grit, 80s neon, 90s indie, or modern aesthetics? This matters for EVERY recommendation.
+
+3. **Director/Actor Patterns**: Did they choose the Villeneuve over the Tarantino? The Phoenix over the Cruise? These are TASTE INDICATORS about sensibility, not just star power.
+
+4. **Cinematography & Visual Style**: Did they pick the beautifully shot film over the scrappy indie? The neon noir over naturalistic? Visual preferences are CRITICAL.
+
+5. **Mood, Tone, Pacing**: Dark vs light, slow-burn vs kinetic, cerebral vs visceral, grounded vs fantastical. EVERY choice reveals mood preferences.
+
+6. **Themes & Substance**: Are they drawn to existential questions, social commentary, psychological depth, or pure entertainment? Look at the CONTENT of what they chose.
+
+7. **Sound & Score**: Synth-heavy 80s throwbacks? Orchestral epics? Minimalist soundscapes? This matters.
+
+8. **Color Palette & Feel**: Desaturated & bleak? Vibrant & poppy? Warm & nostalgic? Match the aesthetic FEEL.
 
 ⚠️ **PRIMARY GENRE FOCUS**: Pay special attention to each movie's PRIMARY genre (listed first). If they picked Crime, focus on Crime films - not just "anything with crime elements". Be precise with genre matching while still considering style, mood, and quality.
 
@@ -260,13 +280,23 @@ CRITICAL NOTES:
           return null; // Skip if we couldn't get details
         }
         
-        // If TMDb has no trailer, construct YouTube search URL as fallback
-        const trailerUrls = tmdbTrailers.length === 0
-          ? [`https://www.youtube.com/results?search_query=${encodeURIComponent(`${movieDetails.title} ${movieDetails.year || ''} official trailer`)}`]
-          : tmdbTrailers;
+        // Skip movies without posters or trailers
+        if (!movieDetails.posterPath || !movieDetails.posterPath.trim()) {
+          console.log(`Skipping "${movieDetails.title}" - no poster available`);
+          return null;
+        }
         
         if (tmdbTrailers.length === 0) {
-          console.log(`No TMDb trailer for "${movieDetails.title}", using YouTube search URL`);
+          console.log(`Skipping "${movieDetails.title}" - no trailer available`);
+          return null;
+        }
+        
+        const trailerUrls = tmdbTrailers;
+
+        // Filter by Australia watch providers
+        if (watchProviders.providers.length === 0) {
+          console.log(`Skipping "${movieDetails.title}" - no streaming in Australia`);
+          return null;
         }
 
         // Set the list source
@@ -483,10 +513,18 @@ Respond in JSON:
           getWatchProviders(fallbackMovie.tmdbId),
         ]);
         
-        // If TMDb has no trailer, construct YouTube search URL
-        const trailerUrls = tmdbTrailers.length === 0
-          ? [`https://www.youtube.com/results?search_query=${encodeURIComponent(`${fallbackMovie.title} ${fallbackMovie.year || ''} official trailer`)}`]
-          : tmdbTrailers;
+        // Skip if no poster or trailer
+        if (!fallbackMovie.posterPath || !fallbackMovie.posterPath.trim()) {
+          return null;
+        }
+        if (tmdbTrailers.length === 0) {
+          return null;
+        }
+        if (watchProviders.providers.length === 0) {
+          return null;
+        }
+        
+        const trailerUrls = tmdbTrailers;
         
         return {
           movie: { ...fallbackMovie, listSource: "replacement" },
@@ -507,14 +545,21 @@ Respond in JSON:
     
     if (!movieDetails) return null;
     
-    // If TMDb has no trailer, construct YouTube search URL
-    const trailerUrls = tmdbTrailers.length === 0
-      ? [`https://www.youtube.com/results?search_query=${encodeURIComponent(`${movieDetails.title} ${movieDetails.year || ''} official trailer`)}`]
-      : tmdbTrailers;
-    
-    if (tmdbTrailers.length === 0) {
-      console.log(`No TMDb trailer for "${movieDetails.title}", using YouTube search URL`);
+    // Skip if no poster, trailer, or streaming
+    if (!movieDetails.posterPath || !movieDetails.posterPath.trim()) {
+      console.log(`Skipping replacement "${movieDetails.title}" - no poster`);
+      return null;
     }
+    if (tmdbTrailers.length === 0) {
+      console.log(`Skipping replacement "${movieDetails.title}" - no trailer`);
+      return null;
+    }
+    if (watchProviders.providers.length === 0) {
+      console.log(`Skipping replacement "${movieDetails.title}" - no streaming in Australia`);
+      return null;
+    }
+    
+    const trailerUrls = tmdbTrailers;
 
     movieDetails.listSource = "replacement";
 

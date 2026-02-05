@@ -86,22 +86,22 @@ async function buildCatalogueFromTMDb(): Promise<{ allMovies: Movie[]; grouped: 
   // Each genre gets its own separate category - no combining!
   // NO rating filters - get maximum variety
   const genreCategories = [
-    { name: "Action", genreIds: [28], minRating: 0 },
-    { name: "Adventure", genreIds: [12], minRating: 0 },
-    { name: "Animation", genreIds: [16], minRating: 0 },
-    { name: "Comedy", genreIds: [35], minRating: 0 },
-    { name: "Crime", genreIds: [80], minRating: 0 },
-    { name: "Documentary", genreIds: [99], minRating: 0 },
-    { name: "Drama", genreIds: [18], minRating: 0 },
-    { name: "Family", genreIds: [10751], minRating: 0 },
-    { name: "Fantasy", genreIds: [14], minRating: 0 },
-    { name: "Horror", genreIds: [27], minRating: 0 },
-    { name: "Mystery", genreIds: [9648], minRating: 0 },
-    { name: "Romance", genreIds: [10749], minRating: 0 },
-    { name: "Sci-Fi", genreIds: [878], minRating: 0 },
-    { name: "Thriller", genreIds: [53], minRating: 0 },
-    { name: "War", genreIds: [10752], minRating: 0 },
-    { name: "Western", genreIds: [37], minRating: 0 },
+    { name: "Action", genreIds: [28], minRating: 6.0 },
+    { name: "Adventure", genreIds: [12], minRating: 6.0 },
+    { name: "Animation", genreIds: [16], minRating: 6.0 },
+    { name: "Comedy", genreIds: [35], minRating: 6.0 },
+    { name: "Crime", genreIds: [80], minRating: 6.0 },
+    { name: "Documentary", genreIds: [99], minRating: 6.0 },
+    { name: "Drama", genreIds: [18], minRating: 6.0 },
+    { name: "Family", genreIds: [10751], minRating: 6.0 },
+    { name: "Fantasy", genreIds: [14], minRating: 6.0 },
+    { name: "Horror", genreIds: [27], minRating: 6.0 },
+    { name: "Mystery", genreIds: [9648], minRating: 6.0 },
+    { name: "Romance", genreIds: [10749], minRating: 6.0 },
+    { name: "Sci-Fi", genreIds: [878], minRating: 6.0 },
+    { name: "Thriller", genreIds: [53], minRating: 6.0 },
+    { name: "War", genreIds: [10752], minRating: 6.0 },
+    { name: "Western", genreIds: [37], minRating: 6.0 },
   ];
 
   for (const category of genreCategories) {
@@ -152,8 +152,13 @@ async function buildCatalogue(): Promise<void> {
 
         for (const item of items.slice(0, 200)) {
           const movie = await resolveMovieFromTitle(item.title, item.year, listName);
-          if (movie) {
+          // Filter out movies without posters or with low ratings
+          if (movie && movie.posterPath && movie.posterPath.trim() && movie.rating && movie.rating >= 6.0) {
             listMovies.push(movie);
+          } else if (movie && (!movie.posterPath || !movie.posterPath.trim())) {
+            console.log(`Filtered out "${movie.title}" - no poster`);
+          } else if (movie && movie.rating && movie.rating < 6.0) {
+            console.log(`Filtered out "${movie.title}" - rating ${movie.rating} below 6.0`);
           }
           await new Promise((resolve) => setTimeout(resolve, 100));
         }

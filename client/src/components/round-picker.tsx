@@ -460,7 +460,7 @@ export function RoundPicker({
       )}
 
       {/* Side-by-side movie cards */}
-      <div className="relative flex flex-row gap-1 md:gap-8 w-full items-center justify-center perspective-1000">
+      <div className="relative flex flex-row gap-1 md:gap-8 w-full items-start justify-center perspective-1000">
         {renderMovieCard(leftMovie, "left", leftPosterUrl)}
 
         <div className={`flex items-center justify-center transition-opacity duration-300 ${selectedSide ? "opacity-0" : "opacity-100"}`}>
