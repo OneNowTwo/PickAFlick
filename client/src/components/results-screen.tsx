@@ -441,11 +441,16 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
             };
             
             if (currentTrailerUrl && autoPlayTrailer && !allTrailersFailed) {
+              // Detect if mobile/touch device
+              const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+              // On first load (currentIndex=0), mute=1 on mobile. After first interaction, mute=0
+              const muteParam = currentIndex === 0 && isMobile ? 1 : 0;
+              
               return (
                 <div className="relative w-full h-full">
                   <iframe
                     key={currentTrailerUrl} // Force re-mount when URL changes
-                    src={`${currentTrailerUrl}?autoplay=1&mute=0&origin=${window.location.origin}`}
+                    src={`${currentTrailerUrl}?autoplay=1&mute=${muteParam}&origin=${window.location.origin}`}
                     className="w-full h-full"
                     allow="autoplay; encrypted-media"
                     allowFullScreen

@@ -201,6 +201,11 @@ export function RoundPicker({
   const [addedToWatchlist, setAddedToWatchlist] = useState<Set<number>>(new Set());
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const didShowSynopsisRef = useRef(false);
+  
+  // Swipe gesture state
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState<number>(0);
 
   const addToWatchlistMutation = useMutation({
     mutationFn: async (movie: Movie) => {
@@ -252,6 +257,49 @@ export function RoundPicker({
     setTimeout(() => {
       didShowSynopsisRef.current = false;
     }, 100);
+  };
+  
+  // Swipe handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (isSubmitting || isAnimating || isSkipping) return;
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+  
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (isSubmitting || isAnimating || isSkipping || touchStart === null) return;
+    const currentTouch = e.targetTouches[0].clientX;
+    setTouchEnd(currentTouch);
+    // Visual feedback during swipe
+    const offset = currentTouch - touchStart;
+    setSwipeOffset(offset);
+  };
+  
+  const handleTouchEnd = () => {
+    if (isSubmitting || isAnimating || isSkipping || !touchStart || !touchEnd) {
+      setSwipeOffset(0);
+      return;
+    }
+    
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > 50; // Swipe left = select left movie
+    const isRightSwipe = distance < -50; // Swipe right = select right movie
+    
+    if (isLeftSwipe) {
+      handleSelect("left", leftMovie.id);
+    } else if (isRightSwipe) {
+      handleSelect("right", rightMovie.id);
+    }
+    
+    setTouchStart(null);
+    setTouchEnd(null);
+    setSwipeOffset(0);
+  };
+  
+  // Tap on title to show synopsis (instead of long-press)
+  const handleTitleTap = (side: "left" | "right", e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowSynopsis(side);
   };
 
   // Generate new insight when round changes
@@ -310,11 +358,6 @@ export function RoundPicker({
     return (
       <button
         onClick={() => handleSelect(side, movie.id)}
-        onMouseDown={() => handleLongPressStart(side)}
-        onMouseUp={handleLongPressEnd}
-        onMouseLeave={handleLongPressEnd}
-        onTouchStart={() => handleLongPressStart(side)}
-        onTouchEnd={handleLongPressEnd}
         disabled={isSubmitting || isAnimating || isSkipping}
         className={`
           relative w-[42%] md:w-full max-w-[300px] aspect-[2/3] rounded-lg md:rounded-xl overflow-hidden 
@@ -367,18 +410,21 @@ export function RoundPicker({
         </button>
         
         <div className="absolute bottom-0 left-0 right-0 p-2 md:p-4 text-left">
-          <h3 className="text-white font-bold text-sm md:text-xl line-clamp-2">
+          <h3 
+            onClick={(e) => handleTitleTap(side, e)}
+            className="text-white font-bold text-sm md:text-xl line-clamp-2 cursor-pointer hover:text-primary transition-colors"
+          >
             {movie.title}
           </h3>
-          <p className="text-white/70 text-xs md:text-sm">
+          <p className="text-white/70 text-xs md:text-sm pointer-events-none">
             {movie.year} {movie.rating ? `• ${movie.rating.toFixed(1)}★` : ""}
           </p>
           {leadActors && (
-            <p className="text-white/60 text-[10px] md:text-xs mt-0.5 line-clamp-1">
+            <p className="text-white/60 text-[10px] md:text-xs mt-0.5 line-clamp-1 pointer-events-none">
               {leadActors}
             </p>
           )}
-          <p className="text-white/50 text-[10px] md:text-xs mt-0.5 line-clamp-1 hidden md:block">
+          <p className="text-white/50 text-[10px] md:text-xs mt-0.5 line-clamp-1 hidden md:block pointer-events-none">
             {movie.genres.slice(0, 3).join(" • ")}
           </p>
         </div>
@@ -459,8 +505,17 @@ export function RoundPicker({
         </div>
       )}
 
-      {/* Side-by-side movie cards */}
-      <div className="relative flex flex-row gap-1 md:gap-8 w-full items-start justify-center perspective-1000">
+      {/* Side-by-side movie cards with swipe support */}
+      <div 
+        className="relative flex flex-row gap-1 md:gap-8 w-full items-start justify-center perspective-1000 touch-pan-y"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        style={{
+          transform: swipeOffset !== 0 ? `translateX(${swipeOffset * 0.3}px)` : 'none',
+          transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none'
+        }}
+      >
         {renderMovieCard(leftMovie, "left", leftPosterUrl)}
 
         <div className={`flex items-center justify-center transition-opacity duration-300 ${selectedSide ? "opacity-0" : "opacity-100"}`}>
@@ -485,9 +540,9 @@ export function RoundPicker({
         </Button>
       )}
 
-      {/* Long press hint - mobile only */}
+      {/* Swipe hint - mobile only */}
       <p className="text-muted-foreground/40 text-[10px] text-center md:hidden">
-        Hold a poster for details
+        Swipe left/right or tap • Tap title for details
       </p>
     </div>
   );
