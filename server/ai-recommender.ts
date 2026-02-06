@@ -336,14 +336,21 @@ CRITICAL NOTES:
         getWatchProviders(wildcardMovie.tmdbId),
       ]);
       
-      // Only add wildcard if it has trailer OR watch providers
-      if (wildcardTrailers.length > 0 || wildcardProviders.providers.length > 0) {
+      // Strict filtering: require poster AND trailer AND streaming
+      if (
+        wildcardMovie.posterPath && 
+        wildcardMovie.posterPath.trim() && 
+        wildcardTrailers.length > 0 && 
+        wildcardProviders.providers.length > 0
+      ) {
         recommendations.push({
           movie: { ...wildcardMovie, listSource: "wildcard" },
-          trailerUrl: wildcardTrailers.length > 0 ? wildcardTrailers[0] : null,
+          trailerUrl: wildcardTrailers[0],
           trailerUrls: wildcardTrailers,
           reason: `A surprise pick from our curated collection! This ${wildcardMovie.genres.slice(0, 2).join("/")} gem from ${wildcardMovie.year} might just become your next favorite.`,
         });
+      } else {
+        console.log(`Skipping wildcard "${wildcardMovie.title}" - missing poster, trailer, or streaming`);
       }
     }
 
