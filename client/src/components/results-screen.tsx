@@ -74,8 +74,9 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   // Track when results screen loads with recommendations
   useEffect(() => {
     if (!isLoading && recommendations) {
-      // @ts-ignore - PostHog global
-      if (window.posthog) window.posthog.capture("completed_flow");
+      if (typeof window !== 'undefined' && window.posthog) {
+        window.posthog.capture("completed_flow");
+      }
     }
   }, [isLoading, recommendations]);
 
@@ -467,8 +468,9 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                     title={`${currentRec.movie.title} Trailer`}
                     onError={handleTrailerError}
                     onLoad={() => {
-                      // @ts-ignore - PostHog global
-                      if (window.posthog) window.posthog.capture("trailer_played");
+                      if (typeof window !== 'undefined' && window.posthog) {
+                        window.posthog.capture("trailer_played");
+                      }
                     }}
                   />
                 </div>

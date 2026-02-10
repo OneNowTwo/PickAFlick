@@ -153,8 +153,9 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
   const handleShare = async () => {
     if (!cardRef.current || !shareUrl) return;
     
-    // @ts-ignore - PostHog global
-    if (window.posthog) window.posthog.capture("share_clicked");
+    if (typeof window !== 'undefined' && window.posthog) {
+      window.posthog.capture("share_clicked");
+    }
     
     setIsGenerating(true);
     
