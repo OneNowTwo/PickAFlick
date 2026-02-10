@@ -507,7 +507,7 @@ export function RoundPicker({
 
       {/* Side-by-side movie cards with swipe support */}
       <div 
-        className="relative flex flex-row gap-1 md:gap-8 w-full items-start justify-center perspective-1000 touch-pan-y"
+        className="relative flex flex-row gap-1 md:gap-8 w-full items-center justify-center perspective-1000 touch-pan-y"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
