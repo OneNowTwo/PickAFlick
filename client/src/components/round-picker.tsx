@@ -368,7 +368,7 @@ export function RoundPicker({
             ? `z-20 scale-105 md:scale-110 ${side === "left" ? "md:translate-x-[60%]" : "md:-translate-x-[60%]"} shadow-2xl shadow-primary/30` 
             : selectedSide !== null 
               ? "z-10 scale-90 opacity-40" 
-              : ""
+              : "scale-100 translate-x-0 translate-y-0"
           }
         `}
         data-testid={`movie-choice-${side}`}
