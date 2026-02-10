@@ -319,9 +319,9 @@ export function RoundPicker({
     };
   }, []);
 
-  // Calculate progress based on actual choices made vs base total rounds
-  // This way, skipping doesn't move the progress bar backwards
-  const progress = (choicesMade / baseTotalRounds) * 100;
+  // Calculate progress based on current round (not choices made)
+  // Progress shows rounds COMPLETED, so round 7 shows 6/7 = 86%, then completes after choice
+  const progress = ((round - 1) / baseTotalRounds) * 100;
 
   const getPosterUrl = (movie: Movie) => {
     return movie.posterPath 

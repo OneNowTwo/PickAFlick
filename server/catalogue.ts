@@ -382,13 +382,7 @@ export function getRandomMoviePairFiltered(
       // Check if movie is from special list-based filters
       const isIndie = genres.includes("Indie") && m.listSource === "Indie Films";
       
-      // Check if movie's list source matches selected genre (exact match only)
-      const isFromGenreList = genres.some(g => {
-        if (g === "Indie") return false; // Handled separately
-        return m.listSource === g;
-      });
-      
-      // Check if movie's PRIMARY genre (first in array) matches selected genres
+      // Check if movie's PRIMARY genre (first in array) matches selected genres - THIS IS THE MAIN FILTER
       const genreFilters = genres.filter(g => g !== "Indie");
       const matchesGenre = genreFilters.length > 0 && m.genres.length > 0 && 
         genreFilters.includes(m.genres[0]);
@@ -411,9 +405,9 @@ export function getRandomMoviePairFiltered(
         }
       }
       
-      // Genres selected - combine with special filters and genre lists
-      const matchesAny = matchesGenre || isIndie || isFromGenreList || (includeTopPicks && isTopPick) || (includeNewReleases && isNewRelease);
-      return matchesAny;
+      // STRICT: Genres selected - PRIMARY genre MUST match. No OR logic with lists.
+      // If Horror is selected, movie's first genre MUST be Horror.
+      return matchesGenre || isIndie || (includeTopPicks && isTopPick) || (includeNewReleases && isNewRelease);
     });
   }
   

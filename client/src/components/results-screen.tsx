@@ -68,6 +68,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingStage, setLoadingStage] = useState("Analyzing your choices...");
+  const [hasInteracted, setHasInteracted] = useState(false); // Track if user has clicked anything
   const { toast } = useToast();
 
   // Reset trailer state when changing movies
@@ -287,6 +288,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
 
   const handleNext = () => {
     if (currentIndex < totalRecs - 1) {
+      setHasInteracted(true); // Enable sound on mobile after first interaction
       setCurrentIndex(currentIndex + 1);
       setAutoPlayTrailer(true);
     }
@@ -294,6 +296,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
 
   const handleBack = () => {
     if (currentIndex > 0) {
+      setHasInteracted(true); // Enable sound on mobile after first interaction
       setCurrentIndex(currentIndex - 1);
       setAutoPlayTrailer(true);
     }
@@ -441,8 +444,9 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
             };
             
             if (currentTrailerUrl && autoPlayTrailer && !allTrailersFailed) {
-              // Always autoplay with sound on all trailers
-              const muteParam = 0;
+              // On mobile: first trailer muted (browser requirement), after first interaction all autoplay with sound
+              const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+              const muteParam = (isMobile && !hasInteracted) ? 1 : 0;
               
               return (
                 <div className="relative w-full h-full">
