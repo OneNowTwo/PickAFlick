@@ -441,10 +441,8 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
             };
             
             if (currentTrailerUrl && autoPlayTrailer && !allTrailersFailed) {
-              // Detect if mobile/touch device
-              const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-              // On first load (currentIndex=0), mute=1 on mobile. After first interaction, mute=0
-              const muteParam = currentIndex === 0 && isMobile ? 1 : 0;
+              // Always autoplay with sound on all trailers
+              const muteParam = 0;
               
               return (
                 <div className="relative w-full h-full">
