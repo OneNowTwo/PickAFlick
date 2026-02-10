@@ -234,11 +234,6 @@ export function RoundPicker({
     
     setTimeout(() => {
       onChoice(movieId);
-      // Reset animation state after submission
-      setTimeout(() => {
-        setSelectedSide(null);
-        setIsAnimating(false);
-      }, 100);
     }, 600);
   };
 
