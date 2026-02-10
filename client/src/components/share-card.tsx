@@ -2,8 +2,9 @@ import type { RecommendationsResponse, Recommendation } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { X, Copy, Check, Sparkles, Film, Palette, Clock, Zap, Heart, Compass, Glasses, Drama, Rocket, Search, Clapperboard, Moon, Smile, Wand2 } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
+import html2canvas from "html2canvas";
 
 interface ShareCardProps {
   isOpen: boolean;
@@ -132,7 +133,9 @@ function generateQuirkyStats(profile: RecommendationsResponse["preferenceProfile
 
 export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile, shareUrl }: ShareCardProps) {
   const [copied, setCopied] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const { toast } = useToast();
+  const cardRef = useRef<HTMLDivElement>(null);
   
   const personality = generateMoviePersonality(preferenceProfile);
   const quirkyStats = generateQuirkyStats(preferenceProfile);
@@ -148,21 +151,51 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
   };
   
   const handleShare = async () => {
-    const shareText = `I'm "${personality.title}"\n${personality.description}\n\nMy picks:\n${topMovies.map(r => `${r.movie.title} (${r.movie.year})`).join('\n')}\n\nFind your movie personality:`;
+    if (!cardRef.current || !shareUrl) return;
     
-    if (navigator.share && shareUrl) {
-      try {
-        await navigator.share({
-          title: `My Movie Personality: ${personality.title}`,
-          text: shareText,
-          url: shareUrl,
-        });
-      } catch {
-        // Fallback to copy
-        handleCopyLink();
+    setIsGenerating(true);
+    
+    try {
+      // Generate image from the card
+      const canvas = await html2canvas(cardRef.current, {
+        backgroundColor: null,
+        scale: 2,
+        logging: false,
+      });
+      
+      // Convert canvas to blob
+      const blob = await new Promise<Blob>((resolve) => {
+        canvas.toBlob((b) => resolve(b!), 'image/png');
+      });
+      
+      const file = new File([blob], 'my-movie-picks.png', { type: 'image/png' });
+      const shareText = `Check out my movie personality and recommendations!`;
+      
+      // Try native share with image
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({
+            title: `My Movie Personality: ${personality.title}`,
+            text: shareText,
+            url: shareUrl,
+            files: [file],
+          });
+          setIsGenerating(false);
+          return;
+        } catch (err) {
+          // User cancelled or share failed, fall through to copy link
+          console.log('Share cancelled or failed:', err);
+        }
       }
-    } else {
+      
+      // Fallback: just copy link
       handleCopyLink();
+    } catch (error) {
+      console.error('Error generating share image:', error);
+      toast({ title: "Error", description: "Could not generate share image", variant: "destructive" });
+      handleCopyLink();
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -170,6 +203,7 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md p-0 overflow-hidden bg-transparent border-0">
         <div 
+          ref={cardRef}
           className="relative w-full bg-gradient-to-br from-violet-600 via-purple-600 to-fuchsia-600 rounded-2xl overflow-hidden"
           data-testid="share-card"
         >
@@ -289,9 +323,24 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
                   variant="secondary"
                   className="flex-1 bg-white text-purple-700 border-0 font-semibold"
                   data-testid="button-share-card"
+                  disabled={isGenerating}
                 >
-                  {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
-                  {copied ? "Copied!" : "Share My Picks"}
+                  {isGenerating ? (
+                    <>
+                      <Copy className="w-4 h-4 mr-2 animate-pulse" />
+                      Preparing...
+                    </>
+                  ) : copied ? (
+                    <>
+                      <Check className="w-4 h-4 mr-2" />
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4 mr-2" />
+                      Share My Picks
+                    </>
+                  )}
                 </Button>
               </div>
               <p className="text-center text-white/50 text-xs mt-3">
