@@ -302,13 +302,15 @@ export function RoundPicker({
     setShowSynopsis(side);
   };
 
-  // Generate new insight when round changes
+  // Generate new insight when round changes - CRITICAL: Reset all animation state
   useEffect(() => {
+    // Force immediate reset without transition
     setSelectedSide(null);
     setIsAnimating(false);
     setShowSynopsis(null);
     didShowSynopsisRef.current = false;
     setInsight(generateInsight(choiceHistory, round));
+    setSwipeOffset(0); // Reset swipe offset too
   }, [round, leftMovie.id, rightMovie.id, choiceHistory]);
 
   useEffect(() => {
@@ -360,15 +362,22 @@ export function RoundPicker({
         key={`${movie.id}-${round}`}
         onClick={() => handleSelect(side, movie.id)}
         disabled={isSubmitting || isAnimating || isSkipping}
+        style={{
+          transform: selectedSide === side 
+            ? `scale(1.05) ${side === "left" ? "translateX(0)" : "translateX(0)"}` 
+            : selectedSide !== null 
+              ? "scale(0.9)" 
+              : "scale(1) translateX(0) translateY(0)"
+        }}
         className={`
           relative w-full md:w-full max-w-[180px] md:max-w-[300px] aspect-[2/3] rounded-lg md:rounded-xl overflow-hidden 
           transition-all duration-500 ease-out cursor-pointer
           hover:-translate-y-2 hover:shadow-xl
           ${selectedSide === side 
-            ? `z-20 scale-105 md:scale-110 ${side === "left" ? "md:translate-x-[60%]" : "md:-translate-x-[60%]"} shadow-2xl shadow-primary/30` 
+            ? `z-20 md:translate-x-[60%] shadow-2xl shadow-primary/30` 
             : selectedSide !== null 
-              ? "z-10 scale-90 opacity-40" 
-              : "scale-100 translate-x-0 translate-y-0"
+              ? "z-10 opacity-40" 
+              : ""
           }
         `}
         data-testid={`movie-choice-${side}`}
