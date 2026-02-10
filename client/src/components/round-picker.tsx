@@ -357,9 +357,9 @@ export function RoundPicker({
 
     return (
       <button
+        key={`${movie.id}-${round}`}
         onClick={() => handleSelect(side, movie.id)}
         disabled={isSubmitting || isAnimating || isSkipping}
-        style={{ minHeight: '0' }}
         className={`
           relative w-full md:w-full max-w-[180px] md:max-w-[300px] aspect-[2/3] rounded-lg md:rounded-xl overflow-hidden 
           transition-all duration-500 ease-out cursor-pointer
