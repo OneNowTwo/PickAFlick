@@ -117,6 +117,8 @@ export default function Home() {
   });
 
   const handleStart = useCallback(() => {
+    // @ts-ignore - PostHog global
+    if (window.posthog) window.posthog.capture("start_picking");
     startSessionMutation.mutate();
   }, [startSessionMutation]);
 

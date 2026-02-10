@@ -71,6 +71,14 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   const [hasInteracted, setHasInteracted] = useState(false); // Track if user has clicked anything
   const { toast } = useToast();
 
+  // Track when results screen loads with recommendations
+  useEffect(() => {
+    if (!isLoading && recommendations) {
+      // @ts-ignore - PostHog global
+      if (window.posthog) window.posthog.capture("completed_flow");
+    }
+  }, [isLoading, recommendations]);
+
   // Reset trailer state when changing movies
   useEffect(() => {
     setTrailerIndex(0);
@@ -458,6 +466,10 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                     allowFullScreen
                     title={`${currentRec.movie.title} Trailer`}
                     onError={handleTrailerError}
+                    onLoad={() => {
+                      // @ts-ignore - PostHog global
+                      if (window.posthog) window.posthog.capture("trailer_played");
+                    }}
                   />
                 </div>
               );
