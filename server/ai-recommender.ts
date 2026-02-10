@@ -113,7 +113,21 @@ ${rejectionContext.length > 0 ? rejectionContext.map((m) => `Round ${m.round}: "
 
 [Session: ${sessionTime} | Diversity Seed: ${randomSeed}]
 
-⚠️ CRITICAL: USE THIS SEED TO EXPLORE DIFFERENT CORNERS OF CINEMA EACH TIME. Avoid repeating the same titles - think laterally and dig deeper into cinema history. Every user is unique and deserves FRESH discoveries tailored to their specific A/B test choices.
+⚠️ CRITICAL DIVERSITY REQUIREMENT: 
+
+USE THIS SEED TO EXPLORE DIFFERENT CORNERS OF CINEMA EACH TIME. The seed (${randomSeed}) means you should vary your recommendations significantly.
+
+**MANDATORY: You MUST avoid recommending the same films repeatedly across different sessions.** If you find yourself thinking of films like "A Ghost Story", "The Fall", "The Shape of Water", "Prisoners", etc. - STOP and think of 3-5 alternatives instead. These are great films but over-recommended.
+
+**STRATEGY FOR DIVERSITY:**
+- For EACH genre/theme you identify, brainstorm 5 different film options
+- Prefer films from different decades than the obvious choice
+- Recommend directors' lesser-known works over their famous ones
+- Think internationally - European, Asian (non-K-pop/anime), Latin American, African cinema
+- Consider underseen gems from the 60s-90s that match their taste
+- If a film is "obvious" (appears in top 10 Google results for that genre) - dig deeper
+
+Every user is unique and deserves FRESH discoveries tailored to their specific A/B test choices.
 
 === THINK LIKE A FILM BUFF - MULTI-DIMENSIONAL ANALYSIS ===
 

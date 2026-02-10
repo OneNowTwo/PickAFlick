@@ -58,7 +58,7 @@ export default function Watchlist() {
               data-testid="button-logo-home"
             >
               <Film className="w-6 h-6 text-primary" />
-              <h1 className="text-xl font-bold text-foreground">PickAFlick</h1>
+              <h1 className="text-xl font-bold text-foreground">WhatWeWatching</h1>
             </a>
           </Link>
           <div className="flex items-center gap-3">

@@ -162,7 +162,7 @@ export default function Home() {
             data-testid="button-logo-home"
           >
             <Film className="w-6 h-6 text-primary" />
-            <h1 className="text-xl font-bold text-foreground">PickAFlick</h1>
+            <h1 className="text-xl font-bold text-foreground">WhatWeWatching</h1>
           </button>
           <Link href="/watchlist">
             <Button variant="ghost" className="gap-2" data-testid="button-watchlist">

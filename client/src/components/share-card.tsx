@@ -194,7 +194,7 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
             {/* Header */}
             <div className="text-center mb-6">
               <div className="inline-block px-3 py-1 bg-white/20 rounded-full text-xs font-medium mb-3">
-                PICKAFLICK WRAPPED
+                WHATWEWATCHING WRAPPED
               </div>
               <div className="mb-2 flex justify-center">
                 <PersonalityIcon icon={personality.icon} className="w-12 h-12" />
@@ -295,7 +295,7 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
                 </Button>
               </div>
               <p className="text-center text-white/50 text-xs mt-3">
-                pickaflick.replit.app
+              whatwewatching.com.au
               </p>
             </div>
           </div>

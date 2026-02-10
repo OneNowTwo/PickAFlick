@@ -93,7 +93,7 @@ export default function SharePage() {
             </h1>
           </div>
           <p className="text-muted-foreground text-sm">
-            Someone shared their PickAFlick recommendations with you!
+            Someone shared their WhatWeWatching recommendations with you!
           </p>
         </div>
 
@@ -271,7 +271,7 @@ export default function SharePage() {
               size="default" 
               variant="default"
               className="gap-1.5"
-              data-testid="button-try-pickaflick"
+              data-testid="button-try-whatwewatching"
             >
               <Film className="w-4 h-4" />
               Find Your Own Picks

@@ -58,6 +58,7 @@ export const movieSchema = z.object({
   cast: z.array(z.string()).optional(),
   runtime: z.number().nullable().optional(),
   keywords: z.array(z.string()).optional(),
+  original_language: z.string().nullable().optional(),
 });
 
 export type Movie = z.infer<typeof movieSchema>;

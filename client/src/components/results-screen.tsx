@@ -419,7 +419,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         data-testid={`recommendation-card-${currentIndex}`}
       >
         {/* Trailer / Poster Area - Optimized height for mobile */}
-        <div className="aspect-video max-h-[50vh] md:max-h-[50vh] relative">
+        <div className="aspect-video max-h-[50vh] md:max-h-[70vh] relative">
           {(() => {
             // Get available trailers - use trailerUrls array or fall back to single trailerUrl
             const availableTrailers = currentRec.trailerUrls?.length 

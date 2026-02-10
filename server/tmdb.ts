@@ -24,6 +24,7 @@ interface TMDbMovieDetails {
   vote_average: number;
   runtime: number | null;
   genres: { id: number; name: string }[];
+  original_language?: string;
   credits?: {
     cast: { id: number; name: string; character: string; order: number }[];
     crew: { id: number; name: string; job: string }[];
@@ -180,6 +181,7 @@ export async function getMovieDetails(tmdbId: number): Promise<Movie | null> {
       cast,
       runtime: data.runtime || null,
       keywords,
+      original_language: data.original_language || null,
     };
   } catch (error) {
     console.error(`Failed to get movie details for ${tmdbId}:`, error);

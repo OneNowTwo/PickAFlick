@@ -152,9 +152,15 @@ async function buildCatalogue(): Promise<void> {
 
         for (const item of items.slice(0, 200)) {
           const movie = await resolveMovieFromTitle(item.title, item.year, listName);
-          // Filter out movies without posters or with low ratings
+          // Filter out movies without posters, low ratings, or Korean/Asian language films
           if (movie && movie.posterPath && movie.posterPath.trim() && movie.rating && movie.rating >= 6.0) {
-            listMovies.push(movie);
+            // Filter out Korean, Japanese, Chinese, Thai movies (original_language check)
+            const asianLanguages = ['ko', 'ja', 'zh', 'th', 'vi'];
+            if (movie.original_language && asianLanguages.includes(movie.original_language)) {
+              console.log(`Filtered out "${movie.title}" - Asian language film (${movie.original_language})`);
+            } else {
+              listMovies.push(movie);
+            }
           } else if (movie && (!movie.posterPath || !movie.posterPath.trim())) {
             console.log(`Filtered out "${movie.title}" - no poster`);
           } else if (movie && movie.rating && movie.rating < 6.0) {
