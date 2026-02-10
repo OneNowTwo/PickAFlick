@@ -360,7 +360,7 @@ export function RoundPicker({
         onClick={() => handleSelect(side, movie.id)}
         disabled={isSubmitting || isAnimating || isSkipping}
         className={`
-          relative w-[42%] md:w-full max-w-[300px] aspect-[2/3] rounded-lg md:rounded-xl overflow-hidden 
+          relative w-full md:w-full max-w-[180px] md:max-w-[300px] aspect-[2/3] rounded-lg md:rounded-xl overflow-hidden 
           transition-all duration-500 ease-out cursor-pointer
           hover:-translate-y-2 hover:shadow-xl
           ${selectedSide === side 
