@@ -509,7 +509,10 @@ export async function registerRoutes(
         return;
       }
 
-      const providers = await getWatchProviders(tmdbId);
+      const title = req.query.title as string | undefined;
+      const year = req.query.year ? parseInt(req.query.year as string) : undefined;
+
+      const providers = await getWatchProviders(tmdbId, title, year);
       res.json(providers);
     } catch (error) {
       console.error("Error fetching watch providers:", error);

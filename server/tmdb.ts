@@ -404,7 +404,7 @@ export async function getNowPlayingMovies(listSource: string, page: number = 1):
   }
 }
 
-export async function getWatchProviders(tmdbId: number): Promise<WatchProvidersResult> {
+export async function getWatchProviders(tmdbId: number, movieTitle?: string, movieYear?: number | null): Promise<WatchProvidersResult> {
   try {
     const data = await tmdbFetch<TMDbWatchProvidersResponse>(`/movie/${tmdbId}/watch/providers`);
     
@@ -414,14 +414,34 @@ export async function getWatchProviders(tmdbId: number): Promise<WatchProvidersR
     }
 
     const providers: WatchProvider[] = [];
+    const { getStreamingDeepLink, getSearchURL } = await import("./streaming-links");
     
     if (auData.flatrate) {
       for (const p of auData.flatrate) {
+        let deepLink: string | undefined;
+        
+        // Try to get AI-powered deep link if we have movie details
+        if (movieTitle) {
+          const aiLink = await getStreamingDeepLink({
+            movieTitle,
+            movieYear: movieYear || null,
+            providerName: p.provider_name,
+            tmdbId,
+          });
+          deepLink = aiLink || undefined;
+        }
+        
+        // Fallback to search URL if no deep link found
+        if (!deepLink && movieTitle) {
+          deepLink = getSearchURL(movieTitle, movieYear || null, p.provider_name);
+        }
+        
         providers.push({
           id: p.provider_id,
           name: p.provider_name,
           logoPath: p.logo_path,
           type: "subscription",
+          deepLink,
         });
       }
     }
@@ -429,11 +449,24 @@ export async function getWatchProviders(tmdbId: number): Promise<WatchProvidersR
     if (auData.rent) {
       for (const p of auData.rent) {
         if (!providers.find(existing => existing.id === p.provider_id)) {
+          let deepLink: string | undefined;
+          
+          if (movieTitle) {
+            const aiLink = await getStreamingDeepLink({
+              movieTitle,
+              movieYear: movieYear || null,
+              providerName: p.provider_name,
+              tmdbId,
+            });
+            deepLink = aiLink || getSearchURL(movieTitle, movieYear || null, p.provider_name);
+          }
+          
           providers.push({
             id: p.provider_id,
             name: p.provider_name,
             logoPath: p.logo_path,
             type: "rent",
+            deepLink,
           });
         }
       }
@@ -442,11 +475,24 @@ export async function getWatchProviders(tmdbId: number): Promise<WatchProvidersR
     if (auData.buy) {
       for (const p of auData.buy) {
         if (!providers.find(existing => existing.id === p.provider_id)) {
+          let deepLink: string | undefined;
+          
+          if (movieTitle) {
+            const aiLink = await getStreamingDeepLink({
+              movieTitle,
+              movieYear: movieYear || null,
+              providerName: p.provider_name,
+              tmdbId,
+            });
+            deepLink = aiLink || getSearchURL(movieTitle, movieYear || null, p.provider_name);
+          }
+          
           providers.push({
             id: p.provider_id,
             name: p.provider_name,
             logoPath: p.logo_path,
             type: "buy",
+            deepLink,
           });
         }
       }

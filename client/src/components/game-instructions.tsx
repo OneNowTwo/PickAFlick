@@ -5,11 +5,22 @@ interface GameInstructionsProps {
   onStart: () => void;
 }
 
+const INSTRUCTIONS_SEEN_KEY = "whatwewatching_instructions_seen";
+
 export function GameInstructions({ onStart }: GameInstructionsProps) {
   const [step, setStep] = useState(0);
   const [allStepsShown, setAllStepsShown] = useState(false);
+  const [shouldShow, setShouldShow] = useState(true);
 
   useEffect(() => {
+    // Check if user has seen instructions before
+    const hasSeenInstructions = localStorage.getItem(INSTRUCTIONS_SEEN_KEY);
+    if (hasSeenInstructions === "true") {
+      setShouldShow(false);
+      onStart(); // Skip straight to game
+      return;
+    }
+
     // Show step 1 immediately
     const timer1 = setTimeout(() => setStep(1), 100);
     
@@ -17,17 +28,35 @@ export function GameInstructions({ onStart }: GameInstructionsProps) {
     const timer2 = setTimeout(() => setStep(2), 1600);
     
     // Show step 3 after 3 seconds
-    const timer3 = setTimeout(() => {
-      setStep(3);
+    const timer3 = setTimeout(() => setStep(3), 3100);
+    
+    // Show step 4 after 4.5 seconds
+    const timer4 = setTimeout(() => setStep(4), 4600);
+    
+    // Show step 5 after 6 seconds
+    const timer5 = setTimeout(() => {
+      setStep(5);
       setAllStepsShown(true);
-    }, 3100);
+    }, 6100);
 
     return () => {
       clearTimeout(timer1);
       clearTimeout(timer2);
       clearTimeout(timer3);
+      clearTimeout(timer4);
+      clearTimeout(timer5);
     };
-  }, []);
+  }, [onStart]);
+
+  const handleGotIt = () => {
+    // Mark instructions as seen
+    localStorage.setItem(INSTRUCTIONS_SEEN_KEY, "true");
+    onStart();
+  };
+
+  if (!shouldShow) {
+    return null;
+  }
 
   const steps = [
     {
@@ -41,6 +70,14 @@ export function GameInstructions({ onStart }: GameInstructionsProps) {
     {
       number: "3",
       text: "Don't know the film? Trust your gut - you CAN judge a book by its cover! 🎬",
+    },
+    {
+      number: "4",
+      text: "Like a movie? Click the bookmark icon to save it to your watchlist",
+    },
+    {
+      number: "5",
+      text: "Ready to watch? Click on any streaming service to start viewing. No more choice paralysis - just pick one and enjoy! 🍿",
     },
   ];
 
@@ -78,7 +115,7 @@ export function GameInstructions({ onStart }: GameInstructionsProps) {
             }`}
           >
             <Button
-              onClick={onStart}
+              onClick={handleGotIt}
               disabled={!allStepsShown}
               className="text-base h-10 px-12 hover:scale-105 hover:brightness-110 transition-all"
             >

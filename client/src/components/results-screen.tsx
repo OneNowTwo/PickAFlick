@@ -151,8 +151,8 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   const currentTmdbId = currentRec?.movie.tmdbId;
 
   const { data: watchProviders, isLoading: isLoadingProviders } = useQuery<WatchProvidersResponse>({
-    queryKey: [`/api/watch-providers/${currentTmdbId}`],
-    enabled: showWatchProviders && !!currentTmdbId,
+    queryKey: [`/api/watch-providers/${currentTmdbId}?title=${encodeURIComponent(currentRec?.movie.title || '')}&year=${currentRec?.movie.year || ''}`],
+    enabled: showWatchProviders && !!currentTmdbId && !!currentRec,
   });
 
   // Handle "Seen It" - remove current and fetch replacement
@@ -666,7 +666,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                       {watchProviders.providers.filter(p => p.type === "subscription").map((provider) => (
                         <a
                           key={provider.id}
-                          href={watchProviders.link || "#"}
+                          href={provider.deepLink || watchProviders.link || "#"}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
@@ -692,7 +692,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                       {watchProviders.providers.filter(p => p.type === "rent").map((provider) => (
                         <a
                           key={provider.id}
-                          href={watchProviders.link || "#"}
+                          href={provider.deepLink || watchProviders.link || "#"}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
@@ -718,7 +718,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                       {watchProviders.providers.filter(p => p.type === "buy").map((provider) => (
                         <a
                           key={provider.id}
-                          href={watchProviders.link || "#"}
+                          href={provider.deepLink || watchProviders.link || "#"}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"

@@ -287,7 +287,7 @@ CRITICAL NOTES:
         const [movieDetails, tmdbTrailers, watchProviders] = await Promise.all([
           getMovieDetails(searchResult.id),
           getMovieTrailers(searchResult.id),
-          getWatchProviders(searchResult.id),
+          getWatchProviders(searchResult.id, rec.title, rec.year),
         ]);
         
         if (!movieDetails) {
@@ -347,7 +347,7 @@ CRITICAL NOTES:
       const wildcardMovie = shuffleArray([...eligibleWildcards])[0];
       const [wildcardTrailers, wildcardProviders] = await Promise.all([
         getMovieTrailers(wildcardMovie.tmdbId),
-        getWatchProviders(wildcardMovie.tmdbId),
+        getWatchProviders(wildcardMovie.tmdbId, wildcardMovie.title, wildcardMovie.year),
       ]);
       
       // Strict filtering: require poster AND trailer AND streaming
@@ -531,7 +531,7 @@ Respond in JSON:
         const fallbackMovie = shuffleArray([...eligibleMovies])[0];
         const [tmdbTrailers, watchProviders] = await Promise.all([
           getMovieTrailers(fallbackMovie.tmdbId),
-          getWatchProviders(fallbackMovie.tmdbId),
+          getWatchProviders(fallbackMovie.tmdbId, fallbackMovie.title, fallbackMovie.year),
         ]);
         
         // Skip if no poster or trailer
@@ -561,7 +561,7 @@ Respond in JSON:
     const [movieDetails, tmdbTrailers, watchProviders] = await Promise.all([
       getMovieDetails(searchResult.id),
       getMovieTrailers(searchResult.id),
-      getWatchProviders(searchResult.id),
+      getWatchProviders(searchResult.id, rec.title, rec.year || null),
     ]);
     
     if (!movieDetails) return null;
@@ -603,7 +603,7 @@ Respond in JSON:
       const fallbackMovie = shuffleArray([...eligibleMovies])[0];
       const [trailerUrls, watchProviders] = await Promise.all([
         getMovieTrailers(fallbackMovie.tmdbId),
-        getWatchProviders(fallbackMovie.tmdbId),
+        getWatchProviders(fallbackMovie.tmdbId, fallbackMovie.title, fallbackMovie.year),
       ]);
       
       // Skip if no trailer AND no watch providers

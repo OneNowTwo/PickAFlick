@@ -185,6 +185,7 @@ export const watchProviderSchema = z.object({
   name: z.string(),
   logoPath: z.string(),
   type: z.enum(["subscription", "rent", "buy"]),
+  deepLink: z.string().optional(), // Direct link to movie on this service
 });
 
 export type WatchProvider = z.infer<typeof watchProviderSchema>;
