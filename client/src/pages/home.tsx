@@ -176,10 +176,10 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="w-full max-w-7xl mx-auto py-8 px-4">
+      <main className="w-full max-w-7xl mx-auto py-8 px-2 sm:px-4 overflow-x-hidden overflow-y-auto min-h-0">
         {gameState === "start" && (
           <div className="relative min-h-[70vh] flex items-center justify-center">
-            <div className="relative z-10 flex flex-col items-center justify-center gap-6 text-center max-w-3xl mx-auto">
+            <div className="relative z-10 flex flex-col items-center justify-center gap-6 text-center max-w-3xl mx-auto w-full">
               <div className="space-y-3 p-6 md:p-8 rounded-lg" style={{ background: 'rgba(0, 0, 0, 0.7)' }}>
                 <h2 className="text-3xl md:text-4xl font-bold text-white drop-shadow-lg">
                   Find Your Perfect Movie
@@ -190,10 +190,10 @@ export default function Home() {
               </div>
 
               {/* Mood Selection - Clear tappable buttons */}
-              <div className="p-6 rounded-lg w-full" style={{ background: 'rgba(0, 0, 0, 0.6)' }}>
+              <div className="p-4 sm:p-6 rounded-lg w-full max-w-full" style={{ background: 'rgba(0, 0, 0, 0.6)' }}>
                 <h3 className="text-xl font-bold text-white mb-1">Tap Your Mood</h3>
                 <p className="text-gray-400 text-sm mb-4">Pick genres or skip for everything</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3 w-full">
                   {MOOD_OPTIONS.map((mood) => (
                     <Button
                       key={mood.id}

@@ -82,8 +82,8 @@ export function GameInstructions({ onStart }: GameInstructionsProps) {
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm">
-      <div className="relative max-w-xl mx-4 p-8 bg-black/90 border border-white/10 rounded-lg">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm overflow-x-hidden overflow-y-auto p-4">
+      <div className="relative w-full max-w-[min(576px,calc(100vw-2rem))] p-4 md:p-8 bg-black/90 border border-white/10 rounded-lg">
         <div className="space-y-5">
           {steps.map((stepItem, index) => (
             <div
@@ -94,13 +94,13 @@ export function GameInstructions({ onStart }: GameInstructionsProps) {
                   : "opacity-0 translate-y-4"
               }`}
             >
-              <div className="flex items-start gap-4">
+              <div className="flex items-start gap-3 md:gap-4 min-w-0">
                 <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center">
                   <span className="text-primary font-bold text-lg">
                     {stepItem.number}
                   </span>
                 </div>
-                <p className="text-xl text-white font-bold pt-1.5 leading-relaxed">
+                <p className="text-base md:text-xl text-white font-bold pt-1.5 leading-relaxed break-words min-w-0">
                   {stepItem.text}
                 </p>
               </div>
