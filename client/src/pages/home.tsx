@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { StartSessionResponse, RoundPairResponse, ChoiceResponse, RecommendationsResponse } from "@shared/schema";
@@ -39,6 +39,37 @@ export default function Home() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [recommendations, setRecommendations] = useState<RecommendationsResponse | null>(null);
   const [selectedMoods, setSelectedMoods] = useState<string[]>([]);
+
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem("homeState");
+    if (!saved) return;
+
+    try {
+      const parsed = JSON.parse(saved) as {
+        gameState?: GameState;
+        sessionId?: string | null;
+        recommendations?: RecommendationsResponse | null;
+        selectedMoods?: string[];
+      };
+
+      if (parsed.gameState && parsed.gameState !== "start") {
+        setGameState(parsed.gameState);
+        setSessionId(parsed.sessionId ?? null);
+        setRecommendations(parsed.recommendations ?? null);
+        setSelectedMoods(parsed.selectedMoods ?? []);
+      }
+    } catch {
+      // ignore corrupted state
+    }
+  }, []);
+
+  useEffect(() => {
+    sessionStorage.setItem(
+      "homeState",
+      JSON.stringify({ gameState, sessionId, recommendations, selectedMoods })
+    );
+  }, [gameState, sessionId, recommendations, selectedMoods]);
 
   const toggleMood = useCallback((moodId: string) => {
     setSelectedMoods(prev => 
@@ -144,6 +175,7 @@ export default function Home() {
   }, [skipMutation]);
 
   const handlePlayAgain = useCallback(() => {
+    sessionStorage.removeItem("homeState");
     setSessionId(null);
     setRecommendations(null);
     setSelectedMoods([]);
@@ -167,7 +199,7 @@ export default function Home() {
             <Film className="w-6 h-6 text-primary" />
             <h1 className="text-xl font-bold text-foreground">WhatWeWatching</h1>
           </button>
-          <Link href="/watchlist">
+          <Link href="/watchlist?from=home">
             <Button variant="ghost" className="gap-2" data-testid="button-watchlist">
               <Bookmark className="w-4 h-4" />
               <span className="hidden sm:inline">My Watchlist</span>

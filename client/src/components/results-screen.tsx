@@ -461,7 +461,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                 <div className="relative w-full h-full">
                   <iframe
                     key={currentTrailerUrl} // Force re-mount when URL changes
-                    src={`${currentTrailerUrl}?autoplay=1&mute=${muteParam}&origin=${window.location.origin}`}
+                    src={`${currentTrailerUrl}?autoplay=1&mute=${muteParam}&playsinline=1&rel=0&origin=${window.location.origin}`}
                     className="w-full h-full"
                     allow="autoplay; encrypted-media"
                     allowFullScreen
@@ -497,16 +497,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                     )}
                     {allTrailersFailed && (
                       <div className="text-center px-4">
-                        <p className="text-white/80 text-sm mb-2">Trailer unavailable in your region</p>
-                        <a
-                          href={`https://www.youtube.com/results?search_query=${encodeURIComponent(currentRec.movie.title + " " + currentRec.movie.year + " trailer")}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary hover:underline text-sm"
-                          data-testid="link-search-trailer"
-                        >
-                          Search on YouTube
-                        </a>
+                        <p className="text-white/80 text-sm">All known trailer embeds for this title are unavailable.</p>
                       </div>
                     )}
                   </div>
@@ -666,7 +657,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                       {watchProviders.providers.filter(p => p.type === "subscription").map((provider) => (
                         <a
                           key={provider.id}
-                          href={provider.deepLink || watchProviders.link || "#"}
+                          href={provider.deepLink || "#"}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
@@ -692,7 +683,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                       {watchProviders.providers.filter(p => p.type === "rent").map((provider) => (
                         <a
                           key={provider.id}
-                          href={provider.deepLink || watchProviders.link || "#"}
+                          href={provider.deepLink || "#"}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
@@ -718,7 +709,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                       {watchProviders.providers.filter(p => p.type === "buy").map((provider) => (
                         <a
                           key={provider.id}
-                          href={provider.deepLink || watchProviders.link || "#"}
+                          href={provider.deepLink || "#"}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
@@ -743,8 +734,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
             ) : (
               <div className="text-center py-8">
                 <Tv className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
-                <p className="text-muted-foreground">No streaming options available in Australia for this title.</p>
-                <p className="text-xs text-muted-foreground mt-2">Try searching for it directly on your favorite streaming service.</p>
+                <p className="text-muted-foreground">No direct movie links found for this title in Australia.</p>
               </div>
             )}
           </div>

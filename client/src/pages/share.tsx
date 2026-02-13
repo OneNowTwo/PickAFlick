@@ -3,7 +3,7 @@ import { useParams, Link } from "wouter";
 import type { RecommendationsResponse, Recommendation } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Film, Palette, Calendar, Sparkles, ChevronLeft, ChevronRight, Play, Brain, Home } from "lucide-react";
+import { Film, Palette, Calendar, Sparkles, ChevronLeft, ChevronRight, Play, Brain, Home, Bookmark } from "lucide-react";
 import { useState, useEffect } from "react";
 
 interface SharedRecommendationsData {
@@ -17,11 +17,13 @@ export default function SharePage() {
   const shareId = params.id;
   const [currentIndex, setCurrentIndex] = useState(0);
   const [autoPlayTrailer, setAutoPlayTrailer] = useState(true);
-  const [trailerError, setTrailerError] = useState(false);
+  const [trailerIndex, setTrailerIndex] = useState(0);
+  const [allTrailersFailed, setAllTrailersFailed] = useState(false);
 
-  // Reset trailer error when changing movies
+  // Reset trailer state when changing movies
   useEffect(() => {
-    setTrailerError(false);
+    setTrailerIndex(0);
+    setAllTrailersFailed(false);
   }, [currentIndex]);
 
   const { data, isLoading, error } = useQuery<SharedRecommendationsData>({
@@ -84,6 +86,15 @@ export default function SharePage() {
   return (
     <div className="min-h-screen bg-background">
       <div className="flex flex-col items-center gap-2 md:gap-3 w-full max-w-5xl mx-auto px-2 md:px-4 py-4 md:py-6">
+        <div className="w-full flex justify-end">
+          <Link href="/watchlist">
+            <Button variant="ghost" className="gap-2" data-testid="button-watchlist">
+              <Bookmark className="w-4 h-4" />
+              My Watchlist
+            </Button>
+          </Link>
+        </div>
+
         {/* Header */}
         <div className="text-center">
           <div className="flex items-center justify-center gap-2 mb-1">
@@ -158,64 +169,75 @@ export default function SharePage() {
         >
           {/* Trailer / Poster Area */}
           <div className="aspect-video max-h-[40vh] md:max-h-[50vh] relative">
-            {currentRec?.trailerUrl && autoPlayTrailer && !trailerError ? (
-              <div className="relative w-full h-full">
-                <iframe
-                  src={`${currentRec.trailerUrl}?autoplay=1&origin=${window.location.origin}`}
-                  className="w-full h-full"
-                  allow="autoplay; encrypted-media"
-                  allowFullScreen
-                  title={`${currentRec.movie.title} Trailer`}
-                  onError={() => setTrailerError(true)}
-                />
-                <button
-                  onClick={() => setTrailerError(true)}
-                  className="absolute bottom-2 right-2 text-xs text-white/60 hover:text-white/90 bg-black/50 px-2 py-1 rounded"
-                  data-testid="button-trailer-not-working"
-                >
-                  Trailer not working?
-                </button>
-              </div>
-            ) : posterUrl ? (
-              <div className="relative w-full h-full">
-                <img
-                  src={posterUrl}
-                  alt={currentRec?.movie.title}
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-3">
-                  {currentRec?.trailerUrl && !trailerError && (
-                    <Button
-                      size="default"
-                      onClick={() => { setTrailerError(false); setAutoPlayTrailer(true); }}
-                      className="gap-2"
-                      data-testid={`button-play-trailer-${currentIndex}`}
-                    >
-                      <Play className="w-4 h-4 md:w-5 md:h-5" />
-                      <span className="text-sm md:text-base">Watch Trailer</span>
-                    </Button>
-                  )}
-                  {trailerError && (
-                    <div className="text-center px-4">
-                      <p className="text-white/80 text-sm mb-2">Trailer unavailable in your region</p>
-                      <a
-                        href={`https://www.youtube.com/results?search_query=${encodeURIComponent(currentRec?.movie.title + " " + currentRec?.movie.year + " trailer")}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline text-sm"
-                        data-testid="link-search-trailer"
-                      >
-                        Search on YouTube
-                      </a>
+            {(() => {
+              const availableTrailers = currentRec?.trailerUrls?.length
+                ? currentRec.trailerUrls
+                : currentRec?.trailerUrl
+                  ? [currentRec.trailerUrl]
+                  : [];
+              const currentTrailerUrl = availableTrailers[trailerIndex];
+              const hasMoreTrailers = trailerIndex < availableTrailers.length - 1;
+
+              const handleTrailerError = () => {
+                if (hasMoreTrailers) {
+                  setTrailerIndex((prev) => prev + 1);
+                } else {
+                  setAllTrailersFailed(true);
+                }
+              };
+
+              if (currentTrailerUrl && autoPlayTrailer && !allTrailersFailed) {
+                return (
+                  <div className="relative w-full h-full">
+                    <iframe
+                      key={currentTrailerUrl}
+                      src={`${currentTrailerUrl}?autoplay=1&playsinline=1&rel=0&origin=${window.location.origin}`}
+                      className="w-full h-full"
+                      allow="autoplay; encrypted-media"
+                      allowFullScreen
+                      title={`${currentRec.movie.title} Trailer`}
+                      onError={handleTrailerError}
+                    />
+                  </div>
+                );
+              }
+
+              if (posterUrl) {
+                return (
+                  <div className="relative w-full h-full">
+                    <img
+                      src={posterUrl}
+                      alt={currentRec?.movie.title}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-3">
+                      {availableTrailers.length > 0 && !allTrailersFailed && (
+                        <Button
+                          size="default"
+                          onClick={() => { setTrailerIndex(0); setAllTrailersFailed(false); setAutoPlayTrailer(true); }}
+                          className="gap-2"
+                          data-testid={`button-play-trailer-${currentIndex}`}
+                        >
+                          <Play className="w-4 h-4 md:w-5 md:h-5" />
+                          <span className="text-sm md:text-base">Watch Trailer</span>
+                        </Button>
+                      )}
+                      {allTrailersFailed && (
+                        <div className="text-center px-4">
+                          <p className="text-white/80 text-sm">All known trailer embeds for this title are unavailable.</p>
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
+                );
+              }
+
+              return (
+                <div className="w-full h-full bg-muted flex items-center justify-center">
+                  <span className="text-muted-foreground text-sm">No Preview Available</span>
                 </div>
-              </div>
-            ) : (
-              <div className="w-full h-full bg-muted flex items-center justify-center">
-                <span className="text-muted-foreground text-sm">No Preview Available</span>
-              </div>
-            )}
+              );
+            })()}
           </div>
 
           {/* Movie Info */}

@@ -12,6 +12,55 @@ interface StreamingLinkRequest {
   tmdbId: number;
 }
 
+function getProviderDomains(providerName: string): string[] {
+  const lower = providerName.toLowerCase();
+  if (lower.includes("netflix")) return ["netflix.com"];
+  if (lower.includes("stan")) return ["stan.com.au"];
+  if (lower.includes("binge")) return ["binge.com.au"];
+  if (lower.includes("prime") || lower.includes("amazon")) return ["primevideo.com", "amazon.com"];
+  if (lower.includes("disney")) return ["disneyplus.com"];
+  if (lower.includes("apple")) return ["tv.apple.com"];
+  if (lower.includes("paramount")) return ["paramountplus.com"];
+  if (lower.includes("max") || lower.includes("hbo")) return ["max.com", "hbomax.com"];
+  if (lower.includes("youtube")) return ["youtube.com"];
+  return [];
+}
+
+function looksLikeDirectTitleUrl(url: string): boolean {
+  const lower = url.toLowerCase();
+  if (lower.includes("/search") || lower.includes("?q=") || lower.includes("search_query=")) return false;
+  if (lower.includes("/signin") || lower.includes("/login") || lower.includes("/browse")) return false;
+  if (lower.includes("justwatch.com") || lower.includes("themoviedb.org") || lower.includes("tmdb.org")) return false;
+  return true;
+}
+
+async function findProviderDeepLinkViaSearch(request: StreamingLinkRequest): Promise<string | null> {
+  const providerDomains = getProviderDomains(request.providerName);
+  if (providerDomains.length === 0) return null;
+
+  const query = `${request.movieTitle} ${request.movieYear ?? ""} ${request.providerName} Australia`;
+  const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0",
+    },
+  });
+
+  if (!response.ok) return null;
+  const html = await response.text();
+  const links = Array.from(html.matchAll(/<a[^>]+class="result__a"[^>]+href="([^"]+)"/g)).map((m) => m[1]);
+
+  for (const candidate of links) {
+    const decoded = candidate.startsWith("//") ? `https:${candidate}` : candidate;
+    if (!decoded.startsWith("http")) continue;
+    if (!providerDomains.some((domain) => decoded.includes(domain))) continue;
+    if (!looksLikeDirectTitleUrl(decoded)) continue;
+    return decoded;
+  }
+
+  return null;
+}
+
 /**
  * Use AI to find the actual deep link URL for a movie on a specific streaming service.
  * Slug-based URLs are unreliable (404s, wrong format) - AI is used for all providers.
@@ -25,6 +74,11 @@ export async function getStreamingDeepLink(request: StreamingLinkRequest): Promi
   }
 
   try {
+    const searchedLink = await findProviderDeepLinkViaSearch(request);
+    if (searchedLink) {
+      return searchedLink;
+    }
+
     const prompt = `Find the EXACT direct URL where I can watch the movie "${request.movieTitle}"${request.movieYear ? ` (${request.movieYear})` : ""} on ${request.providerName} in Australia.
 
 CRITICAL: Return ONLY the direct movie/watch page URL. Not a search page, not a homepage.
@@ -70,7 +124,7 @@ Return ONLY the URL or UNAVAILABLE, nothing else.`;
     }
 
     // Reject search URLs
-    if (url.includes("/search") || url.includes("?q=") || url.includes("search_query=")) {
+    if (!looksLikeDirectTitleUrl(url)) {
       return null;
     }
 

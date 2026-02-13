@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -11,18 +11,23 @@ import type { WatchlistItem, WatchProvidersResponse } from "@shared/schema";
 export default function Watchlist() {
   const [selectedTmdbId, setSelectedTmdbId] = useState<number | null>(null);
   const [showWatchProviders, setShowWatchProviders] = useState(false);
+  const [selectedMovie, setSelectedMovie] = useState<{ tmdbId: number; title: string; year: number | null } | null>(null);
+
+  const from = useMemo(() => new URLSearchParams(window.location.search).get("from"), []);
+  const returnHref = from === "home" ? "/?resume=1" : "/";
 
   const { data: watchlist, isLoading } = useQuery<WatchlistItem[]>({
     queryKey: ["/api/watchlist"],
   });
 
   const { data: watchProviders, isLoading: isLoadingProviders } = useQuery<WatchProvidersResponse>({
-    queryKey: [`/api/watch-providers/${selectedTmdbId}`],
-    enabled: showWatchProviders && !!selectedTmdbId,
+    queryKey: [`/api/watch-providers/${selectedTmdbId}?title=${encodeURIComponent(selectedMovie?.title || "")}&year=${selectedMovie?.year || ""}`],
+    enabled: showWatchProviders && !!selectedTmdbId && !!selectedMovie,
   });
 
-  const handleWatchNow = (tmdbId: number) => {
+  const handleWatchNow = (tmdbId: number, title: string, year: number | null) => {
     setSelectedTmdbId(tmdbId);
+    setSelectedMovie({ tmdbId, title, year });
     setShowWatchProviders(true);
   };
 
@@ -68,14 +73,26 @@ export default function Watchlist() {
             </div>
             <Link href="/">
               <Button 
+                variant="ghost" 
+                size="sm"
+                className="gap-2"
+                data-testid="button-back-home"
+              >
+                <Film className="w-4 h-4" />
+                <span className="hidden sm:inline">Home</span>
+                <span className="sm:hidden">Home</span>
+              </Button>
+            </Link>
+            <Link href={returnHref}>
+              <Button 
                 variant="outline" 
                 size="sm"
                 className="gap-2"
                 data-testid="button-back-to-recommendations"
               >
                 <ArrowLeft className="w-4 h-4" />
-                <span className="hidden sm:inline">Get More Recommendations</span>
-                <span className="sm:hidden">Discover</span>
+                <span className="hidden sm:inline">Back to Recommendations</span>
+                <span className="sm:hidden">Back</span>
               </Button>
             </Link>
           </div>
@@ -119,7 +136,7 @@ export default function Watchlist() {
                       item={item}
                       onToggleWatched={() => toggleWatchedMutation.mutate({ id: item.id, watched: true })}
                       onRemove={() => removeMutation.mutate(item.id)}
-                      onWatchNow={() => handleWatchNow(item.tmdbId)}
+                      onWatchNow={() => handleWatchNow(item.tmdbId, item.title, item.year)}
                       isPending={toggleWatchedMutation.isPending || removeMutation.isPending}
                     />
                   ))}
@@ -137,7 +154,7 @@ export default function Watchlist() {
                       item={item}
                       onToggleWatched={() => toggleWatchedMutation.mutate({ id: item.id, watched: false })}
                       onRemove={() => removeMutation.mutate(item.id)}
-                      onWatchNow={() => handleWatchNow(item.tmdbId)}
+                      onWatchNow={() => handleWatchNow(item.tmdbId, item.title, item.year)}
                       isPending={toggleWatchedMutation.isPending || removeMutation.isPending}
                     />
                   ))}
@@ -172,7 +189,7 @@ export default function Watchlist() {
                       {watchProviders.providers.filter(p => p.type === "subscription").map((provider) => (
                         <a
                           key={provider.id}
-                          href={watchProviders.link || "#"}
+                          href={provider.deepLink || "#"}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
@@ -197,7 +214,7 @@ export default function Watchlist() {
                       {watchProviders.providers.filter(p => p.type === "rent").map((provider) => (
                         <a
                           key={provider.id}
-                          href={watchProviders.link || "#"}
+                          href={provider.deepLink || "#"}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
@@ -222,7 +239,7 @@ export default function Watchlist() {
                       {watchProviders.providers.filter(p => p.type === "buy").map((provider) => (
                         <a
                           key={provider.id}
-                          href={watchProviders.link || "#"}
+                          href={provider.deepLink || "#"}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
@@ -247,8 +264,7 @@ export default function Watchlist() {
             ) : (
               <div className="text-center py-8">
                 <Tv className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
-                <p className="text-muted-foreground">No streaming options available in Australia for this title.</p>
-                <p className="text-xs text-muted-foreground mt-2">Try searching for it directly on your favorite streaming service.</p>
+                <p className="text-muted-foreground">No direct movie links found for this title in Australia.</p>
               </div>
             )}
           </div>
