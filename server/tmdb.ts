@@ -117,45 +117,27 @@ async function tmdbFetch<T>(endpoint: string, params: Record<string, string> = {
   return response.json();
 }
 
-function normalizeTitleForSearch(title: string): string {
-  return title
-    .replace(/[’']/g, "")
-    .replace(/[:,.!?]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-async function tmdbSearchWithParams(params: Record<string, string>): Promise<TMDbSearchResult[]> {
-  const data = await tmdbFetch<{ results: TMDbSearchResult[] }>("/search/movie", params);
-  return data.results ?? [];
-}
-
 export async function searchMovie(title: string, year?: number): Promise<TMDbSearchResult | null> {
-  const normalized = normalizeTitleForSearch(title);
-  const baseQueries = Array.from(new Set([title, normalized].filter(Boolean)));
-
-  const queryVariants: Array<Record<string, string>> = [];
-  for (const q of baseQueries) {
-    if (year) queryVariants.push({ query: q, year: year.toString() });
-    queryVariants.push({ query: q });
+  const params: Record<string, string> = { query: title };
+  if (year) {
+    params.year = year.toString();
   }
 
-  for (const params of queryVariants) {
-    const results = await tmdbSearchWithParams(params);
-    if (results.length === 0) continue;
-
-    if (year) {
-      const exactMatch = results.find((r) => {
-        const releaseYear = r.release_date ? parseInt(r.release_date.split("-")[0]) : null;
-        return releaseYear === year;
-      });
-      if (exactMatch) return exactMatch;
-    }
-
-    return results[0];
+  const data = await tmdbFetch<{ results: TMDbSearchResult[] }>("/search/movie", params);
+  
+  if (data.results.length === 0) {
+    return null;
   }
 
-  return null;
+  if (year) {
+    const exactMatch = data.results.find((r) => {
+      const releaseYear = r.release_date ? parseInt(r.release_date.split("-")[0]) : null;
+      return releaseYear === year;
+    });
+    if (exactMatch) return exactMatch;
+  }
+
+  return data.results[0];
 }
 
 // Alias for AI recommender - returns just id for lookup
@@ -292,49 +274,11 @@ export async function getMovieTrailers(tmdbId: number): Promise<string[]> {
       trailerUrls.push(`https://www.youtube.com/embed/${t.key}`);
     }
 
-    // Priority 5: Featurettes (fallback when no trailers exist)
-    const featurettes = youtubeVideos.filter((v) => v.type === "Featurette");
-    for (const v of featurettes) {
-      trailerUrls.push(`https://www.youtube.com/embed/${v.key}`);
-    }
-
-    // Priority 6: Clips (last resort)
-    const clips = youtubeVideos.filter((v) => v.type === "Clip");
-    for (const v of clips) {
-      trailerUrls.push(`https://www.youtube.com/embed/${v.key}`);
-    }
-
     return trailerUrls;
   } catch (error) {
     console.error(`Failed to get trailers for ${tmdbId}:`, error);
     return [];
   }
-}
-
-export async function getFallbackTrailerUrls(title: string, year?: number | null): Promise<string[]> {
-  const query = encodeURIComponent(`${title} ${year ?? ""} official trailer`.trim());
-  const urls: string[] = [];
-
-  try {
-    const response = await fetch(`https://www.youtube.com/results?search_query=${query}`);
-    if (!response.ok) return [];
-    const html = await response.text();
-
-    const seen = new Set<string>();
-    const re = /"videoId":"([a-zA-Z0-9_-]{11})"/g;
-    let match;
-    while ((match = re.exec(html)) !== null) {
-      const id = match[1];
-      if (seen.has(id)) continue;
-      seen.add(id);
-      urls.push(`https://www.youtube.com/embed/${id}`);
-      if (urls.length >= 5) break;
-    }
-  } catch (error) {
-    console.error(`Failed fallback YouTube search for "${title}"`, error);
-  }
-
-  return urls;
 }
 
 export async function resolveMovieFromTitle(
@@ -473,13 +417,12 @@ export async function getWatchProviders(tmdbId: number, movieTitle?: string, mov
       return { link: null, providers: [] };
     }
 
-    const { getDeepLinkFromFlicks, isDirectStreamingDeepLink } = await import("./streaming-links");
+    const { getDeepLinkFromFlicks, getSearchURL } = await import("./streaming-links");
 
     const addProvider = (p: { provider_id: number; provider_name: string; logo_path: string }, type: "subscription" | "rent" | "buy", providers: WatchProvider[]) => {
       if (providers.find((existing) => existing.id === p.provider_id)) return;
-      const deepLink = getDeepLinkFromFlicks(p.provider_name, flicksLinks) ?? undefined;
+      const deepLink = getDeepLinkFromFlicks(p.provider_name, flicksLinks) ?? (movieTitle ? getSearchURL(movieTitle, movieYear ?? null, p.provider_name) : undefined);
       if (!deepLink) return;
-      if (!isDirectStreamingDeepLink(deepLink)) return;
       providers.push({
         id: p.provider_id,
         name: p.provider_name,

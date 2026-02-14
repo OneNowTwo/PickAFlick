@@ -41,42 +41,6 @@ function resolveUrl(href: string): string {
   return decoded;
 }
 
-function hasNonGenericPath(url: URL): boolean {
-  const path = (url.pathname || "").toLowerCase();
-  if (!path || path === "/" || path === "/au" || path === "/en-au") return false;
-  if (path.startsWith("/search")) return false;
-  return true;
-}
-
-/**
- * Validate that a provider URL is a direct movie page (not homepage/search).
- */
-export function isDirectStreamingDeepLink(urlString: string): boolean {
-  try {
-    const url = new URL(urlString);
-    const host = url.hostname.toLowerCase();
-    const path = url.pathname.toLowerCase();
-
-    if (!hasNonGenericPath(url)) return false;
-
-    if (host.includes("netflix.com")) return /\/title\/\d+/.test(path);
-    if (host.includes("primevideo.com")) return /\/detail\//.test(path) || /\/gp\/video\/detail\//.test(path);
-    if (host.includes("tv.apple.com")) return /\/movie\//.test(path);
-    if (host.includes("itunes.apple.com")) return /\/movie\//.test(path);
-    if (host.includes("stan.com.au")) return /\/watch\//.test(path) || /\/program\//.test(path);
-    if (host.includes("binge.com.au")) return /\/(movies|shows)\//.test(path);
-    if (host.includes("disneyplus.com")) return /\/(movies|video)\//.test(path);
-    if (host.includes("paramountplus.com")) return /\/(movies|shows)\//.test(path);
-    if (host.includes("foxtel.com.au")) return /\/watch\//.test(path) || /\/movie\//.test(path);
-    if (host.includes("youtube.com")) return /\/watch/.test(path) && url.searchParams.has("v");
-
-    // Unknown hosts: conservative default to non-generic path.
-    return hasNonGenericPath(url);
-  } catch {
-    return false;
-  }
-}
-
 /** Domain -> Flicks slug mapping for extracting streaming links */
 const DOMAIN_TO_SLUG: Record<string, string> = {
   "netflix.com": "netflix",
@@ -103,7 +67,6 @@ function parseFlicksHtml(html: string): Map<string, string> {
     const href = m[1].replace(/&amp;/g, "&");
     if (href.includes("flicks.com") || href.includes("flicks.co")) continue;
     const resolved = resolveUrl(href);
-    if (!isDirectStreamingDeepLink(resolved)) continue;
     for (const [domain, slug] of Object.entries(DOMAIN_TO_SLUG)) {
       if (href.includes(domain) || resolved.includes(domain)) {
         const existing = links.get(slug);
@@ -184,9 +147,7 @@ export function getDeepLinkFromFlicks(
   providerName: string,
   flicksLinks: Map<string, string>
 ): string | null {
-  const link = matchProviderToFlicksLink(providerName, flicksLinks);
-  if (!link) return null;
-  return isDirectStreamingDeepLink(link) ? link : null;
+  return matchProviderToFlicksLink(providerName, flicksLinks);
 }
 
 /**

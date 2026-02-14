@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import type { Movie, Recommendation, RecommendationsResponse } from "@shared/schema";
-import { searchMovieByTitle, getMovieTrailers, getMovieDetails, getWatchProviders, getFallbackTrailerUrls } from "./tmdb";
+import { searchMovieByTitle, getMovieTrailer, getMovieTrailers, getMovieDetails, getWatchProviders } from "./tmdb";
+import { getAllMovies } from "./catalogue";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -23,14 +24,6 @@ interface AIAnalysis {
   recommendations: AIRecommendationResult[];
 }
 
-interface RecommendationProfile {
-  topGenres: string[];
-  themes: string[];
-  preferredEras: string[];
-  visualStyle: string;
-  mood: string;
-}
-
 function getEra(year: number | null): string {
   if (!year) return "unknown";
   if (year >= 2020) return "2020s";
@@ -41,99 +34,6 @@ function getEra(year: number | null): string {
   if (year >= 1970) return "70s";
   if (year >= 1960) return "60s";
   return "pre-60s classic";
-}
-
-function matchesGenreFilters(movie: Movie, genreFilters: string[]): boolean {
-  if (genreFilters.length === 0) return true;
-  const primaryGenre = movie.genres[0];
-  return !!primaryGenre && genreFilters.includes(primaryGenre);
-}
-
-async function resolveRecommendationCandidate(
-  rec: AIRecommendationResult,
-  chosenTmdbIds: Set<number>,
-  initialGenreFilters: string[]
-): Promise<Recommendation | null> {
-  try {
-    const searchResult = await searchMovieByTitle(rec.title, rec.year);
-    if (!searchResult || chosenTmdbIds.has(searchResult.id)) return null;
-
-    const [movieDetails, tmdbTrailers, watchProviders] = await Promise.all([
-      getMovieDetails(searchResult.id),
-      getMovieTrailers(searchResult.id),
-      getWatchProviders(searchResult.id, rec.title, rec.year),
-    ]);
-
-    if (!movieDetails) return null;
-    if (initialGenreFilters.length > 0 && !matchesGenreFilters(movieDetails, initialGenreFilters)) return null;
-
-    let trailerUrls = tmdbTrailers;
-    if (trailerUrls.length === 0) {
-      trailerUrls = await getFallbackTrailerUrls(movieDetails.title, movieDetails.year);
-    }
-    if (trailerUrls.length === 0) return null;
-
-    // Hard gate: must be streamable/rentable in Australia with direct links.
-    if (watchProviders.providers.length === 0) return null;
-
-    movieDetails.listSource = "ai-recommendation";
-    return {
-      movie: movieDetails,
-      trailerUrl: trailerUrls[0],
-      trailerUrls,
-      reason: rec.reason,
-    };
-  } catch (error) {
-    console.error(`Failed to resolve recommendation "${rec.title}":`, error);
-    return null;
-  }
-}
-
-async function getAdditionalLLMCandidates(
-  chosenMovies: Movie[],
-  rejectedMovies: Movie[],
-  excludedTitles: string[],
-  count: number
-): Promise<AIRecommendationResult[]> {
-  const prompt = `You are a movie expert. Based on these user picks, return ${count} additional movie recommendations.
-
-CHOSEN:
-${chosenMovies.map((m) => `- ${m.title} (${m.year}) [${m.genres[0] || "Unknown"}]`).join("\n")}
-
-REJECTED:
-${rejectedMovies.map((m) => `- ${m.title} (${m.year}) [${m.genres[0] || "Unknown"}]`).join("\n") || "- none"}
-
-DO NOT RETURN:
-${excludedTitles.slice(-40).join(", ") || "none"}
-
-Requirements:
-- Match nuanced taste from chosen vs rejected picks
-- Avoid obvious repeats/cliches
-- Prefer movies likely streamable/rentable in Australia
-- Include title, year, reason
-
-Return strict JSON:
-{
-  "recommendations": [
-    { "title": "Movie", "year": 2019, "reason": "..." }
-  ]
-}`;
-
-  try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
-      response_format: { type: "json_object" },
-      max_tokens: 900,
-      temperature: 0.95,
-    });
-    const content = response.choices[0]?.message?.content || "{}";
-    const parsed = JSON.parse(content) as { recommendations?: AIRecommendationResult[] };
-    return Array.isArray(parsed.recommendations) ? parsed.recommendations : [];
-  } catch (error) {
-    console.error("Failed to get additional LLM candidates:", error);
-    return [];
-  }
 }
 
 export async function generateRecommendations(
@@ -369,65 +269,140 @@ CRITICAL NOTES:
 
     const content = response.choices[0]?.message?.content || "{}";
     const analysis: AIAnalysis = JSON.parse(content);
-    const profile: RecommendationProfile = {
-      topGenres: analysis.topGenres || [],
-      themes: analysis.themes || [],
-      preferredEras: analysis.preferredEras || [],
-      visualStyle: analysis.visualStyle || "",
-      mood: analysis.mood || "",
-    };
 
+    // Resolve recommended movies through TMDb with FULL DETAILS - PARALLELIZED for speed
     const chosenTmdbIds = new Set(chosenMovies.map((m) => m.tmdbId));
-    const collected: Recommendation[] = [];
-    const attemptedTitleKeys = new Set<string>();
-    let candidateBatch: AIRecommendationResult[] = analysis.recommendations || [];
-    let attempt = 0;
 
-    while (collected.length < 6 && attempt < 4) {
-      for (const rec of candidateBatch) {
-        if (collected.length >= 6) break;
-        const key = `${(rec.title || "").toLowerCase().trim()}-${rec.year ?? ""}`;
-        if (!rec.title || attemptedTitleKeys.has(key)) continue;
-        attemptedTitleKeys.add(key);
+    // Fetch all recommendations in parallel with full details and trailers
+    const recPromises = analysis.recommendations.map(async (rec) => {
+      try {
+        // Search for the movie on TMDb
+        const searchResult = await searchMovieByTitle(rec.title, rec.year);
+        
+        if (!searchResult || chosenTmdbIds.has(searchResult.id)) {
+          return null; // Skip if not found or already chosen
+        }
 
-        const resolved = await resolveRecommendationCandidate(rec, chosenTmdbIds, initialGenreFilters);
-        if (!resolved) continue;
+        // Get movie details, trailers, and watch providers in parallel
+        const [movieDetails, tmdbTrailers, watchProviders] = await Promise.all([
+          getMovieDetails(searchResult.id),
+          getMovieTrailers(searchResult.id),
+          getWatchProviders(searchResult.id, rec.title, rec.year),
+        ]);
+        
+        if (!movieDetails) {
+          return null; // Skip if we couldn't get details
+        }
+        
+        // Skip movies without posters or trailers
+        if (!movieDetails.posterPath || !movieDetails.posterPath.trim()) {
+          console.log(`Skipping "${movieDetails.title}" - no poster available`);
+          return null;
+        }
+        
+        if (tmdbTrailers.length === 0) {
+          console.log(`Skipping "${movieDetails.title}" - no trailer available`);
+          return null;
+        }
+        
+        const trailerUrls = tmdbTrailers;
 
-        collected.push(resolved);
-        chosenTmdbIds.add(resolved.movie.tmdbId);
+        // Filter by Australia watch providers
+        if (watchProviders.providers.length === 0) {
+          console.log(`Skipping "${movieDetails.title}" - no streaming in Australia`);
+          return null;
+        }
+
+        // Set the list source
+        movieDetails.listSource = "ai-recommendation";
+
+        return {
+          movie: movieDetails,
+          trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null,
+          trailerUrls,
+          reason: rec.reason,
+        };
+      } catch (error) {
+        console.error(`Failed to resolve recommendation "${rec.title}":`, error);
+        return null;
       }
+    });
 
-      if (collected.length >= 6) break;
-      attempt += 1;
-      candidateBatch = await getAdditionalLLMCandidates(
-        chosenMovies,
-        rejectedMovies,
-        Array.from(attemptedTitleKeys).map((k) => k.split("-").slice(0, -1).join("-")).filter(Boolean),
-        10
-      );
+    // Wait for all promises and filter out nulls
+    const resolvedRecs = await Promise.all(recPromises);
+    const recommendations = resolvedRecs.filter((r): r is Recommendation => r !== null).slice(0, 5);
+
+    // Add a "wildcard" random pick from the catalogue for variety
+    const allMovies = getAllMovies();
+    const usedTmdbIds = new Set([
+      ...Array.from(chosenTmdbIds),
+      ...recommendations.map((r) => r.movie.tmdbId),
+    ]);
+    
+    const eligibleWildcards = allMovies.filter(
+      (m) => !usedTmdbIds.has(m.tmdbId) && m.rating && m.rating >= 7.0
+    );
+    
+    if (eligibleWildcards.length > 0) {
+      const wildcardMovie = shuffleArray([...eligibleWildcards])[0];
+      const [wildcardTrailers, wildcardProviders] = await Promise.all([
+        getMovieTrailers(wildcardMovie.tmdbId),
+        getWatchProviders(wildcardMovie.tmdbId, wildcardMovie.title, wildcardMovie.year),
+      ]);
+      
+      // Strict filtering: require poster AND trailer AND streaming
+      if (
+        wildcardMovie.posterPath && 
+        wildcardMovie.posterPath.trim() && 
+        wildcardTrailers.length > 0 && 
+        wildcardProviders.providers.length > 0
+      ) {
+        recommendations.push({
+          movie: { ...wildcardMovie, listSource: "wildcard" },
+          trailerUrl: wildcardTrailers[0],
+          trailerUrls: wildcardTrailers,
+          reason: `A surprise pick from our curated collection! This ${wildcardMovie.genres.slice(0, 2).join("/")} gem from ${wildcardMovie.year} might just become your next favorite.`,
+        });
+      } else {
+        console.log(`Skipping wildcard "${wildcardMovie.title}" - missing poster, trailer, or streaming`);
+      }
     }
 
-    const recommendations = collected.slice(0, 5);
-    if (collected.length > 5) {
-      const surprise = collected[5];
-      recommendations.push({
-        ...surprise,
-        movie: { ...surprise.movie, listSource: "wildcard" },
-        reason: `Surprise pick: ${surprise.reason}`,
+    return {
+      recommendations,
+      preferenceProfile: {
+        topGenres: analysis.topGenres || [],
+        themes: analysis.themes || [],
+        preferredEras: analysis.preferredEras || [],
+        visualStyle: analysis.visualStyle || "",
+        mood: analysis.mood || "",
+      },
+    };
+  } catch (error) {
+    console.error("AI recommendation error:", error);
+    
+    // Fallback: return random movies from catalogue
+    const allMovies = getAllMovies();
+    const fallbackMovies = shuffleArray([...allMovies])
+      .filter((m) => !chosenMovies.some((c) => c.tmdbId === m.tmdbId))
+      .slice(0, 5);
+
+    const fallbackRecs: Recommendation[] = [];
+    for (const movie of fallbackMovies) {
+      const trailerUrls = await getMovieTrailers(movie.tmdbId);
+      fallbackRecs.push({
+        movie,
+        trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null,
+        trailerUrls,
+        reason: "A great pick based on your taste!",
       });
     }
 
-    return { recommendations, preferenceProfile: profile };
-  } catch (error) {
-    console.error("AI recommendation error:", error);
     return {
-      recommendations: [],
+      recommendations: fallbackRecs,
       preferenceProfile: {
         topGenres: extractTopGenres(chosenMovies),
         themes: [],
-        preferredEras: [],
-        visualStyle: "",
-        mood: "",
       },
     };
   }
@@ -530,43 +505,120 @@ Respond in JSON:
   "reason": "Personalized 1-2 sentences explaining the CONNECTION using 'you' and 'your'"
 }`;
 
-  const triedTitles = new Set<string>();
-  for (let attempt = 0; attempt < 4; attempt++) {
-    try {
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "user",
-            content: `${prompt}
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+      max_tokens: 200, // Reduced for faster response
+      temperature: 0.95,
+    });
 
-Already tried (do not repeat):
-${Array.from(triedTitles).join(", ") || "none"}
+    const content = response.choices[0]?.message?.content || "{}";
+    const result: AIRecommendationResult = JSON.parse(content);
 
-Must be currently streamable/rentable in Australia on major services.`,
-          },
-        ],
-        response_format: { type: "json_object" },
-        max_tokens: 220,
-        temperature: 0.95,
-      });
-
-      const content = response.choices[0]?.message?.content || "{}";
-      const result: AIRecommendationResult = JSON.parse(content);
-      if (!result.title) continue;
-      triedTitles.add(result.title.toLowerCase().trim());
-
-      const rec = await resolveRecommendationCandidate(result, new Set(excludeTmdbIds), []);
-      if (rec && !excludeTmdbIds.includes(rec.movie.tmdbId)) {
+    // Search for the movie on TMDb
+    const searchResult = await searchMovieByTitle(result.title, result.year);
+    
+    if (!searchResult || excludeTmdbIds.includes(searchResult.id)) {
+      // Try from catalogue as fallback
+      const allMovies = getAllMovies();
+      const eligibleMovies = allMovies.filter(
+        (m) => !excludeTmdbIds.includes(m.tmdbId) && m.rating && m.rating >= 7.0
+      );
+      
+      if (eligibleMovies.length > 0) {
+        const fallbackMovie = shuffleArray([...eligibleMovies])[0];
+        const [tmdbTrailers, watchProviders] = await Promise.all([
+          getMovieTrailers(fallbackMovie.tmdbId),
+          getWatchProviders(fallbackMovie.tmdbId, fallbackMovie.title, fallbackMovie.year),
+        ]);
+        
+        // Skip if no poster or trailer
+        if (!fallbackMovie.posterPath || !fallbackMovie.posterPath.trim()) {
+          return null;
+        }
+        if (tmdbTrailers.length === 0) {
+          return null;
+        }
+        if (watchProviders.providers.length === 0) {
+          return null;
+        }
+        
+        const trailerUrls = tmdbTrailers;
+        
         return {
-          ...rec,
-          movie: { ...rec.movie, listSource: "replacement" },
+          movie: { ...fallbackMovie, listSource: "replacement" },
+          trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null,
+          trailerUrls,
+          reason: `A great pick based on your taste in ${fallbackMovie.genres.slice(0, 2).join(" and ")} films!`,
         };
       }
-    } catch (error) {
-      console.error("Failed to generate replacement attempt:", error);
+      return null;
     }
-  }
 
-  return null;
+    // Get full movie details, trailers, and watch providers
+    const [movieDetails, tmdbTrailers, watchProviders] = await Promise.all([
+      getMovieDetails(searchResult.id),
+      getMovieTrailers(searchResult.id),
+      getWatchProviders(searchResult.id, rec.title, rec.year || null),
+    ]);
+    
+    if (!movieDetails) return null;
+    
+    // Skip if no poster, trailer, or streaming
+    if (!movieDetails.posterPath || !movieDetails.posterPath.trim()) {
+      console.log(`Skipping replacement "${movieDetails.title}" - no poster`);
+      return null;
+    }
+    if (tmdbTrailers.length === 0) {
+      console.log(`Skipping replacement "${movieDetails.title}" - no trailer`);
+      return null;
+    }
+    if (watchProviders.providers.length === 0) {
+      console.log(`Skipping replacement "${movieDetails.title}" - no streaming in Australia`);
+      return null;
+    }
+    
+    const trailerUrls = tmdbTrailers;
+
+    movieDetails.listSource = "replacement";
+
+    return {
+      movie: movieDetails,
+      trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null,
+      trailerUrls,
+      reason: result.reason,
+    };
+  } catch (error) {
+    console.error("Failed to generate replacement:", error);
+    
+    // Fallback: pick from catalogue
+    const allMovies = getAllMovies();
+    const eligibleMovies = allMovies.filter(
+      (m) => !excludeTmdbIds.includes(m.tmdbId) && m.rating && m.rating >= 7.0
+    );
+    
+    if (eligibleMovies.length > 0) {
+      const fallbackMovie = shuffleArray([...eligibleMovies])[0];
+      const [trailerUrls, watchProviders] = await Promise.all([
+        getMovieTrailers(fallbackMovie.tmdbId),
+        getWatchProviders(fallbackMovie.tmdbId, fallbackMovie.title, fallbackMovie.year),
+      ]);
+      
+      // Skip if no trailer AND no watch providers
+      if (trailerUrls.length === 0 && watchProviders.providers.length === 0) {
+        return null;
+      }
+      
+      return {
+        movie: { ...fallbackMovie, listSource: "replacement" },
+        trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null,
+        trailerUrls,
+        reason: `A fresh pick for your ${fallbackMovie.genres[0]} cravings!`,
+      };
+    }
+    
+    return null;
+  }
 }
