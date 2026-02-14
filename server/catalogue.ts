@@ -1,5 +1,6 @@
 import type { Movie } from "@shared/schema";
 import { getAllIMDbMovies, getIMDbLists } from "./imdb-scraper";
+import { getAllEditorialMovies } from "./editorial-scraper";
 import { resolveMovieFromTitle, discoverMovies, getTopRatedMovies, getPopularMovies, getNowPlayingMovies } from "./tmdb";
 import { storage } from "./storage";
 
@@ -130,8 +131,18 @@ async function buildCatalogue(): Promise<void> {
   cache.buildError = null;
   
   try {
-    // First try IMDb scraping
-    const imdbMovies = await getAllIMDbMovies();
+    // Fetch IMDb lists and editorial lists (RT, Rolling Stone, Empire, IndieWire, Variety) in parallel
+    const [imdbMovies, editorialMovies] = await Promise.all([
+      getAllIMDbMovies(),
+      getAllEditorialMovies(),
+    ]);
+
+    // Merge editorial titles into IMDb results by list name
+    for (const [listName, items] of Array.from(editorialMovies.entries())) {
+      const existing = imdbMovies.get(listName) || [];
+      imdbMovies.set(listName, [...existing, ...items]);
+    }
+
     let allMovies: Movie[] = [];
     let grouped: Record<string, Movie[]> = {};
     let usedTMDbFallback = false;

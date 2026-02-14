@@ -1,156 +1,171 @@
-import OpenAI from "openai";
+/**
+ * Flicks.com.au scraper for direct streaming links in Australia.
+ * Replaces DuckDuckGo/AI lookup with reliable Flicks data.
+ */
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY ?? process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
+/** Map TMDb provider names to Flicks provider identifiers for matching */
+const TMDb_TO_FLICKS: Record<string, string[]> = {
+  "Netflix": ["netflix", "netflix-au"],
+  "Stan": ["stan"],
+  "Binge": ["binge"],
+  "Amazon Prime Video": ["prime-video", "prime-video-au", "prime-video-store", "prime-video-store-au"],
+  "Disney+": ["disney-plus", "disney-plus-au"],
+  "Apple TV": ["apple-tv", "itunes", "itunes-au"],
+  "Paramount+": ["paramount-plus", "paramount-plus-au"],
+  "Foxtel": ["foxtel"],
+  "YouTube": ["youtube", "youtube-au"],
+  "Google Play Movies": ["google-play"],
+  "Microsoft Store": ["microsoft-store"],
+};
 
-interface StreamingLinkRequest {
-  movieTitle: string;
-  movieYear: number | null;
-  providerName: string;
-  tmdbId: number;
+function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
 }
 
-function getProviderDomains(providerName: string): string[] {
-  const lower = providerName.toLowerCase();
-  if (lower.includes("netflix")) return ["netflix.com"];
-  if (lower.includes("stan")) return ["stan.com.au"];
-  if (lower.includes("binge")) return ["binge.com.au"];
-  if (lower.includes("prime") || lower.includes("amazon")) return ["primevideo.com", "amazon.com"];
-  if (lower.includes("disney")) return ["disneyplus.com"];
-  if (lower.includes("apple")) return ["tv.apple.com"];
-  if (lower.includes("paramount")) return ["paramountplus.com"];
-  if (lower.includes("max") || lower.includes("hbo")) return ["max.com", "hbomax.com"];
-  if (lower.includes("youtube")) return ["youtube.com"];
-  return [];
-}
-
-function looksLikeDirectTitleUrl(url: string): boolean {
-  const lower = url.toLowerCase();
-  if (lower.includes("/search") || lower.includes("?q=") || lower.includes("search_query=")) return false;
-  if (lower.includes("/signin") || lower.includes("/login") || lower.includes("/browse")) return false;
-  if (lower.includes("justwatch.com") || lower.includes("themoviedb.org") || lower.includes("tmdb.org")) return false;
-  return true;
-}
-
-async function findProviderDeepLinkViaSearch(request: StreamingLinkRequest): Promise<string | null> {
-  const providerDomains = getProviderDomains(request.providerName);
-  if (providerDomains.length === 0) return null;
-
-  const query = `${request.movieTitle} ${request.movieYear ?? ""} ${request.providerName} Australia`;
-  const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0",
-    },
-  });
-
-  if (!response.ok) return null;
-  const html = await response.text();
-  const links = Array.from(html.matchAll(/<a[^>]+class="result__a"[^>]+href="([^"]+)"/g)).map((m) => m[1]);
-
-  for (const candidate of links) {
-    const decoded = candidate.startsWith("//") ? `https:${candidate}` : candidate;
-    if (!decoded.startsWith("http")) continue;
-    if (!providerDomains.some((domain) => decoded.includes(domain))) continue;
-    if (!looksLikeDirectTitleUrl(decoded)) continue;
-    return decoded;
+/** Extract destination URL from affiliate links (u= parameter) or return as-is for direct links */
+function resolveUrl(href: string): string {
+  const decoded = href.replace(/&amp;/g, "&");
+  const uMatch = decoded.match(/[?&]u=([^&]+)/);
+  if (uMatch) {
+    try {
+      return decodeURIComponent(uMatch[1]);
+    } catch {
+      return decoded;
+    }
   }
+  return decoded;
+}
 
+/** Domain -> Flicks slug mapping for extracting streaming links */
+const DOMAIN_TO_SLUG: Record<string, string> = {
+  "netflix.com": "netflix",
+  "binge.com.au": "binge",
+  "stan.com.au": "stan",
+  "primevideo.com": "prime-video",
+  "tv.apple.com": "apple-tv",
+  "itunes.apple.com": "apple-tv",
+  "youtube.com": "youtube",
+  "disneyplus.com": "disney-plus",
+  "paramountplus.com": "paramount-plus",
+  "foxtel.com.au": "foxtel",
+  "sjv.io": "foxtel", // Foxtel affiliate
+  "pxf.io": "prime-video", // Prime affiliate
+  "goto.binge.com.au": "binge",
+};
+
+/** Parse Flicks movie page HTML and extract provider slug -> URL map */
+function parseFlicksHtml(html: string): Map<string, string> {
+  const links = new Map<string, string>();
+  const hrefRe = /href="(https?:\/\/[^"]+)"/g;
+  let m;
+  while ((m = hrefRe.exec(html)) !== null) {
+    const href = m[1].replace(/&amp;/g, "&");
+    if (href.includes("flicks.com") || href.includes("flicks.co")) continue;
+    const resolved = resolveUrl(href);
+    for (const [domain, slug] of Object.entries(DOMAIN_TO_SLUG)) {
+      if (href.includes(domain) || resolved.includes(domain)) {
+        const existing = links.get(slug);
+        // For Apple: prefer /movie/ over /show/
+        if (slug === "apple-tv" && existing) {
+          if (resolved.includes("/movie/") && !existing.includes("/movie/")) {
+            links.set(slug, resolved);
+          }
+          break;
+        }
+        if (!existing) links.set(slug, resolved);
+        break;
+      }
+    }
+  }
+  return links;
+}
+
+/** Find Flicks URL for a TMDb provider name */
+function matchProviderToFlicksLink(
+  tmdbName: string,
+  flicksLinks: Map<string, string>
+): string | null {
+  const keys = TMDb_TO_FLICKS[tmdbName];
+  if (!keys) return null;
+  for (const k of keys) {
+    const link = flicksLinks.get(k) ?? flicksLinks.get(k + "-au");
+    if (link) return link;
+  }
+  // Fuzzy: check if any flicks key contains part of tmdb name
+  const lower = tmdbName.toLowerCase();
+  for (const [slug, url] of Array.from(flicksLinks.entries())) {
+    if (slug.includes("prime") && (lower.includes("prime") || lower.includes("amazon"))) return url;
+    if (slug.includes("netflix") && lower.includes("netflix")) return url;
+    if (slug.includes("binge") && lower.includes("binge")) return url;
+    if (slug.includes("stan") && lower.includes("stan")) return url;
+    if (slug.includes("apple") && lower.includes("apple")) return url;
+    if (slug.includes("youtube") && lower.includes("youtube")) return url;
+    if (slug.includes("disney") && lower.includes("disney")) return url;
+    if (slug.includes("foxtel") && lower.includes("foxtel")) return url;
+  }
   return null;
 }
 
 /**
- * Use AI to find the actual deep link URL for a movie on a specific streaming service.
- * Slug-based URLs are unreliable (404s, wrong format) - AI is used for all providers.
+ * Fetch streaming links for a movie from Flicks.com.au.
+ * Returns a map of TMDb provider name -> direct watch URL.
  */
-export async function getStreamingDeepLink(request: StreamingLinkRequest): Promise<string | null> {
-  // YouTube has no direct movie pages - use search
-  const lowerProvider = request.providerName.toLowerCase();
-  if (lowerProvider.includes("youtube")) {
-    const q = encodeURIComponent(`${request.movieTitle} ${request.movieYear || ""} movie`);
-    return `https://www.youtube.com/results?search_query=${q}`;
-  }
+export async function getStreamingLinksFromFlicks(
+  movieTitle: string,
+  _movieYear?: number | null
+): Promise<Map<string, string>> {
+  const slug = slugify(movieTitle);
+  if (!slug) return new Map();
 
+  const url = `https://www.flicks.com.au/movie/${slug}/`;
   try {
-    const searchedLink = await findProviderDeepLinkViaSearch(request);
-    if (searchedLink) {
-      return searchedLink;
-    }
-
-    const prompt = `Find the EXACT direct URL where I can watch the movie "${request.movieTitle}"${request.movieYear ? ` (${request.movieYear})` : ""} on ${request.providerName} in Australia.
-
-CRITICAL: Return ONLY the direct movie/watch page URL. Not a search page, not a homepage.
-- Netflix AU: https://www.netflix.com/au/title/[numeric-id]
-- Stan: https://www.stan.com.au/watch/[slug] (slug format varies per title)
-- Binge: https://binge.com.au/movies/[slug]
-- Amazon Prime: https://www.primevideo.com/region/au/detail/[alphanumeric-id] or /detail/0XXXX
-- Disney+ AU: https://www.disneyplus.com/au/movies/[slug]/[id]
-- HBO Max: https://www.hbomax.com/au/en/movies/[slug]/[uuid]
-- Apple TV: https://tv.apple.com/au/movie/[slug]/[id]
-
-Use the Australian domain (.com.au) where the service has one. If the movie is not available on this service in Australia, return the word UNAVAILABLE.
-Return ONLY the URL or UNAVAILABLE, nothing else.`;
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: "You are an expert at finding streaming URLs. You know the exact URL structure for each Australian streaming service. Return only the direct watch URL for the movie on that service. No search URLs, no explanations. If unsure, return UNAVAILABLE."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      temperature: 0,
-      max_tokens: 250,
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html",
+      },
     });
-
-    const response = completion.choices[0].message.content?.trim();
-    
-    if (!response || response === "UNAVAILABLE") {
-      return null;
-    }
-
-    // Extract URL if AI wrapped it in markdown or extra text
-    const urlMatch = response.match(/https?:\/\/[^\s\]\)"']+/);
-    const url = urlMatch ? urlMatch[0] : response;
-
-    if (!url.startsWith("http")) {
-      return null;
-    }
-
-    // Reject search URLs
-    if (!looksLikeDirectTitleUrl(url)) {
-      return null;
-    }
-
-    return url;
-  } catch (error) {
-    console.error(`AI deep link failed for ${request.movieTitle} on ${request.providerName}:`, error);
-    return null;
+    if (!res.ok) return new Map();
+    const html = await res.text();
+    return parseFlicksHtml(html);
+  } catch (err) {
+    console.error(`Flicks fetch failed for ${movieTitle}:`, err);
+    return new Map();
   }
 }
 
 /**
- * Generate fallback - only used when both buildDirectURL and AI return null
+ * Get the direct watch URL for a provider from Flicks data.
+ * Used by getWatchProviders to resolve deep links.
+ */
+export function getDeepLinkFromFlicks(
+  providerName: string,
+  flicksLinks: Map<string, string>
+): string | null {
+  return matchProviderToFlicksLink(providerName, flicksLinks);
+}
+
+/**
+ * Fallback search URL when Flicks has no link for a provider.
  */
 export function getSearchURL(movieTitle: string, movieYear: number | null, providerName: string): string {
-  const searchQuery = encodeURIComponent(`${movieTitle} ${movieYear || ''}`);
-  const lowerProvider = providerName.toLowerCase();
+  const searchQuery = encodeURIComponent(`${movieTitle} ${movieYear || ""}`);
+  const lower = providerName.toLowerCase();
 
-  if (lowerProvider.includes('netflix')) return `https://www.netflix.com/au/search?q=${searchQuery}`;
-  if (lowerProvider.includes('stan')) return `https://www.stan.com.au/search?q=${searchQuery}`;
-  if (lowerProvider.includes('disney')) return `https://www.disneyplus.com/search?q=${searchQuery}`;
-  if (lowerProvider.includes('binge')) return `https://binge.com.au/search?q=${searchQuery}`;
-  if (lowerProvider.includes('hbo') || lowerProvider.includes('max')) return `https://www.hbomax.com/au/en/search?q=${searchQuery}`;
-  if (lowerProvider.includes('youtube')) return `https://www.youtube.com/results?search_query=${searchQuery}`;
-  if (lowerProvider.includes('prime') || lowerProvider.includes('amazon')) return `https://www.primevideo.com/search?phrase=${searchQuery}`;
-  if (lowerProvider.includes('apple')) return `https://tv.apple.com/au/search?q=${searchQuery}`;
-  if (lowerProvider.includes('paramount')) return `https://www.paramountplus.com/au/search/?query=${searchQuery}`;
+  if (lower.includes("netflix")) return `https://www.netflix.com/au/search?q=${searchQuery}`;
+  if (lower.includes("stan")) return `https://www.stan.com.au/search?q=${searchQuery}`;
+  if (lower.includes("disney")) return `https://www.disneyplus.com/search?q=${searchQuery}`;
+  if (lower.includes("binge")) return `https://binge.com.au/search?q=${searchQuery}`;
+  if (lower.includes("hbo") || lower.includes("max")) return `https://www.hbomax.com/au/en/search?q=${searchQuery}`;
+  if (lower.includes("youtube")) return `https://www.youtube.com/results?search_query=${searchQuery}`;
+  if (lower.includes("prime") || lower.includes("amazon")) return `https://www.primevideo.com/search?phrase=${searchQuery}`;
+  if (lower.includes("apple")) return `https://tv.apple.com/au/search?q=${searchQuery}`;
+  if (lower.includes("paramount")) return `https://www.paramountplus.com/au/search/?query=${searchQuery}`;
 
-  return `https://www.google.com/search?q=${encodeURIComponent(`${movieTitle} ${movieYear || ''} watch on ${providerName} Australia`)}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(`${movieTitle} ${movieYear || ""} watch on ${providerName} Australia`)}`;
 }

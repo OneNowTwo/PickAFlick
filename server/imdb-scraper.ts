@@ -38,6 +38,10 @@ const IMDB_LISTS = [
   { id: "ls4103540912", name: "Romance" },
   { id: "ls072723203", name: "Romance" },
   { id: "ls000485502", name: "Romance" },
+  { id: "ls020144005", name: "Fantasy" }, // Best Fantasy Movies
+  { id: "ls076967068", name: "Action" }, // Action/Adventure/Fantasy - use across genres
+  { id: "ls000551766", name: "Comedy" }, // Essential Comedies
+  { id: "ls050296477", name: "Romance" }, // Best Romance
   { id: "ls055874673", name: "Sci-Fi" },
   { id: "ls091410558", name: "Sci-Fi" },
   { id: "ls056141474", name: "Sci-Fi" },

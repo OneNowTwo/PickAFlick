@@ -728,7 +728,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                 )}
 
                 <p className="text-xs text-muted-foreground text-center mt-4">
-                  Data provided by JustWatch via TMDb
+                  Providers from TMDb · Links from Flicks
                 </p>
               </div>
             ) : (

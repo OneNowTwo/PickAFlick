@@ -66,6 +66,7 @@ export interface WatchProvider {
   name: string;
   logoPath: string;
   type: "subscription" | "rent" | "buy";
+  deepLink: string;
 }
 
 export interface WatchProvidersResult {
@@ -406,103 +407,41 @@ export async function getNowPlayingMovies(listSource: string, page: number = 1):
 
 export async function getWatchProviders(tmdbId: number, movieTitle?: string, movieYear?: number | null): Promise<WatchProvidersResult> {
   try {
-    const data = await tmdbFetch<TMDbWatchProvidersResponse>(`/movie/${tmdbId}/watch/providers`);
-    
+    const [data, flicksLinks] = await Promise.all([
+      tmdbFetch<TMDbWatchProvidersResponse>(`/movie/${tmdbId}/watch/providers`),
+      movieTitle ? import("./streaming-links").then(({ getStreamingLinksFromFlicks }) => getStreamingLinksFromFlicks(movieTitle, movieYear)) : Promise.resolve(new Map<string, string>()),
+    ]);
+
     const auData = data.results.AU;
     if (!auData) {
       return { link: null, providers: [] };
     }
 
+    const { getDeepLinkFromFlicks, getSearchURL } = await import("./streaming-links");
+
+    const addProvider = (p: { provider_id: number; provider_name: string; logo_path: string }, type: "subscription" | "rent" | "buy", providers: WatchProvider[]) => {
+      if (providers.find((existing) => existing.id === p.provider_id)) return;
+      const deepLink = getDeepLinkFromFlicks(p.provider_name, flicksLinks) ?? (movieTitle ? getSearchURL(movieTitle, movieYear ?? null, p.provider_name) : undefined);
+      if (!deepLink) return;
+      providers.push({
+        id: p.provider_id,
+        name: p.provider_name,
+        logoPath: p.logo_path,
+        type,
+        deepLink,
+      });
+    };
+
     const providers: WatchProvider[] = [];
-    const { getStreamingDeepLink } = await import("./streaming-links");
-    
-    if (auData.flatrate) {
-      for (const p of auData.flatrate) {
-        let deepLink: string | undefined;
-        
-        // Try to get AI-powered deep link if we have movie details
-        if (movieTitle) {
-          const aiLink = await getStreamingDeepLink({
-            movieTitle,
-            movieYear: movieYear || null,
-            providerName: p.provider_name,
-            tmdbId,
-          });
-          deepLink = aiLink || undefined;
-        }
-        
-        if (!deepLink) {
-          continue;
-        }
 
-        providers.push({
-          id: p.provider_id,
-          name: p.provider_name,
-          logoPath: p.logo_path,
-          type: "subscription",
-          deepLink,
-        });
-      }
+    for (const p of auData.flatrate ?? []) {
+      addProvider(p, "subscription", providers);
     }
-    
-    if (auData.rent) {
-      for (const p of auData.rent) {
-        if (!providers.find(existing => existing.id === p.provider_id)) {
-          let deepLink: string | undefined;
-          
-          if (movieTitle) {
-            const aiLink = await getStreamingDeepLink({
-              movieTitle,
-              movieYear: movieYear || null,
-              providerName: p.provider_name,
-              tmdbId,
-            });
-            deepLink = aiLink || undefined;
-          }
-
-          if (!deepLink) {
-            continue;
-          }
-
-          providers.push({
-            id: p.provider_id,
-            name: p.provider_name,
-            logoPath: p.logo_path,
-            type: "rent",
-            deepLink,
-          });
-        }
-      }
+    for (const p of auData.rent ?? []) {
+      addProvider(p, "rent", providers);
     }
-    
-    if (auData.buy) {
-      for (const p of auData.buy) {
-        if (!providers.find(existing => existing.id === p.provider_id)) {
-          let deepLink: string | undefined;
-          
-          if (movieTitle) {
-            const aiLink = await getStreamingDeepLink({
-              movieTitle,
-              movieYear: movieYear || null,
-              providerName: p.provider_name,
-              tmdbId,
-            });
-            deepLink = aiLink || undefined;
-          }
-
-          if (!deepLink) {
-            continue;
-          }
-
-          providers.push({
-            id: p.provider_id,
-            name: p.provider_name,
-            logoPath: p.logo_path,
-            type: "buy",
-            deepLink,
-          });
-        }
-      }
+    for (const p of auData.buy ?? []) {
+      addProvider(p, "buy", providers);
     }
 
     return {
