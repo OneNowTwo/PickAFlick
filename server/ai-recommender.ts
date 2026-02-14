@@ -65,7 +65,6 @@ async function resolveRecommendationCandidate(
     ]);
 
     if (!movieDetails) return null;
-    if (!movieDetails.posterPath || !movieDetails.posterPath.trim()) return null;
     if (initialGenreFilters.length > 0 && !matchesGenreFilters(movieDetails, initialGenreFilters)) return null;
 
     let trailerUrls = tmdbTrailers;
