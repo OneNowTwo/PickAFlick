@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { Movie, Recommendation, RecommendationsResponse } from "@shared/schema";
-import { searchMovieByTitle, getMovieTrailer, getMovieTrailers, getMovieDetails, getWatchProviders } from "./tmdb";
+import { searchMovieByTitle, getMovieTrailer, getMovieTrailers, getMovieDetails, getWatchProviders, getFallbackTrailerUrls } from "./tmdb";
 import { getAllMovies } from "./catalogue";
 
 const openai = new OpenAI({
@@ -34,6 +34,12 @@ function getEra(year: number | null): string {
   if (year >= 1970) return "70s";
   if (year >= 1960) return "60s";
   return "pre-60s classic";
+}
+
+function matchesGenreFilters(movie: Movie, genreFilters: string[]): boolean {
+  if (genreFilters.length === 0) return true;
+  const primaryGenre = movie.genres[0];
+  return !!primaryGenre && genreFilters.includes(primaryGenre);
 }
 
 export async function generateRecommendations(
@@ -300,17 +306,18 @@ CRITICAL NOTES:
           return null;
         }
         
-        if (tmdbTrailers.length === 0) {
-          console.log(`Skipping "${movieDetails.title}" - no trailer available`);
+        let trailerUrls = tmdbTrailers;
+        if (trailerUrls.length === 0) {
+          trailerUrls = await getFallbackTrailerUrls(movieDetails.title, movieDetails.year);
+        }
+        if (trailerUrls.length === 0) {
+          console.log(`Skipping "${movieDetails.title}" - no trailer found (TMDb/YouTube fallback)`);
           return null;
         }
-        
-        const trailerUrls = tmdbTrailers;
 
-        // Filter by Australia watch providers
+        // Soft requirement only: keep recommendation even if AU providers are empty.
         if (watchProviders.providers.length === 0) {
-          console.log(`Skipping "${movieDetails.title}" - no streaming in Australia`);
-          return null;
+          console.log(`No AU providers for "${movieDetails.title}" - keeping recommendation`);
         }
 
         // Set the list source
@@ -339,9 +346,12 @@ CRITICAL NOTES:
       ...recommendations.map((r) => r.movie.tmdbId),
     ]);
     
-    const eligibleWildcards = allMovies.filter(
-      (m) => !usedTmdbIds.has(m.tmdbId) && m.rating && m.rating >= 7.0
-    );
+    const eligibleWildcards = allMovies.filter((m) => {
+      if (usedTmdbIds.has(m.tmdbId)) return false;
+      if (!m.rating || m.rating < 7.0) return false;
+      if (initialGenreFilters.length > 0 && !matchesGenreFilters(m, initialGenreFilters)) return false;
+      return true;
+    });
     
     if (eligibleWildcards.length > 0) {
       const wildcardMovie = shuffleArray([...eligibleWildcards])[0];
@@ -349,22 +359,29 @@ CRITICAL NOTES:
         getMovieTrailers(wildcardMovie.tmdbId),
         getWatchProviders(wildcardMovie.tmdbId, wildcardMovie.title, wildcardMovie.year),
       ]);
-      
-      // Strict filtering: require poster AND trailer AND streaming
+
+      let wildcardTrailerUrls = wildcardTrailers;
+      if (wildcardTrailerUrls.length === 0) {
+        wildcardTrailerUrls = await getFallbackTrailerUrls(wildcardMovie.title, wildcardMovie.year);
+      }
+
+      // Require poster + trailer only (providers are best-effort).
       if (
-        wildcardMovie.posterPath && 
-        wildcardMovie.posterPath.trim() && 
-        wildcardTrailers.length > 0 && 
-        wildcardProviders.providers.length > 0
+        wildcardMovie.posterPath &&
+        wildcardMovie.posterPath.trim() &&
+        wildcardTrailerUrls.length > 0
       ) {
         recommendations.push({
           movie: { ...wildcardMovie, listSource: "wildcard" },
-          trailerUrl: wildcardTrailers[0],
-          trailerUrls: wildcardTrailers,
+          trailerUrl: wildcardTrailerUrls[0],
+          trailerUrls: wildcardTrailerUrls,
           reason: `A surprise pick from our curated collection! This ${wildcardMovie.genres.slice(0, 2).join("/")} gem from ${wildcardMovie.year} might just become your next favorite.`,
         });
       } else {
-        console.log(`Skipping wildcard "${wildcardMovie.title}" - missing poster, trailer, or streaming`);
+        console.log(`Skipping wildcard "${wildcardMovie.title}" - missing poster or trailer`);
+      }
+      if (wildcardProviders.providers.length === 0) {
+        console.log(`Wildcard "${wildcardMovie.title}" has no AU providers - still included`);
       }
     }
 
@@ -389,7 +406,10 @@ CRITICAL NOTES:
 
     const fallbackRecs: Recommendation[] = [];
     for (const movie of fallbackMovies) {
-      const trailerUrls = await getMovieTrailers(movie.tmdbId);
+      let trailerUrls = await getMovieTrailers(movie.tmdbId);
+      if (trailerUrls.length === 0) {
+        trailerUrls = await getFallbackTrailerUrls(movie.title, movie.year);
+      }
       fallbackRecs.push({
         movie,
         trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null,
@@ -538,14 +558,16 @@ Respond in JSON:
         if (!fallbackMovie.posterPath || !fallbackMovie.posterPath.trim()) {
           return null;
         }
-        if (tmdbTrailers.length === 0) {
+        let trailerUrls = tmdbTrailers;
+        if (trailerUrls.length === 0) {
+          trailerUrls = await getFallbackTrailerUrls(fallbackMovie.title, fallbackMovie.year);
+        }
+        if (trailerUrls.length === 0) {
           return null;
         }
         if (watchProviders.providers.length === 0) {
-          return null;
+          console.log(`Replacement fallback "${fallbackMovie.title}" has no AU providers - still returning`);
         }
-        
-        const trailerUrls = tmdbTrailers;
         
         return {
           movie: { ...fallbackMovie, listSource: "replacement" },
@@ -561,7 +583,7 @@ Respond in JSON:
     const [movieDetails, tmdbTrailers, watchProviders] = await Promise.all([
       getMovieDetails(searchResult.id),
       getMovieTrailers(searchResult.id),
-      getWatchProviders(searchResult.id, rec.title, rec.year || null),
+      getWatchProviders(searchResult.id, result.title, result.year ?? null),
     ]);
     
     if (!movieDetails) return null;
@@ -571,16 +593,17 @@ Respond in JSON:
       console.log(`Skipping replacement "${movieDetails.title}" - no poster`);
       return null;
     }
-    if (tmdbTrailers.length === 0) {
+    let trailerUrls = tmdbTrailers;
+    if (trailerUrls.length === 0) {
+      trailerUrls = await getFallbackTrailerUrls(movieDetails.title, movieDetails.year);
+    }
+    if (trailerUrls.length === 0) {
       console.log(`Skipping replacement "${movieDetails.title}" - no trailer`);
       return null;
     }
     if (watchProviders.providers.length === 0) {
-      console.log(`Skipping replacement "${movieDetails.title}" - no streaming in Australia`);
-      return null;
+      console.log(`Replacement "${movieDetails.title}" has no AU providers - still returning`);
     }
-    
-    const trailerUrls = tmdbTrailers;
 
     movieDetails.listSource = "replacement";
 
@@ -601,13 +624,18 @@ Respond in JSON:
     
     if (eligibleMovies.length > 0) {
       const fallbackMovie = shuffleArray([...eligibleMovies])[0];
-      const [trailerUrls, watchProviders] = await Promise.all([
+      const [tmdbTrailerUrls, watchProviders] = await Promise.all([
         getMovieTrailers(fallbackMovie.tmdbId),
         getWatchProviders(fallbackMovie.tmdbId, fallbackMovie.title, fallbackMovie.year),
       ]);
-      
-      // Skip if no trailer AND no watch providers
-      if (trailerUrls.length === 0 && watchProviders.providers.length === 0) {
+
+      let trailerUrls = tmdbTrailerUrls;
+      if (trailerUrls.length === 0) {
+        trailerUrls = await getFallbackTrailerUrls(fallbackMovie.title, fallbackMovie.year);
+      }
+
+      // Require at least a trailer. Providers are optional.
+      if (trailerUrls.length === 0) {
         return null;
       }
       
