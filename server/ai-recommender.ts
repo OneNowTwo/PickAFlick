@@ -315,9 +315,10 @@ CRITICAL NOTES:
           return null;
         }
 
+        // Don't drop LLM recommendations just because provider lookup fails.
+        // Click-to-watch availability is handled separately by watch-provider endpoint.
         if (watchProviders.providers.length === 0) {
-          console.log(`Skipping "${movieDetails.title}" - no AU streaming/rent providers`);
-          return null;
+          console.log(`No AU providers for "${movieDetails.title}" - keeping recommendation`);
         }
 
         // Set the list source
@@ -338,6 +339,41 @@ CRITICAL NOTES:
     // Wait for all promises and filter out nulls
     const resolvedRecs = await Promise.all(recPromises);
     const recommendations = resolvedRecs.filter((r): r is Recommendation => r !== null).slice(0, 5);
+
+    // Backfill to preserve "5 recommendations" behavior when some LLM picks fail resolution.
+    if (recommendations.length < 5) {
+      const allMovies = getAllMovies();
+      const usedIds = new Set<number>([
+        ...Array.from(chosenTmdbIds),
+        ...recommendations.map((r) => r.movie.tmdbId),
+      ]);
+
+      const candidates = shuffleArray(
+        allMovies.filter((m) => {
+          if (usedIds.has(m.tmdbId)) return false;
+          if (!m.posterPath || !m.posterPath.trim()) return false;
+          if (initialGenreFilters.length > 0 && !matchesGenreFilters(m, initialGenreFilters)) return false;
+          return true;
+        })
+      );
+
+      for (const candidate of candidates) {
+        if (recommendations.length >= 5) break;
+        let trailerUrls = await getMovieTrailers(candidate.tmdbId);
+        if (trailerUrls.length === 0) {
+          trailerUrls = await getFallbackTrailerUrls(candidate.title, candidate.year);
+        }
+        if (trailerUrls.length === 0) continue;
+
+        recommendations.push({
+          movie: { ...candidate, listSource: "ai-backfill" },
+          trailerUrl: trailerUrls[0],
+          trailerUrls,
+          reason: `Based on your choices, this ${candidate.genres.slice(0, 2).join("/")} pick should fit your taste.`,
+        });
+        usedIds.add(candidate.tmdbId);
+      }
+    }
 
     // Add a "wildcard" random pick from the catalogue for variety
     const allMovies = getAllMovies();
@@ -365,12 +401,11 @@ CRITICAL NOTES:
         wildcardTrailerUrls = await getFallbackTrailerUrls(wildcardMovie.title, wildcardMovie.year);
       }
 
-      // Require poster + trailer + AU provider availability.
+      // Require poster + trailer only for surprise picks.
       if (
         wildcardMovie.posterPath &&
         wildcardMovie.posterPath.trim() &&
-        wildcardTrailerUrls.length > 0 &&
-        wildcardProviders.providers.length > 0
+        wildcardTrailerUrls.length > 0
       ) {
         recommendations.push({
           movie: { ...wildcardMovie, listSource: "wildcard" },
@@ -379,7 +414,7 @@ CRITICAL NOTES:
           reason: `A surprise pick from our curated collection! This ${wildcardMovie.genres.slice(0, 2).join("/")} gem from ${wildcardMovie.year} might just become your next favorite.`,
         });
       } else {
-        console.log(`Skipping wildcard "${wildcardMovie.title}" - missing poster, trailer, or AU provider`);
+        console.log(`Skipping wildcard "${wildcardMovie.title}" - missing poster or trailer`);
       }
     }
 
@@ -563,7 +598,10 @@ Respond in JSON:
         if (trailerUrls.length === 0) {
           return null;
         }
-        if (watchProviders.providers.length === 0) return null;
+        // Keep replacement even if providers are currently unavailable.
+        if (watchProviders.providers.length === 0) {
+          console.log(`Replacement fallback "${fallbackMovie.title}" has no AU providers - keeping replacement`);
+        }
         
         return {
           movie: { ...fallbackMovie, listSource: "replacement" },
@@ -598,8 +636,7 @@ Respond in JSON:
       return null;
     }
     if (watchProviders.providers.length === 0) {
-      console.log(`Skipping replacement "${movieDetails.title}" - no AU streaming/rent providers`);
-      return null;
+      console.log(`Replacement "${movieDetails.title}" has no AU providers - keeping replacement`);
     }
 
     movieDetails.listSource = "replacement";
@@ -631,8 +668,8 @@ Respond in JSON:
         trailerUrls = await getFallbackTrailerUrls(fallbackMovie.title, fallbackMovie.year);
       }
 
-      // Require trailer + AU providers for replacement fallback.
-      if (trailerUrls.length === 0 || watchProviders.providers.length === 0) {
+      // Require trailer only for replacement fallback.
+      if (trailerUrls.length === 0) {
         return null;
       }
       
