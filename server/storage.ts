@@ -2,6 +2,9 @@ import { watchlist, sharedRecommendations, movieCatalogueCache, type WatchlistIt
 import { db } from "./db";
 import { eq } from "drizzle-orm";
 
+/** Bump when adding new IMDb/editorial lists - invalidates old cache so catalogue rebuilds on deploy */
+const CATALOGUE_CACHE_KEY = "catalogue_v2";
+
 export interface IStorage {
   getWatchlist(): Promise<WatchlistItem[]>;
   addToWatchlist(item: InsertWatchlistItem): Promise<WatchlistItem>;
@@ -58,7 +61,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCatalogueCache(): Promise<MovieCatalogueCache | undefined> {
-    const [result] = await db.select().from(movieCatalogueCache).where(eq(movieCatalogueCache.cacheKey, "catalogue"));
+    const [result] = await db.select().from(movieCatalogueCache).where(eq(movieCatalogueCache.cacheKey, CATALOGUE_CACHE_KEY));
     return result;
   }
 
@@ -67,10 +70,10 @@ export class DatabaseStorage implements IStorage {
     if (existing) {
       await db.update(movieCatalogueCache)
         .set({ movies, grouped, updatedAt: new Date() })
-        .where(eq(movieCatalogueCache.cacheKey, "catalogue"));
+        .where(eq(movieCatalogueCache.cacheKey, CATALOGUE_CACHE_KEY));
     } else {
       await db.insert(movieCatalogueCache).values({
-        cacheKey: "catalogue",
+        cacheKey: CATALOGUE_CACHE_KEY,
         movies,
         grouped,
       });
@@ -78,7 +81,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async clearCatalogueCache(): Promise<void> {
-    await db.delete(movieCatalogueCache).where(eq(movieCatalogueCache.cacheKey, "catalogue"));
+    await db.delete(movieCatalogueCache).where(eq(movieCatalogueCache.cacheKey, CATALOGUE_CACHE_KEY));
   }
 }
 
