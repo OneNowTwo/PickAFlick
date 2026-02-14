@@ -473,12 +473,13 @@ export async function getWatchProviders(tmdbId: number, movieTitle?: string, mov
       return { link: null, providers: [] };
     }
 
-    const { getDeepLinkFromFlicks, getSearchURL } = await import("./streaming-links");
+    const { getDeepLinkFromFlicks, isDirectStreamingDeepLink } = await import("./streaming-links");
 
     const addProvider = (p: { provider_id: number; provider_name: string; logo_path: string }, type: "subscription" | "rent" | "buy", providers: WatchProvider[]) => {
       if (providers.find((existing) => existing.id === p.provider_id)) return;
-      const deepLink = getDeepLinkFromFlicks(p.provider_name, flicksLinks) ?? (movieTitle ? getSearchURL(movieTitle, movieYear ?? null, p.provider_name) : undefined);
+      const deepLink = getDeepLinkFromFlicks(p.provider_name, flicksLinks) ?? undefined;
       if (!deepLink) return;
+      if (!isDirectStreamingDeepLink(deepLink)) return;
       providers.push({
         id: p.provider_id,
         name: p.provider_name,
