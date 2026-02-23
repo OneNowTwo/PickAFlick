@@ -12,9 +12,21 @@ interface SharedRecommendationsData {
   createdAt: string;
 }
 
+// Sanitize share ID: replace smart quotes (iOS/Facebook paste) with ASCII, keep only valid chars
+function sanitizeShareId(raw: string | undefined): string {
+  if (!raw) return "";
+  return raw
+    .replace(/\u2019/g, "'")   // right single quote '
+    .replace(/\u2018/g, "'")   // left single quote '
+    .replace(/\u201C/g, '"')   // left double quote "
+    .replace(/\u201D/g, '"')   // right double quote "
+    .replace(/[^a-z0-9]/gi, ""); // share IDs are alphanumeric only
+}
+
 export default function SharePage() {
   const params = useParams<{ id: string }>();
-  const shareId = params.id;
+  const rawId = params.id;
+  const shareId = sanitizeShareId(rawId);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [autoPlayTrailer, setAutoPlayTrailer] = useState(true);
   const [trailerIndex, setTrailerIndex] = useState(0);
@@ -28,8 +40,11 @@ export default function SharePage() {
 
   const { data, isLoading, error } = useQuery<SharedRecommendationsData>({
     queryKey: ["/api/share", shareId],
-    enabled: !!shareId,
+    enabled: !!shareId && shareId.length >= 6,
   });
+
+  // Corrupted link: raw ID had smart quotes or invalid chars, sanitized to something too short
+  const hasInvalidId = rawId && shareId.length < 6;
 
   if (isLoading) {
     return (
@@ -42,12 +57,16 @@ export default function SharePage() {
     );
   }
 
-  if (error || !data) {
+  if (hasInvalidId || error || !data) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-4">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-foreground mb-2">Recommendations Not Found</h1>
-          <p className="text-muted-foreground mb-6">This share link may have expired or doesn't exist.</p>
+          <p className="text-muted-foreground mb-6">
+            {hasInvalidId
+              ? "This link may be corrupted (e.g. from copy/paste). Ask your friend to share it again."
+              : "This share link may have expired or doesn't exist."}
+          </p>
           <Link href="/">
             <Button className="gap-2" data-testid="button-go-home">
               <Home className="w-4 h-4" />

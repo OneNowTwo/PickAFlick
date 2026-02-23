@@ -91,11 +91,12 @@ export default function Home() {
     return genres;
   }, [selectedMoods]);
 
-  // Start session mutation
+  // Start session mutation (pass { surpriseMe: true } for Surprise Me - empty genres)
   const startSessionMutation = useMutation({
-    mutationFn: async () => {
-      const genres = getSelectedGenres();
-      const includeTopPicks = selectedMoods.includes("top");
+    mutationFn: async (opts?: { surpriseMe?: boolean }) => {
+      const surpriseMe = opts?.surpriseMe ?? false;
+      const genres = surpriseMe ? [] : getSelectedGenres();
+      const includeTopPicks = surpriseMe ? false : selectedMoods.includes("top");
       const res = await apiRequest("POST", "/api/session/start", { genres, includeTopPicks });
       return res.json() as Promise<StartSessionResponse>;
     },
@@ -147,11 +148,11 @@ export default function Home() {
     },
   });
 
-  const handleStart = useCallback(() => {
+  const handleStart = useCallback((surpriseMe = false) => {
     if (typeof window !== 'undefined' && window.posthog) {
-      window.posthog.capture("start_picking");
+      window.posthog.capture(surpriseMe ? "surprise_me" : "start_picking");
     }
-    startSessionMutation.mutate();
+    startSessionMutation.mutate(surpriseMe ? { surpriseMe: true } : undefined);
   }, [startSessionMutation]);
 
   const handleChoice = useCallback((chosenMovieId: number) => {
@@ -217,14 +218,14 @@ export default function Home() {
                   Find Your Perfect Movie
                 </h2>
                 <p className="text-lg text-gray-300 italic max-w-md mx-auto drop-shadow-md">
-                  "Because choosing your movie shouldn't take longer than watching it."
+                  &quot;Because choosing your movie shouldn&apos;t take longer than watching it.&quot;
                 </p>
               </div>
 
               {/* Mood Selection - Clear tappable buttons */}
               <div className="p-4 sm:p-6 rounded-lg w-full max-w-full" style={{ background: 'rgba(0, 0, 0, 0.6)' }}>
                 <h3 className="text-xl font-bold text-white mb-1">Tap Your Mood</h3>
-                <p className="text-gray-400 text-sm mb-4">Pick genres or skip for everything</p>
+                <p className="text-gray-400 text-sm mb-4">Pick one or more genres, or Surprise Me for everything</p>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3 w-full">
                   {MOOD_OPTIONS.map((mood) => (
                     <Button
@@ -242,13 +243,30 @@ export default function Home() {
                     </Button>
                   ))}
                 </div>
+                <Button
+                  variant="outline"
+                  onClick={() => handleStart(true)}
+                  disabled={startSessionMutation.isPending}
+                  className="mt-4 w-full h-11 bg-white/10 border-white/30 text-white hover:bg-white/20 hover:border-white/50 font-medium"
+                  data-testid="button-surprise-me"
+                >
+                  {startSessionMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    "Surprise Me"
+                  )}
+                </Button>
               </div>
 
               <Button
                 size="lg"
-                onClick={handleStart}
-                disabled={startSessionMutation.isPending}
-                className="text-lg px-8 py-6"
+                onClick={() => handleStart(false)}
+                disabled={startSessionMutation.isPending || selectedMoods.length === 0}
+                className={`text-lg px-10 py-6 font-bold shadow-lg min-w-[200px] transition-all ${
+                  selectedMoods.length === 0
+                    ? "opacity-50 cursor-not-allowed bg-muted-foreground/30"
+                    : "shadow-primary/25"
+                }`}
                 data-testid="button-start-game"
               >
                 {startSessionMutation.isPending ? (
@@ -259,7 +277,7 @@ export default function Home() {
                 ) : (
                   <>
                     <Film className="w-5 h-5 mr-2" />
-                    {selectedMoods.length > 0 ? "Start Picking" : "Surprise Me"}
+                    Start Picking
                   </>
                 )}
               </Button>
