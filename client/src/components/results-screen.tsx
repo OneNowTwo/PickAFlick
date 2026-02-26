@@ -389,14 +389,14 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
 
   return (
     <div className="flex flex-col items-center gap-1 md:gap-2 w-full max-w-7xl mx-auto px-2 md:px-4 pt-0 pb-4 md:pb-6">
-      {/* Section label - minimal top padding */}
-      <h2 className="text-lg md:text-xl font-semibold text-foreground w-full text-center">
+      {/* Section label */}
+      <h2 className="text-lg md:text-xl font-bold text-white w-full text-center">
         Your top picks for tonight
       </h2>
 
       {/* Pagination */}
       <div className="flex items-center justify-center gap-3 w-full">
-        <span className="text-base md:text-lg font-semibold text-foreground" data-testid="pagination-text">
+        <span className="text-base md:text-lg font-bold text-white" data-testid="pagination-text">
           {currentIndex + 1} of {totalRecs}
         </span>
       </div>
