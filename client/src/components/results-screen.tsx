@@ -417,7 +417,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         )}
       </div>
 
-      {/* Why you might like this - two bubbles with icons, exactly like original */}
+      {/* Why you might like this - two bubbles + per-movie explanation, all above trailer */}
       <div className="w-full max-w-2xl space-y-2">
         {preferenceProfile?.visualStyle && (
           <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-white/10 border-0 text-white/90">
@@ -431,11 +431,9 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
             <p className="text-sm leading-relaxed">{preferenceProfile.mood}</p>
           </div>
         )}
-        {(!preferenceProfile?.visualStyle && !preferenceProfile?.mood) && (
-          <p className="text-foreground/70 text-sm leading-relaxed text-center px-2" data-testid="text-movie-reason">
-            <span className="font-medium text-foreground/90">Why you might like this:</span> {currentRec.reason}
-          </p>
-        )}
+        <p className="text-foreground/70 text-sm leading-relaxed text-center px-2" data-testid="text-movie-reason">
+          <span className="font-medium text-foreground/90">Why you might like this:</span> {currentRec.reason}
+        </p>
       </div>
 
       <p className="text-sm text-muted-foreground text-center">
@@ -572,9 +570,6 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
               {watchNowLabel}
             </Button>
           </div>
-          <p className="text-foreground/70 text-sm leading-relaxed mt-2" data-testid="text-movie-reason">
-            <span className="font-medium text-foreground/90">Why you might like this:</span> {currentRec.reason}
-          </p>
         </div>
       </div>
 
