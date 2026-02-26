@@ -417,26 +417,19 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         )}
       </div>
 
-      {/* Why you might like this - two bubbles with icons, always shown above trailer */}
-      <div className="w-full max-w-2xl space-y-2">
+      {/* Two taste bubbles - always shown between genre tags and trailer */}
+      <div className="w-full max-w-4xl space-y-2">
         <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-white/10 border-0 text-white/90">
           <Palette className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-          <p className="text-sm leading-relaxed">{preferenceProfile?.visualStyle ?? "You enjoy films that match your taste."}</p>
+          <p className="text-sm leading-relaxed">{preferenceProfile?.visualStyle || "You enjoy films that match your taste."}</p>
         </div>
         <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-white/10 border-0 text-white/90">
           <Sparkles className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-          <p className="text-sm leading-relaxed">{preferenceProfile?.mood ?? "We've matched the mood of your picks."}</p>
+          <p className="text-sm leading-relaxed">{preferenceProfile?.mood || "We've matched the mood of your picks."}</p>
         </div>
-        <p className="text-foreground/70 text-sm leading-relaxed text-center px-2" data-testid="text-movie-reason">
-          <span className="font-medium text-foreground/90">Why you might like this:</span> {currentRec.reason}
-        </p>
       </div>
 
-      <p className="text-sm text-muted-foreground text-center">
-        When you&apos;re ready, click &quot;Watch now&quot; to start watching
-      </p>
-
-      {/* Prev | Trailer Card | Next - same-size buttons, wider trailer */}
+      {/* Prev | Trailer Card | Next */}
       <div className="flex items-stretch gap-2 md:gap-3 w-full max-w-7xl">
         <Button
           variant="default"
