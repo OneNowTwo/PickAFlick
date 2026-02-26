@@ -395,9 +395,11 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
       </h2>
 
       {/* Why we picked these - based on their choices (essential context) */}
-      <p className="text-sm md:text-base text-foreground/90 text-center max-w-2xl px-2">
-        {revealMessage}
-      </p>
+      <div className="w-full max-w-2xl px-4 py-3 rounded-lg bg-primary/10 border border-primary/20">
+        <p className="text-base md:text-lg font-medium text-foreground text-center">
+          {revealMessage}
+        </p>
+      </div>
 
       {/* Pagination - 1 of 6 format at top */}
       <div className="flex items-center justify-center gap-3 w-full">
@@ -417,7 +419,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
           const isActive = i === currentIndex;
           return (
             <div key={rec.movie.tmdbId} className="flex flex-col items-center gap-1 shrink-0">
-              <span className={`text-xs font-bold ${isActive ? "text-primary" : "text-muted-foreground"}`}>
+              <span className={`text-base md:text-lg font-bold min-w-[1.5rem] text-center ${isActive ? "text-primary" : "text-foreground/80"}`}>
                 {i + 1}
               </span>
               <button
@@ -463,18 +465,18 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         When you&apos;re ready, click &quot;Watch now&quot; to start watching
       </p>
 
-      {/* Prev | Trailer Card | Next - Prev/Next flank the trailer */}
-      <div className="flex items-stretch gap-2 md:gap-4 w-full max-w-4xl">
+      {/* Prev | Trailer Card | Next - prominent buttons */}
+      <div className="flex items-stretch gap-3 md:gap-4 w-full max-w-5xl">
         <Button
-          variant="outline"
+          variant="default"
           size="lg"
           onClick={handleBack}
           disabled={currentIndex === 0}
-          className="shrink-0 self-center gap-1.5"
+          className="shrink-0 self-center gap-2 px-4 md:px-6 py-6 text-base font-semibold"
           data-testid="button-back"
         >
-          <ChevronLeft className="w-4 h-4" />
-          <span className="hidden sm:inline">Previous</span>
+          <ChevronLeft className="w-5 h-5" />
+          Previous
         </Button>
 
       {/* Current Recommendation */}
@@ -482,8 +484,8 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         className="flex-1 min-w-0 bg-card/50 border border-border/50 rounded-xl md:rounded-2xl overflow-hidden backdrop-blur-sm"
         data-testid={`recommendation-card-${currentIndex}`}
       >
-        {/* Trailer / Poster Area - Optimized height for mobile */}
-        <div className="aspect-video max-h-[50vh] md:max-h-[70vh] relative">
+        {/* Trailer / Poster Area - 16:9 aspect ratio */}
+        <div className="aspect-video w-full relative">
           {(() => {
             // Get available trailers - use trailerUrls array or fall back to single trailerUrl
             const availableTrailers = currentRec.trailerUrls?.length 
@@ -594,22 +596,25 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
             </Button>
           </div>
           
-          <p className="text-foreground/70 text-sm leading-relaxed mt-2" data-testid="text-movie-reason">
-            <span className="font-medium text-foreground/90">Why you might like this:</span> {currentRec.reason}
-          </p>
+          <div className="mt-3 p-3 rounded-lg bg-muted/50 border border-border/50">
+            <p className="text-sm font-semibold text-foreground mb-1">Why you might like this:</p>
+            <p className="text-foreground/90 text-sm md:text-base leading-relaxed" data-testid="text-movie-reason">
+              {currentRec.reason}
+            </p>
+          </div>
         </div>
       </div>
 
         <Button
-          variant="outline"
+          variant="default"
           size="lg"
           onClick={handleNext}
           disabled={currentIndex === totalRecs - 1}
-          className="shrink-0 self-center gap-1.5"
+          className="shrink-0 self-center gap-2 px-4 md:px-6 py-6 text-base font-semibold"
           data-testid="button-next"
         >
-          <span className="hidden sm:inline">Next</span>
-          <ChevronRight className="w-4 h-4" />
+          Next
+          <ChevronRight className="w-5 h-5" />
         </Button>
       </div>
 
