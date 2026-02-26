@@ -1,7 +1,7 @@
 import type { RecommendationsResponse, WatchProvidersResponse, Recommendation } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Play, RefreshCw, Film, Calendar, ChevronLeft, ChevronRight, Bookmark, Tv, Brain, Eye, Share2, Check } from "lucide-react";
+import { Loader2, Play, Film, Calendar, ChevronLeft, ChevronRight, Bookmark, Tv, Brain, Eye, Share2, Check } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -396,6 +396,11 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         Your top picks for tonight
       </h2>
 
+      {/* Why we picked these - based on their choices (essential context) */}
+      <p className="text-sm md:text-base text-foreground/90 text-center max-w-2xl px-2">
+        {revealMessage}
+      </p>
+
       {/* Pagination - 1 of 6 format at top */}
       <div className="flex items-center justify-center gap-3 w-full">
         <span className="text-base md:text-lg font-semibold text-foreground" data-testid="pagination-text">
@@ -403,7 +408,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         </span>
       </div>
 
-      {/* 6 small preview cards (thumbnails) - current one highlighted */}
+      {/* 6 small preview cards with numbers - current one highlighted */}
       <div className="flex gap-2 w-full overflow-x-auto pb-2 justify-center flex-wrap">
         {displayRecs.map((rec, i) => {
           const thumbUrl = rec.movie.posterPath
@@ -413,24 +418,28 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
             : null;
           const isActive = i === currentIndex;
           return (
-            <button
-              key={rec.movie.tmdbId}
-              onClick={() => { setCurrentIndex(i); setAutoPlayTrailer(true); }}
-              className={`shrink-0 w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg overflow-hidden border-2 transition-all ${
-                isActive
-                  ? "border-primary ring-2 ring-primary/30 scale-105"
-                  : "border-transparent opacity-70 hover:opacity-100"
-              }`}
-              data-testid={`thumbnail-${i}`}
-            >
-              {thumbUrl ? (
-                <img src={thumbUrl} alt={rec.movie.title} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full bg-muted flex items-center justify-center">
-                  <Film className="w-5 h-5 text-muted-foreground" />
-                </div>
-              )}
-            </button>
+            <div key={rec.movie.tmdbId} className="flex flex-col items-center gap-1 shrink-0">
+              <span className={`text-xs font-bold ${isActive ? "text-primary" : "text-muted-foreground"}`}>
+                {i + 1}
+              </span>
+              <button
+                onClick={() => { setCurrentIndex(i); setAutoPlayTrailer(true); }}
+                className={`w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg overflow-hidden border-2 transition-all ${
+                  isActive
+                    ? "border-primary ring-2 ring-primary/30 scale-105"
+                    : "border-transparent opacity-70 hover:opacity-100"
+                }`}
+                data-testid={`thumbnail-${i}`}
+              >
+                {thumbUrl ? (
+                  <img src={thumbUrl} alt={rec.movie.title} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-muted flex items-center justify-center">
+                    <Film className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                )}
+              </button>
+            </div>
           );
         })}
       </div>
@@ -456,9 +465,23 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         When you&apos;re ready, click &quot;Watch now&quot; to start watching
       </p>
 
+      {/* Prev | Trailer Card | Next - Prev/Next flank the trailer */}
+      <div className="flex items-stretch gap-2 md:gap-4 w-full max-w-4xl">
+        <Button
+          variant="outline"
+          size="lg"
+          onClick={handleBack}
+          disabled={currentIndex === 0}
+          className="shrink-0 self-center gap-1.5"
+          data-testid="button-back"
+        >
+          <ChevronLeft className="w-4 h-4" />
+          <span className="hidden sm:inline">Previous</span>
+        </Button>
+
       {/* Current Recommendation */}
       <div 
-        className="w-full max-w-4xl bg-card/50 border border-border/50 rounded-xl md:rounded-2xl overflow-hidden backdrop-blur-sm"
+        className="flex-1 min-w-0 bg-card/50 border border-border/50 rounded-xl md:rounded-2xl overflow-hidden backdrop-blur-sm"
         data-testid={`recommendation-card-${currentIndex}`}
       >
         {/* Trailer / Poster Area - Optimized height for mobile */}
@@ -504,16 +527,6 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                       }
                     }}
                   />
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="absolute top-2 right-2 z-10 shadow-lg bg-black/70 hover:bg-black/90 text-white border-white/20"
-                    onClick={() => setAutoPlayTrailer(false)}
-                    data-testid="button-close-trailer"
-                  >
-                    <ChevronLeft className="w-4 h-4 mr-1" />
-                    Back to picks
-                  </Button>
                 </div>
               );
             } else if (posterUrl) {
@@ -589,30 +602,26 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         </div>
       </div>
 
-      {/* Helper text */}
-      <p className="text-sm text-muted-foreground text-center">
-        Not feeling this one? Try the next pick →
-      </p>
-
-      {/* Navigation Controls - sticky at bottom on mobile for always visible */}
-      <div className="flex items-center justify-center gap-3 w-full flex-wrap sticky bottom-0 py-3 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 -mx-2 md:-mx-4 px-4 md:px-4 border-t border-border/40 md:border-0 md:bg-transparent md:backdrop-blur-none md:sticky-0">
         <Button
           variant="outline"
           size="lg"
-          onClick={handleBack}
-          disabled={currentIndex === 0}
-          className="gap-1.5"
-          data-testid="button-back"
+          onClick={handleNext}
+          disabled={currentIndex === totalRecs - 1}
+          className="shrink-0 self-center gap-1.5"
+          data-testid="button-next"
         >
-          <ChevronLeft className="w-4 h-4" />
-          Previous
+          <span className="hidden sm:inline">Next</span>
+          <ChevronRight className="w-4 h-4" />
         </Button>
+      </div>
 
+      {/* Bottom action buttons - Save, Seen it, Share */}
+      <div className="flex items-center justify-center gap-3 w-full flex-wrap py-3">
         <Button
           variant={isLiked ? "default" : "outline"}
-          size="default"
+          size="lg"
           onClick={handleLike}
-          className={`gap-1.5 toggle-elevate ${isLiked ? "toggle-elevated bg-green-600 border-green-600" : ""}`}
+          className={`gap-1.5 ${isLiked ? "bg-green-600 border-green-600 hover:bg-green-700" : ""}`}
           data-testid="button-save-watchlist"
         >
           <Bookmark className="w-4 h-4" />
@@ -621,7 +630,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
 
         <Button
           variant="outline"
-          size="default"
+          size="lg"
           onClick={handleSeenIt}
           disabled={replacementMutation.isPending || !sessionId}
           className="gap-1.5 border-2 border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/70"
@@ -635,31 +644,8 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
           Seen It
         </Button>
 
-        <Button
-          variant="outline"
+        <Button 
           size="lg"
-          onClick={handleNext}
-          disabled={currentIndex === totalRecs - 1}
-          className="gap-1.5"
-          data-testid="button-next"
-        >
-          Next
-          <ChevronRight className="w-4 h-4" />
-        </Button>
-
-        <Button 
-          size="default" 
-          variant="ghost"
-          onClick={onPlayAgain}
-          className="gap-1.5"
-          data-testid="button-play-again"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Restart
-        </Button>
-
-        <Button 
-          size="default" 
           variant="default"
           onClick={() => shareMutation.mutate()}
           disabled={shareMutation.isPending}
@@ -667,7 +653,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
           data-testid="button-share"
         >
           {shareMutation.isPending ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Loader2 className="w-4 h-4" />
           ) : copied ? (
             <Check className="w-4 h-4" />
           ) : (

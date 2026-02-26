@@ -328,11 +328,12 @@ CRITICAL NOTES:
       }
     });
 
-    // Wait for all promises and filter out nulls
-    const resolvedRecs = await Promise.all(recPromises);
-    const recommendations = resolvedRecs.filter((r): r is Recommendation => r !== null).slice(0, 5);
+    // Wait for all promises and filter out nulls - take 5 main + 1 wildcard (6 total)
+    const resolvedRecs = (await Promise.all(recPromises)).filter((r): r is Recommendation => r !== null);
+    const mainRecs = resolvedRecs.slice(0, 5);
+    const recommendations: Recommendation[] = [...mainRecs];
 
-    // Add a "wildcard" random pick from the catalogue for variety
+    // Add a "wildcard" surprise pick from the catalogue for variety
     const allMovies = getAllMovies();
     const usedTmdbIds = new Set([
       ...Array.from(chosenTmdbIds),
@@ -343,6 +344,7 @@ CRITICAL NOTES:
       (m) => !usedTmdbIds.has(m.tmdbId) && m.rating && m.rating >= 7.0
     );
     
+    let wildcardAdded = false;
     if (eligibleWildcards.length > 0) {
       const wildcardMovie = shuffleArray([...eligibleWildcards])[0];
       const [wildcardTrailers, wildcardProviders] = await Promise.all([
@@ -363,9 +365,14 @@ CRITICAL NOTES:
           trailerUrls: wildcardTrailers,
           reason: `A surprise pick from our curated collection! This ${wildcardMovie.genres.slice(0, 2).join("/")} gem from ${wildcardMovie.year} might just become your next favorite.`,
         });
+        wildcardAdded = true;
       } else {
         console.log(`Skipping wildcard "${wildcardMovie.title}" - missing poster, trailer, or streaming`);
       }
+    }
+    // If wildcard didn't add, use 6th from AI backups to ensure we always have 6
+    if (!wildcardAdded && resolvedRecs.length >= 6) {
+      recommendations.push(resolvedRecs[5]);
     }
 
     return {
