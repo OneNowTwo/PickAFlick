@@ -1,7 +1,7 @@
 import type { RecommendationsResponse, WatchProvidersResponse, Recommendation } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Play, Film, Calendar, ChevronLeft, ChevronRight, Bookmark, Tv, Brain, Eye, Share2, Check } from "lucide-react";
+import { Loader2, Play, RefreshCw, Film, Calendar, ChevronLeft, ChevronRight, Bookmark, Tv, Brain, Eye, Share2, Check } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -13,14 +13,15 @@ import { ShareCard } from "./share-card";
 // Generate personalized reveal message based on preference profile
 function generateRevealMessage(profile: RecommendationsResponse["preferenceProfile"]): string {
   const parts: string[] = [];
+  const topGenres = profile?.topGenres ?? [];
   
-  if (profile.topGenres.length >= 2) {
-    parts.push(`You're in the mood for some ${profile.topGenres[0]} with a ${profile.topGenres[1]} twist`);
-  } else if (profile.topGenres.length === 1) {
-    parts.push(`You're craving some ${profile.topGenres[0]}`);
+  if (topGenres.length >= 2) {
+    parts.push(`You're in the mood for some ${topGenres[0]} with a ${topGenres[1]} twist`);
+  } else if (topGenres.length === 1) {
+    parts.push(`You're craving some ${topGenres[0]}`);
   }
   
-  if (profile.mood) {
+  if (profile?.mood) {
     const moodLower = profile.mood.toLowerCase();
     if (moodLower.includes("intense") || moodLower.includes("dark")) {
       parts.push("something with edge and intensity");
@@ -31,7 +32,7 @@ function generateRevealMessage(profile: RecommendationsResponse["preferenceProfi
     }
   }
   
-  if (profile.preferredEras && profile.preferredEras.length > 0) {
+  if (profile?.preferredEras && profile.preferredEras.length > 0) {
     const era = profile.preferredEras[0].toLowerCase();
     if (era.includes("modern") || era.includes("recent") || era.includes("2020") || era.includes("2010")) {
       parts.push("from the modern era");
@@ -372,14 +373,11 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   // Generate a condensed taste summary for mobile that combines visual style and mood
   const mobileTasteSummary = (() => {
     const parts: string[] = [];
-    if (preferenceProfile.visualStyle) {
-      parts.push(preferenceProfile.visualStyle);
-    }
-    if (preferenceProfile.mood && preferenceProfile.mood !== preferenceProfile.visualStyle) {
-      parts.push(preferenceProfile.mood);
-    }
-    if (parts.length === 0 && preferenceProfile.topGenres.length > 0) {
-      return `You're drawn to ${preferenceProfile.topGenres.slice(0, 2).join(" and ")} films.`;
+    const pf = preferenceProfile ?? {};
+    if (pf.visualStyle) parts.push(pf.visualStyle);
+    if (pf.mood && pf.mood !== pf.visualStyle) parts.push(pf.mood);
+    if (parts.length === 0 && (pf.topGenres?.length ?? 0) > 0) {
+      return `You're drawn to ${(pf.topGenres ?? []).slice(0, 2).join(" and ")} films.`;
     }
     return parts.join(" ");
   })();
