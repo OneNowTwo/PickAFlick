@@ -417,16 +417,16 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         )}
       </div>
 
-      {/* Two taste bubbles - always shown between genre tags and trailer */}
-      <div style={{ width: "100%", maxWidth: "56rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", padding: "0.75rem 1rem", borderRadius: "0.5rem", backgroundColor: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.9)" }}>
-          <Palette style={{ width: "1rem", height: "1rem", flexShrink: 0, marginTop: "0.125rem" }} className="text-primary" />
-          <p style={{ fontSize: "0.875rem", lineHeight: "1.625" }}>{preferenceProfile?.visualStyle || "You enjoy films that match your taste."}</p>
-        </div>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", padding: "0.75rem 1rem", borderRadius: "0.5rem", backgroundColor: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.9)" }}>
-          <Sparkles style={{ width: "1rem", height: "1rem", flexShrink: 0, marginTop: "0.125rem" }} className="text-primary" />
-          <p style={{ fontSize: "0.875rem", lineHeight: "1.625" }}>{preferenceProfile?.mood || "We've matched the mood of your picks."}</p>
-        </div>
+      {/* Taste profile badges - visualStyle and mood, same Badge styling as genre/year tags */}
+      <div className="flex flex-wrap items-center justify-center gap-2 text-sm max-w-4xl" data-testid="taste-profile">
+        <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
+          <Palette className="w-4 h-4 text-primary shrink-0" />
+          {preferenceProfile?.visualStyle || "Matched to your visual taste"}
+        </Badge>
+        <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
+          <Sparkles className="w-4 h-4 text-primary shrink-0" />
+          {preferenceProfile?.mood || "Matched to your mood"}
+        </Badge>
       </div>
 
       {/* Prev | Trailer Card | Next */}
