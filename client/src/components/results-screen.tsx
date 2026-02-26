@@ -1,7 +1,7 @@
 import type { RecommendationsResponse, WatchProvidersResponse, Recommendation } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Play, RefreshCw, Film, Calendar, ChevronLeft, ChevronRight, Bookmark, Tv, Brain, Eye, Share2, Check } from "lucide-react";
+import { Loader2, Play, RefreshCw, Film, Calendar, ChevronLeft, ChevronRight, Bookmark, Tv, Brain, Eye, Share2, Check, Palette, Sparkles } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -417,10 +417,26 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         )}
       </div>
 
-      {/* Why you might like this - original styling, above trailer */}
-      <p className="text-foreground/70 text-sm leading-relaxed text-center w-full max-w-2xl px-2" data-testid="text-movie-reason">
-        <span className="font-medium text-foreground/90">Why you might like this:</span> {currentRec.reason}
-      </p>
+      {/* Why you might like this - two bubbles with icons, exactly like original */}
+      <div className="w-full max-w-2xl space-y-2">
+        {preferenceProfile?.visualStyle && (
+          <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-white/10 border-0 text-white/90">
+            <Palette className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+            <p className="text-sm leading-relaxed">{preferenceProfile.visualStyle}</p>
+          </div>
+        )}
+        {preferenceProfile?.mood && (
+          <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-white/10 border-0 text-white/90">
+            <Sparkles className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+            <p className="text-sm leading-relaxed">{preferenceProfile.mood}</p>
+          </div>
+        )}
+        {(!preferenceProfile?.visualStyle && !preferenceProfile?.mood) && (
+          <p className="text-foreground/70 text-sm leading-relaxed text-center px-2" data-testid="text-movie-reason">
+            <span className="font-medium text-foreground/90">Why you might like this:</span> {currentRec.reason}
+          </p>
+        )}
+      </div>
 
       <p className="text-sm text-muted-foreground text-center">
         When you&apos;re ready, click &quot;Watch now&quot; to start watching
