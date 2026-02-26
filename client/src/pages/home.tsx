@@ -209,7 +209,7 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="w-full max-w-7xl mx-auto py-8 px-2 sm:px-4 overflow-x-hidden overflow-y-auto min-h-0">
+      <main className={`w-full max-w-7xl mx-auto px-2 sm:px-4 overflow-x-hidden overflow-y-auto min-h-0 ${(gameState === "loading-recommendations" || gameState === "results") ? "py-2 md:py-4" : "py-8"}`}>
         {gameState === "start" && (
           <div className="relative min-h-[70vh] flex items-center justify-center">
             <div className="relative z-10 flex flex-col items-center justify-center gap-6 text-center max-w-3xl mx-auto w-full">

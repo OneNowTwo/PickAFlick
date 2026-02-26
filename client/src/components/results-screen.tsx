@@ -388,63 +388,20 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
     : "Where to Watch";
 
   return (
-    <div className="flex flex-col items-center gap-2 md:gap-3 w-full max-w-5xl mx-auto px-2 md:px-4 pt-2 md:pt-3 pb-4 md:pb-6">
-      {/* Section label */}
+    <div className="flex flex-col items-center gap-1 md:gap-2 w-full max-w-7xl mx-auto px-2 md:px-4 pt-0 pb-4 md:pb-6">
+      {/* Section label - minimal top padding */}
       <h2 className="text-lg md:text-xl font-semibold text-foreground w-full text-center">
         Your top picks for tonight
       </h2>
 
-      {/* Why we picked these - based on their choices (essential context) */}
-      <div className="w-full max-w-2xl px-4 py-3 rounded-lg bg-primary/10 border border-primary/20">
-        <p className="text-base md:text-lg font-medium text-foreground text-center">
-          {revealMessage}
-        </p>
-      </div>
-
-      {/* Pagination - 1 of 6 format at top */}
+      {/* Pagination */}
       <div className="flex items-center justify-center gap-3 w-full">
         <span className="text-base md:text-lg font-semibold text-foreground" data-testid="pagination-text">
           {currentIndex + 1} of {totalRecs}
         </span>
       </div>
 
-      {/* 6 small preview cards with numbers - current one highlighted */}
-      <div className="flex gap-2 w-full overflow-x-auto pb-2 justify-center flex-wrap">
-        {displayRecs.map((rec, i) => {
-          const thumbUrl = rec.movie.posterPath
-            ? rec.movie.posterPath.startsWith("http")
-              ? rec.movie.posterPath
-              : `https://image.tmdb.org/t/p/w154${rec.movie.posterPath}`
-            : null;
-          const isActive = i === currentIndex;
-          return (
-            <div key={rec.movie.tmdbId} className="flex flex-col items-center gap-1 shrink-0">
-              <span className={`text-base md:text-lg font-bold min-w-[1.5rem] text-center ${isActive ? "text-primary" : "text-foreground/80"}`}>
-                {i + 1}
-              </span>
-              <button
-                onClick={() => { setCurrentIndex(i); setAutoPlayTrailer(true); }}
-                className={`w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg overflow-hidden border-2 transition-all ${
-                  isActive
-                    ? "border-primary ring-2 ring-primary/30 scale-105"
-                    : "border-transparent opacity-70 hover:opacity-100"
-                }`}
-                data-testid={`thumbnail-${i}`}
-              >
-                {thumbUrl ? (
-                  <img src={thumbUrl} alt={rec.movie.title} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full bg-muted flex items-center justify-center">
-                    <Film className="w-5 h-5 text-muted-foreground" />
-                  </div>
-                )}
-              </button>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Genre/year tags for current movie */}
+      {/* Genre/year tags */}
       <div className="flex flex-wrap items-center justify-center gap-2 text-sm max-w-4xl" data-testid="preference-profile">
         {currentRec.movie.genres?.length > 0 && (
           <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
@@ -460,31 +417,35 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         )}
       </div>
 
-      {/* Instruction above results */}
+      {/* Why you might like this - original styling, above trailer */}
+      <p className="text-foreground/70 text-sm leading-relaxed text-center w-full max-w-2xl px-2" data-testid="text-movie-reason">
+        <span className="font-medium text-foreground/90">Why you might like this:</span> {currentRec.reason}
+      </p>
+
       <p className="text-sm text-muted-foreground text-center">
         When you&apos;re ready, click &quot;Watch now&quot; to start watching
       </p>
 
-      {/* Prev | Trailer Card | Next - prominent buttons */}
-      <div className="flex items-stretch gap-3 md:gap-4 w-full max-w-5xl">
+      {/* Prev | Trailer Card | Next - same-size buttons, wider trailer */}
+      <div className="flex items-stretch gap-2 md:gap-3 w-full max-w-7xl">
         <Button
           variant="default"
           size="lg"
           onClick={handleBack}
           disabled={currentIndex === 0}
-          className="shrink-0 self-center gap-2 px-4 md:px-6 py-6 text-base font-semibold"
+          className="shrink-0 self-center gap-2 min-w-[90px] justify-center py-5"
           data-testid="button-back"
         >
-          <ChevronLeft className="w-5 h-5" />
+          <ChevronLeft className="w-4 h-4" />
           Previous
         </Button>
 
-      {/* Current Recommendation */}
+      {/* Current Recommendation - wider */}
       <div 
         className="flex-1 min-w-0 bg-card/50 border border-border/50 rounded-xl md:rounded-2xl overflow-hidden backdrop-blur-sm"
         data-testid={`recommendation-card-${currentIndex}`}
       >
-        {/* Trailer / Poster Area - 16:9 aspect ratio */}
+        {/* Trailer - 16:9, full width of card */}
         <div className="aspect-video w-full relative">
           {(() => {
             // Get available trailers - use trailerUrls array or fall back to single trailerUrl
@@ -595,13 +556,6 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
               {watchNowLabel}
             </Button>
           </div>
-          
-          <div className="mt-3 p-3 rounded-lg bg-muted/50 border border-border/50">
-            <p className="text-sm font-semibold text-foreground mb-1">Why you might like this:</p>
-            <p className="text-foreground/90 text-sm md:text-base leading-relaxed" data-testid="text-movie-reason">
-              {currentRec.reason}
-            </p>
-          </div>
         </div>
       </div>
 
@@ -610,16 +564,16 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
           size="lg"
           onClick={handleNext}
           disabled={currentIndex === totalRecs - 1}
-          className="shrink-0 self-center gap-2 px-4 md:px-6 py-6 text-base font-semibold"
+          className="shrink-0 self-center gap-2 min-w-[90px] justify-center py-5"
           data-testid="button-next"
         >
           Next
-          <ChevronRight className="w-5 h-5" />
+          <ChevronRight className="w-4 h-4" />
         </Button>
       </div>
 
-      {/* Bottom action buttons - Save, Seen it, Share */}
-      <div className="flex items-center justify-center gap-3 w-full flex-wrap py-3">
+      {/* Save, Seen it, Share */}
+      <div className="flex items-center justify-center gap-3 w-full flex-wrap py-2">
         <Button
           variant={isLiked ? "default" : "outline"}
           size="lg"
@@ -666,6 +620,41 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         </Button>
       </div>
 
+      {/* 6 posters - below Save/Seen/Share */}
+      <div className="flex gap-2 w-full overflow-x-auto pb-2 justify-center flex-wrap">
+        {displayRecs.map((rec, i) => {
+          const thumbUrl = rec.movie.posterPath
+            ? rec.movie.posterPath.startsWith("http")
+              ? rec.movie.posterPath
+              : `https://image.tmdb.org/t/p/w154${rec.movie.posterPath}`
+            : null;
+          const isActive = i === currentIndex;
+          return (
+            <div key={rec.movie.tmdbId} className="flex flex-col items-center gap-1 shrink-0">
+              <span className={`text-base font-bold min-w-[1.5rem] text-center ${isActive ? "text-primary" : "text-foreground/80"}`}>
+                {i + 1}
+              </span>
+              <button
+                onClick={() => { setCurrentIndex(i); setAutoPlayTrailer(true); }}
+                className={`w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg overflow-hidden border-2 transition-all ${
+                  isActive
+                    ? "border-primary ring-2 ring-primary/30 scale-105"
+                    : "border-transparent opacity-70 hover:opacity-100"
+                }`}
+                data-testid={`thumbnail-${i}`}
+              >
+                {thumbUrl ? (
+                  <img src={thumbUrl} alt={rec.movie.title} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-muted flex items-center justify-center">
+                    <Film className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                )}
+              </button>
+            </div>
+          );
+        })}
+      </div>
 
       {/* Watch Providers Dialog */}
       <Dialog open={showWatchProviders} onOpenChange={setShowWatchProviders}>
