@@ -417,8 +417,8 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         )}
       </div>
 
-      {/* Taste profile badges - visualStyle and mood, same Badge styling as genre/year tags */}
-      <div className="flex flex-wrap items-center justify-center gap-2 text-sm max-w-4xl" data-testid="taste-profile">
+      {/* Taste profile badges - hidden on mobile, shown on desktop */}
+      <div className="hidden md:flex flex-wrap items-center justify-center gap-2 text-sm max-w-4xl" data-testid="taste-profile">
         <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
           <Palette className="w-4 h-4 text-primary shrink-0" />
           {preferenceProfile?.visualStyle || "Matched to your visual taste"}
@@ -429,149 +429,174 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         </Badge>
       </div>
 
-      {/* Prev | Trailer Card | Next */}
-      <div className="flex items-stretch gap-2 md:gap-3 w-full max-w-7xl">
+      {/* Trailer card with nav - row on desktop, stacked on mobile */}
+      <div className="flex flex-col md:flex-row md:items-stretch gap-2 md:gap-3 w-full max-w-7xl">
+        {/* Previous - hidden on mobile, shown beside card on desktop */}
         <Button
           variant="default"
           size="lg"
           onClick={handleBack}
           disabled={currentIndex === 0}
-          className="shrink-0 self-center gap-2 min-w-[90px] justify-center py-5"
+          className="hidden md:flex shrink-0 self-center gap-2 min-w-[90px] justify-center py-5"
           data-testid="button-back"
         >
           <ChevronLeft className="w-4 h-4" />
           Previous
         </Button>
 
-      {/* Current Recommendation - wider */}
-      <div 
-        className="flex-1 min-w-0 bg-card/50 border border-border/50 rounded-xl md:rounded-2xl overflow-hidden backdrop-blur-sm"
-        data-testid={`recommendation-card-${currentIndex}`}
-      >
-        {/* Trailer - 16:9, full width of card */}
-        <div className="aspect-video w-full relative">
-          {(() => {
-            // Get available trailers - use trailerUrls array or fall back to single trailerUrl
-            const availableTrailers = currentRec.trailerUrls?.length 
-              ? currentRec.trailerUrls 
-              : currentRec.trailerUrl 
-                ? [currentRec.trailerUrl] 
-                : [];
-            
-            const currentTrailerUrl = availableTrailers[trailerIndex];
-            const hasMoreTrailers = trailerIndex < availableTrailers.length - 1;
-            
-            // Handler to try next trailer
-            const handleTrailerError = () => {
-              if (hasMoreTrailers) {
-                setTrailerIndex(prev => prev + 1);
-              } else {
-                setAllTrailersFailed(true);
-              }
-            };
-            
-            if (currentTrailerUrl && autoPlayTrailer && !allTrailersFailed) {
-              // On mobile: first trailer muted (browser requirement), after first interaction all autoplay with sound
-              const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-              const muteParam = (isMobile && !hasInteracted) ? 1 : 0;
+        {/* Card */}
+        <div 
+          className="w-full md:flex-1 md:min-w-0 bg-card/50 border border-border/50 rounded-xl md:rounded-2xl overflow-hidden backdrop-blur-sm"
+          data-testid={`recommendation-card-${currentIndex}`}
+        >
+          {/* Trailer - 16:9 */}
+          <div className="aspect-video w-full relative">
+            {(() => {
+              const availableTrailers = currentRec.trailerUrls?.length 
+                ? currentRec.trailerUrls 
+                : currentRec.trailerUrl 
+                  ? [currentRec.trailerUrl] 
+                  : [];
               
-              return (
-                <div className="relative w-full h-full">
-                  <iframe
-                    key={currentTrailerUrl} // Force re-mount when URL changes
-                    src={`${currentTrailerUrl}?autoplay=1&mute=${muteParam}&playsinline=1&rel=0&origin=${window.location.origin}`}
-                    className="w-full h-full"
-                    allow="autoplay; encrypted-media"
-                    allowFullScreen
-                    title={`${currentRec.movie.title} Trailer`}
-                    onError={handleTrailerError}
-                    onLoad={() => {
-                      if (typeof window !== 'undefined' && window.posthog) {
-                        window.posthog.capture("trailer_played");
-                      }
-                    }}
-                  />
-                </div>
-              );
-            } else if (posterUrl) {
-              return (
-                <div className="relative w-full h-full">
-                  <img
-                    src={posterUrl}
-                    alt={currentRec.movie.title}
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-3">
-                    {availableTrailers.length > 0 && !allTrailersFailed && (
-                      <Button
-                        size="default"
-                        onClick={() => { setTrailerIndex(0); setAllTrailersFailed(false); setAutoPlayTrailer(true); }}
-                        className="gap-2"
-                        data-testid={`button-play-trailer-${currentIndex}`}
-                      >
-                        <Play className="w-4 h-4 md:w-5 md:h-5" />
-                        <span className="text-sm md:text-base">Watch Trailer</span>
-                      </Button>
-                    )}
-                    {allTrailersFailed && (
-                      <div className="text-center px-4">
-                        <p className="text-white/80 text-sm">All known trailer embeds for this title are unavailable.</p>
-                      </div>
-                    )}
+              const currentTrailerUrl = availableTrailers[trailerIndex];
+              const hasMoreTrailers = trailerIndex < availableTrailers.length - 1;
+              
+              const handleTrailerError = () => {
+                if (hasMoreTrailers) {
+                  setTrailerIndex(prev => prev + 1);
+                } else {
+                  setAllTrailersFailed(true);
+                }
+              };
+              
+              if (currentTrailerUrl && autoPlayTrailer && !allTrailersFailed) {
+                const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+                const muteParam = (isMobile && !hasInteracted) ? 1 : 0;
+                
+                return (
+                  <div className="relative w-full h-full">
+                    <iframe
+                      key={currentTrailerUrl}
+                      src={`${currentTrailerUrl}?autoplay=1&mute=${muteParam}&playsinline=1&rel=0&origin=${window.location.origin}`}
+                      className="w-full h-full"
+                      allow="autoplay; encrypted-media"
+                      allowFullScreen
+                      title={`${currentRec.movie.title} Trailer`}
+                      onError={handleTrailerError}
+                      onLoad={() => {
+                        if (typeof window !== 'undefined' && window.posthog) {
+                          window.posthog.capture("trailer_played");
+                        }
+                      }}
+                    />
                   </div>
-                </div>
-              );
-            } else {
-              return (
-                <div className="w-full h-full bg-muted flex items-center justify-center">
-                  <span className="text-muted-foreground text-sm">No Preview Available</span>
-                </div>
-              );
-            }
-          })()}
-        </div>
-
-        {/* Movie Info */}
-        <div className="p-3 md:p-4">
-          {/* Title row - stacks on mobile */}
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-bold text-base md:text-xl text-foreground" data-testid="text-movie-title">
-                {currentRec.movie.title}
-              </h3>
-              <span className="text-muted-foreground text-sm shrink-0" data-testid="text-movie-year">
-                {currentRec.movie.year}
-              </span>
-              {currentRec.movie.rating && (
-                <Badge variant="secondary" className="bg-primary/20 text-primary border-0 shrink-0 text-sm" data-testid="text-movie-rating">
-                  {currentRec.movie.rating.toFixed(1)}★
-                </Badge>
-              )}
-            </div>
-            <Button
-              variant="default"
-              size="lg"
-              onClick={() => setShowWatchProviders(true)}
-              className="gap-2 shrink-0 w-full md:w-auto font-semibold"
-              data-testid="button-watch-now"
-            >
-              <Tv className="w-4 h-4" />
-              {watchNowLabel}
-            </Button>
+                );
+              } else if (posterUrl) {
+                return (
+                  <div className="relative w-full h-full">
+                    <img
+                      src={posterUrl}
+                      alt={currentRec.movie.title}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-3">
+                      {availableTrailers.length > 0 && !allTrailersFailed && (
+                        <Button
+                          size="default"
+                          onClick={() => { setTrailerIndex(0); setAllTrailersFailed(false); setAutoPlayTrailer(true); }}
+                          className="gap-2"
+                          data-testid={`button-play-trailer-${currentIndex}`}
+                        >
+                          <Play className="w-4 h-4 md:w-5 md:h-5" />
+                          <span className="text-sm md:text-base">Watch Trailer</span>
+                        </Button>
+                      )}
+                      {allTrailersFailed && (
+                        <div className="text-center px-4">
+                          <p className="text-white/80 text-sm">All known trailer embeds for this title are unavailable.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              } else {
+                return (
+                  <div className="w-full h-full bg-muted flex items-center justify-center">
+                    <span className="text-muted-foreground text-sm">No Preview Available</span>
+                  </div>
+                );
+              }
+            })()}
           </div>
-          <p className="text-foreground/70 text-sm leading-relaxed mt-2" data-testid="text-movie-reason">
-            <span className="font-medium text-foreground/90">Why you might like this:</span> {currentRec.reason}
-          </p>
-        </div>
-      </div>
 
+          {/* Movie Info */}
+          <div className="p-3 md:p-4">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-bold text-base md:text-xl text-foreground" data-testid="text-movie-title">
+                  {currentRec.movie.title}
+                </h3>
+                <span className="text-muted-foreground text-sm shrink-0" data-testid="text-movie-year">
+                  {currentRec.movie.year}
+                </span>
+                {currentRec.movie.rating && (
+                  <Badge variant="secondary" className="bg-primary/20 text-primary border-0 shrink-0 text-sm" data-testid="text-movie-rating">
+                    {currentRec.movie.rating.toFixed(1)}★
+                  </Badge>
+                )}
+              </div>
+              <Button
+                variant="default"
+                size="lg"
+                onClick={() => setShowWatchProviders(true)}
+                className="gap-2 shrink-0 w-full md:w-auto font-semibold"
+                data-testid="button-watch-now"
+              >
+                <Tv className="w-4 h-4" />
+                {watchNowLabel}
+              </Button>
+            </div>
+            <p className="text-foreground/70 text-sm leading-relaxed mt-2" data-testid="text-movie-reason">
+              <span className="font-medium text-foreground/90">Why you might like this:</span> {currentRec.reason}
+            </p>
+          </div>
+        </div>
+
+        {/* Next - hidden on mobile, shown beside card on desktop */}
         <Button
           variant="default"
           size="lg"
           onClick={handleNext}
           disabled={currentIndex === totalRecs - 1}
-          className="shrink-0 self-center gap-2 min-w-[90px] justify-center py-5"
+          className="hidden md:flex shrink-0 self-center gap-2 min-w-[90px] justify-center py-5"
           data-testid="button-next"
+        >
+          Next
+          <ChevronRight className="w-4 h-4" />
+        </Button>
+      </div>
+
+      {/* Mobile nav buttons - shown below card on mobile only */}
+      <div className="flex md:hidden items-center justify-center gap-3 w-full">
+        <Button
+          variant="default"
+          size="default"
+          onClick={handleBack}
+          disabled={currentIndex === 0}
+          className="gap-1.5"
+          data-testid="button-back-mobile"
+        >
+          <ChevronLeft className="w-4 h-4" />
+          Previous
+        </Button>
+        <span className="text-sm font-medium text-foreground">{currentIndex + 1} / {totalRecs}</span>
+        <Button
+          variant="default"
+          size="default"
+          onClick={handleNext}
+          disabled={currentIndex === totalRecs - 1}
+          className="gap-1.5"
+          data-testid="button-next-mobile"
         >
           Next
           <ChevronRight className="w-4 h-4" />
