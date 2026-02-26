@@ -417,20 +417,16 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         )}
       </div>
 
-      {/* Why you might like this - two bubbles + per-movie explanation, all above trailer */}
+      {/* Why you might like this - two bubbles with icons, always shown above trailer */}
       <div className="w-full max-w-2xl space-y-2">
-        {preferenceProfile?.visualStyle && (
-          <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-white/10 border-0 text-white/90">
-            <Palette className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-            <p className="text-sm leading-relaxed">{preferenceProfile.visualStyle}</p>
-          </div>
-        )}
-        {preferenceProfile?.mood && (
-          <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-white/10 border-0 text-white/90">
-            <Sparkles className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-            <p className="text-sm leading-relaxed">{preferenceProfile.mood}</p>
-          </div>
-        )}
+        <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-white/10 border-0 text-white/90">
+          <Palette className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+          <p className="text-sm leading-relaxed">{preferenceProfile?.visualStyle ?? "You enjoy films that match your taste."}</p>
+        </div>
+        <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-white/10 border-0 text-white/90">
+          <Sparkles className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+          <p className="text-sm leading-relaxed">{preferenceProfile?.mood ?? "We've matched the mood of your picks."}</p>
+        </div>
         <p className="text-foreground/70 text-sm leading-relaxed text-center px-2" data-testid="text-movie-reason">
           <span className="font-medium text-foreground/90">Why you might like this:</span> {currentRec.reason}
         </p>
@@ -570,6 +566,9 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
               {watchNowLabel}
             </Button>
           </div>
+          <p className="text-foreground/70 text-sm leading-relaxed mt-2" data-testid="text-movie-reason">
+            <span className="font-medium text-foreground/90">Why you might like this:</span> {currentRec.reason}
+          </p>
         </div>
       </div>
 
