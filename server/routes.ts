@@ -520,12 +520,20 @@ export async function registerRoutes(
     }
   });
 
-  // ===== WATCHLIST ENDPOINTS =====
+  // ===== WATCHLIST ENDPOINTS (per-session isolation) =====
 
-  // Get all watchlist items
-  app.get("/api/watchlist", async (_req: Request, res: Response) => {
+  const getWatchlistSession = (req: Request): string | null =>
+    (req.query.session as string) || req.body?.sessionId || (req.headers["x-watchlist-session"] as string) || null;
+
+  // Get all watchlist items (requires session)
+  app.get("/api/watchlist", async (req: Request, res: Response) => {
     try {
-      const items = await storage.getWatchlist();
+      const sessionId = getWatchlistSession(req);
+      if (!sessionId || sessionId.length < 8) {
+        res.status(400).json({ error: "Session is required for watchlist" });
+        return;
+      }
+      const items = await storage.getWatchlist(sessionId);
       res.json(items);
     } catch (error) {
       console.error("Error fetching watchlist:", error);
@@ -536,7 +544,14 @@ export async function registerRoutes(
   // Add movie to watchlist
   app.post("/api/watchlist", async (req: Request, res: Response) => {
     try {
+      const sessionId = getWatchlistSession(req);
+      if (!sessionId || sessionId.length < 8) {
+        res.status(400).json({ error: "Session is required for watchlist" });
+        return;
+      }
+
       const parseResult = insertWatchlistSchema.safeParse({
+        sessionId,
         tmdbId: req.body.tmdbId,
         title: req.body.title,
         year: req.body.year || null,
@@ -552,13 +567,13 @@ export async function registerRoutes(
       }
 
       // Check if already in watchlist
-      const existing = await storage.getWatchlistByTmdbId(parseResult.data.tmdbId);
+      const existing = await storage.getWatchlistByTmdbId(parseResult.data.tmdbId, sessionId);
       if (existing) {
         res.json(existing);
         return;
       }
 
-      const item = await storage.addToWatchlist(parseResult.data);
+      const item = await storage.addToWatchlist({ ...parseResult.data, sessionId });
       res.status(201).json(item);
     } catch (error) {
       console.error("Error adding to watchlist:", error);
@@ -570,12 +585,17 @@ export async function registerRoutes(
   app.delete("/api/watchlist/:id", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
+      const sessionId = getWatchlistSession(req);
       if (isNaN(id)) {
         res.status(400).json({ error: "Invalid id" });
         return;
       }
+      if (!sessionId || sessionId.length < 8) {
+        res.status(400).json({ error: "Session is required for watchlist" });
+        return;
+      }
 
-      await storage.removeFromWatchlist(id);
+      await storage.removeFromWatchlist(id, sessionId);
       res.json({ success: true });
     } catch (error) {
       console.error("Error removing from watchlist:", error);
@@ -588,18 +608,22 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const { watched } = req.body;
+      const sessionId = getWatchlistSession(req);
 
       if (isNaN(id)) {
         res.status(400).json({ error: "Invalid id" });
         return;
       }
-
+      if (!sessionId || sessionId.length < 8) {
+        res.status(400).json({ error: "Session is required for watchlist" });
+        return;
+      }
       if (typeof watched !== "boolean") {
         res.status(400).json({ error: "watched must be a boolean" });
         return;
       }
 
-      const item = await storage.toggleWatched(id, watched);
+      const item = await storage.toggleWatched(id, watched, sessionId);
       if (!item) {
         res.status(404).json({ error: "Item not found" });
         return;
@@ -616,12 +640,17 @@ export async function registerRoutes(
   app.get("/api/watchlist/check/:tmdbId", async (req: Request, res: Response) => {
     try {
       const tmdbId = parseInt(req.params.tmdbId);
+      const sessionId = getWatchlistSession(req);
       if (isNaN(tmdbId)) {
         res.status(400).json({ error: "Invalid tmdbId" });
         return;
       }
+      if (!sessionId || sessionId.length < 8) {
+        res.json({ inWatchlist: false, item: null });
+        return;
+      }
 
-      const item = await storage.getWatchlistByTmdbId(tmdbId);
+      const item = await storage.getWatchlistByTmdbId(tmdbId, sessionId);
       res.json({ inWatchlist: !!item, item: item || null });
     } catch (error) {
       console.error("Error checking watchlist:", error);

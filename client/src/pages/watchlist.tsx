@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useWatchlistSession } from "@/hooks/use-watchlist-session";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -9,6 +10,7 @@ import { Link } from "wouter";
 import type { WatchlistItem, WatchProvidersResponse } from "@shared/schema";
 
 export default function Watchlist() {
+  const watchlistSessionId = useWatchlistSession();
   const [selectedTmdbId, setSelectedTmdbId] = useState<number | null>(null);
   const [showWatchProviders, setShowWatchProviders] = useState(false);
   const [selectedMovie, setSelectedMovie] = useState<{ tmdbId: number; title: string; year: number | null } | null>(null);
@@ -17,7 +19,15 @@ export default function Watchlist() {
   const returnHref = from === "home" ? "/?resume=1" : "/";
 
   const { data: watchlist, isLoading } = useQuery<WatchlistItem[]>({
-    queryKey: ["/api/watchlist"],
+    queryKey: ["/api/watchlist", watchlistSessionId],
+    queryFn: async () => {
+      const res = await fetch(`/api/watchlist?session=${encodeURIComponent(watchlistSessionId)}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch watchlist");
+      return res.json();
+    },
+    enabled: !!watchlistSessionId,
   });
 
   const { data: watchProviders, isLoading: isLoadingProviders } = useQuery<WatchProvidersResponse>({
@@ -33,20 +43,26 @@ export default function Watchlist() {
 
   const toggleWatchedMutation = useMutation({
     mutationFn: async ({ id, watched }: { id: number; watched: boolean }) => {
-      const res = await apiRequest("PATCH", `/api/watchlist/${id}/watched`, { watched });
+      const res = await apiRequest("PATCH", `/api/watchlist/${id}/watched`, {
+        watched,
+        sessionId: watchlistSessionId,
+      });
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/watchlist"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/watchlist", watchlistSessionId] });
     },
   });
 
   const removeMutation = useMutation({
     mutationFn: async (id: number) => {
-      await apiRequest("DELETE", `/api/watchlist/${id}`);
+      await apiRequest(
+        "DELETE",
+        `/api/watchlist/${id}?session=${encodeURIComponent(watchlistSessionId)}`
+      );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/watchlist"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/watchlist", watchlistSessionId] });
     },
   });
 
@@ -116,7 +132,7 @@ export default function Watchlist() {
             {watchlist?.length === 0 && (
               <Card className="p-8 text-center">
                 <Film className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">Your watchlist is empty</h3>
+                <h3 className="text-lg font-semibold mb-2">You haven&apos;t saved anything yet</h3>
                 <p className="text-muted-foreground mb-4">
                   Play the movie picker and like some recommendations to build your list!
                 </p>
@@ -173,6 +189,7 @@ export default function Watchlist() {
               <Tv className="w-5 h-5 text-primary" />
               Where to Watch
             </DialogTitle>
+            <p className="text-sm text-muted-foreground">Opens in a new tab</p>
           </DialogHeader>
           
           <div className="py-4">

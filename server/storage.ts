@@ -1,16 +1,16 @@
 import { watchlist, sharedRecommendations, movieCatalogueCache, type WatchlistItem, type InsertWatchlistItem, type SharedRecommendation, type MovieCatalogueCache } from "@shared/schema";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 /** Bump when adding new IMDb/editorial lists - invalidates old cache so catalogue rebuilds on deploy */
 const CATALOGUE_CACHE_KEY = "catalogue_v2";
 
 export interface IStorage {
-  getWatchlist(): Promise<WatchlistItem[]>;
-  addToWatchlist(item: InsertWatchlistItem): Promise<WatchlistItem>;
-  removeFromWatchlist(id: number): Promise<void>;
-  toggleWatched(id: number, watched: boolean): Promise<WatchlistItem | undefined>;
-  getWatchlistByTmdbId(tmdbId: number): Promise<WatchlistItem | undefined>;
+  getWatchlist(sessionId: string): Promise<WatchlistItem[]>;
+  addToWatchlist(item: InsertWatchlistItem & { sessionId: string }): Promise<WatchlistItem>;
+  removeFromWatchlist(id: number, sessionId: string): Promise<void>;
+  toggleWatched(id: number, watched: boolean, sessionId: string): Promise<WatchlistItem | undefined>;
+  getWatchlistByTmdbId(tmdbId: number, sessionId: string): Promise<WatchlistItem | undefined>;
   saveSharedRecommendations(shareId: string, recommendations: string, preferenceProfile: string): Promise<SharedRecommendation>;
   getSharedRecommendations(shareId: string): Promise<SharedRecommendation | undefined>;
   getCatalogueCache(): Promise<MovieCatalogueCache | undefined>;
@@ -19,30 +19,39 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  async getWatchlist(): Promise<WatchlistItem[]> {
-    return await db.select().from(watchlist).orderBy(watchlist.createdAt);
+  async getWatchlist(sessionId: string): Promise<WatchlistItem[]> {
+    return await db
+      .select()
+      .from(watchlist)
+      .where(eq(watchlist.sessionId, sessionId))
+      .orderBy(watchlist.createdAt);
   }
 
-  async addToWatchlist(item: InsertWatchlistItem): Promise<WatchlistItem> {
+  async addToWatchlist(item: InsertWatchlistItem & { sessionId: string }): Promise<WatchlistItem> {
     const [result] = await db.insert(watchlist).values(item).returning();
     return result;
   }
 
-  async removeFromWatchlist(id: number): Promise<void> {
-    await db.delete(watchlist).where(eq(watchlist.id, id));
+  async removeFromWatchlist(id: number, sessionId: string): Promise<void> {
+    await db
+      .delete(watchlist)
+      .where(and(eq(watchlist.id, id), eq(watchlist.sessionId, sessionId)));
   }
 
-  async toggleWatched(id: number, watched: boolean): Promise<WatchlistItem | undefined> {
+  async toggleWatched(id: number, watched: boolean, sessionId: string): Promise<WatchlistItem | undefined> {
     const [result] = await db
       .update(watchlist)
       .set({ watched })
-      .where(eq(watchlist.id, id))
+      .where(and(eq(watchlist.id, id), eq(watchlist.sessionId, sessionId)))
       .returning();
     return result;
   }
 
-  async getWatchlistByTmdbId(tmdbId: number): Promise<WatchlistItem | undefined> {
-    const [result] = await db.select().from(watchlist).where(eq(watchlist.tmdbId, tmdbId));
+  async getWatchlistByTmdbId(tmdbId: number, sessionId: string): Promise<WatchlistItem | undefined> {
+    const [result] = await db
+      .select()
+      .from(watchlist)
+      .where(and(eq(watchlist.tmdbId, tmdbId), eq(watchlist.sessionId, sessionId)));
     return result;
   }
 

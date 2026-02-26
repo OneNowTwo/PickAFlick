@@ -24,9 +24,10 @@ export const movieCatalogueCache = pgTable("movie_catalogue_cache", {
 
 export type MovieCatalogueCache = typeof movieCatalogueCache.$inferSelect;
 
-// Watchlist table for persisting liked movies
+// Watchlist table for persisting liked movies (per-session isolation)
 export const watchlist = pgTable("watchlist", {
   id: serial("id").primaryKey(),
+  sessionId: text("session_id"), // Client-generated UUID; null = legacy (excluded from queries)
   tmdbId: integer("tmdb_id").notNull(),
   title: text("title").notNull(),
   year: integer("year"),

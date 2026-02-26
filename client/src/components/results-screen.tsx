@@ -1,11 +1,12 @@
 import type { RecommendationsResponse, WatchProvidersResponse, Recommendation } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Play, RefreshCw, Film, Palette, Calendar, Sparkles, ChevronLeft, ChevronRight, ThumbsUp, Bookmark, Tv, Brain, Eye, Share2, Check, Copy } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { Loader2, Play, RefreshCw, Film, Calendar, ChevronLeft, ChevronRight, Bookmark, Tv, Brain, Eye, Share2, Check } from "lucide-react";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useWatchlistSession } from "@/hooks/use-watchlist-session";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ShareCard } from "./share-card";
 
@@ -67,9 +68,10 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   const [showShareCard, setShowShareCard] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [loadingProgress, setLoadingProgress] = useState(0);
-  const [loadingStage, setLoadingStage] = useState("Analyzing your choices...");
+  const [loadingStage, setLoadingStage] = useState("Analyzing your choices…");
   const [hasInteracted, setHasInteracted] = useState(false); // Track if user has clicked anything
   const { toast } = useToast();
+  const watchlistSessionId = useWatchlistSession();
 
   // Track when results screen loads with recommendations
   useEffect(() => {
@@ -86,33 +88,42 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
     setAllTrailersFailed(false);
   }, [currentIndex]);
 
-  // Simulated loading progress with realistic stages
+  // Staged messages only - no percentage. Smooth continuous progress bar.
   useEffect(() => {
     if (!isLoading) {
       setLoadingProgress(0);
-      setLoadingStage("Analyzing your choices...");
+      setLoadingStage("Analyzing your choices…");
       return;
     }
 
-    // Simulate progress with realistic timing
     const stages = [
-      { progress: 20, message: "Analyzing your choices...", duration: 2000 },
-      { progress: 40, message: "Exploring film history...", duration: 3000 },
-      { progress: 60, message: "Finding hidden gems...", duration: 3000 },
-      { progress: 75, message: "Checking availability...", duration: 2500 },
-      { progress: 90, message: "Almost there...", duration: 2000 },
+      "Analyzing your choices…",
+      "Matching your taste…",
+      "Finding the best options…",
     ];
 
     let currentStage = 0;
-    const interval = setInterval(() => {
+    const stageInterval = setInterval(() => {
       if (currentStage < stages.length) {
-        setLoadingProgress(stages[currentStage].progress);
-        setLoadingStage(stages[currentStage].message);
+        setLoadingStage(stages[currentStage]);
         currentStage++;
       }
-    }, 2500);
+    }, 5000);
 
-    return () => clearInterval(interval);
+    // Smooth continuous progress bar (0→100 over ~15s, no stalls)
+    const start = Date.now();
+    const durationMs = 15000;
+    const progressInterval = setInterval(() => {
+      const elapsed = Date.now() - start;
+      const p = Math.min(100, (elapsed / durationMs) * 100);
+      setLoadingProgress(p);
+      if (p >= 100) clearInterval(progressInterval);
+    }, 100);
+
+    return () => {
+      clearInterval(stageInterval);
+      clearInterval(progressInterval);
+    };
   }, [isLoading]);
 
   // Initialize local recs from recommendations
@@ -152,7 +163,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
 
   const { data: watchProviders, isLoading: isLoadingProviders } = useQuery<WatchProvidersResponse>({
     queryKey: [`/api/watch-providers/${currentTmdbId}?title=${encodeURIComponent(currentRec?.movie.title || '')}&year=${currentRec?.movie.year || ''}`],
-    enabled: showWatchProviders && !!currentTmdbId && !!currentRec,
+    enabled: (showWatchProviders || !!currentTmdbId) && !!currentRec,
   });
 
   // Handle "Seen It" - remove current and fetch replacement
@@ -186,11 +197,14 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
 
   const addToWatchlistMutation = useMutation({
     mutationFn: async (movie: { tmdbId: number; title: string; year: number | null; posterPath: string | null; genres: string[]; rating: number | null }) => {
-      const res = await apiRequest("POST", "/api/watchlist", movie);
+      const res = await apiRequest("POST", "/api/watchlist", {
+        ...movie,
+        sessionId: watchlistSessionId,
+      });
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/watchlist"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/watchlist", watchlistSessionId] });
       toast({
         title: "Added to watchlist",
         description: "Movie saved to your watchlist!",
@@ -262,14 +276,14 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
             <h2 className="text-xl md:text-2xl font-bold text-white mb-2">Hold a tic...</h2>
             <p className="text-white/80 text-sm md:text-base mb-4">{loadingStage}</p>
             
-            {/* Progress Bar */}
+            {/* Smooth progress bar - no percentage */}
             <div className="w-full bg-white/20 rounded-full h-2 overflow-hidden">
               <div 
-                className="h-full bg-gradient-to-r from-primary via-primary/80 to-primary/60 rounded-full transition-all duration-500 ease-out"
+                className="h-full bg-gradient-to-r from-primary via-primary/80 to-primary/60 rounded-full transition-all duration-300 ease-out"
                 style={{ width: `${loadingProgress}%` }}
               />
             </div>
-            <p className="text-white/60 text-xs mt-3">{loadingProgress}% complete</p>
+            <p className="text-white/60 text-xs mt-3">This usually takes ~15 seconds</p>
           </div>
         </div>
       </div>
@@ -370,60 +384,77 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
     return parts.join(" ");
   })();
 
+  const primaryProvider = watchProviders?.providers?.find(p => p.type === "subscription") ?? watchProviders?.providers?.[0];
+  const watchNowLabel = primaryProvider
+    ? `Watch now on ${primaryProvider.name}`
+    : "Where to Watch";
+
   return (
     <div className="flex flex-col items-center gap-2 md:gap-3 w-full max-w-5xl mx-auto px-2 md:px-4 pt-2 md:pt-3 pb-4 md:pb-6">
-      {/* Movie Counter - Moved to top on mobile */}
-      <div className="flex items-center gap-2 order-1 md:order-3">
-        <span className="text-xs md:text-sm font-medium text-muted-foreground">
-          {currentIndex + 1} / {totalRecs}
+      {/* Section label */}
+      <h2 className="text-lg md:text-xl font-semibold text-foreground w-full text-center">
+        Your top picks for tonight
+      </h2>
+
+      {/* Pagination - 1 of 6 format at top */}
+      <div className="flex items-center justify-center gap-3 w-full">
+        <span className="text-base md:text-lg font-semibold text-foreground" data-testid="pagination-text">
+          {currentIndex + 1} of {totalRecs}
         </span>
-        <div className="flex gap-1">
-          {displayRecs.map((rec, i) => (
+      </div>
+
+      {/* 6 small preview cards (thumbnails) - current one highlighted */}
+      <div className="flex gap-2 w-full overflow-x-auto pb-2 justify-center flex-wrap">
+        {displayRecs.map((rec, i) => {
+          const thumbUrl = rec.movie.posterPath
+            ? rec.movie.posterPath.startsWith("http")
+              ? rec.movie.posterPath
+              : `https://image.tmdb.org/t/p/w154${rec.movie.posterPath}`
+            : null;
+          const isActive = i === currentIndex;
+          return (
             <button
               key={rec.movie.tmdbId}
               onClick={() => { setCurrentIndex(i); setAutoPlayTrailer(true); }}
-              className={`w-2 h-2 rounded-full transition-all ${
-                i === currentIndex 
-                  ? "bg-primary w-4" 
-                  : likedMovies.has(rec.movie.id)
-                    ? "bg-green-500"
-                    : maybeMovies.has(rec.movie.id)
-                      ? "bg-yellow-500"
-                      : "bg-muted-foreground/30"
+              className={`shrink-0 w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg overflow-hidden border-2 transition-all ${
+                isActive
+                  ? "border-primary ring-2 ring-primary/30 scale-105"
+                  : "border-transparent opacity-70 hover:opacity-100"
               }`}
-              data-testid={`dot-indicator-${i}`}
-            />
-          ))}
-        </div>
+              data-testid={`thumbnail-${i}`}
+            >
+              {thumbUrl ? (
+                <img src={thumbUrl} alt={rec.movie.title} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-muted flex items-center justify-center">
+                  <Film className="w-5 h-5 text-muted-foreground" />
+                </div>
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Preference Summary - Hidden on mobile for space */}
-      <div className="hidden md:flex flex-wrap items-center justify-center gap-2 text-sm max-w-4xl order-2" data-testid="preference-profile">
-        {preferenceProfile.topGenres.length > 0 && (
+      {/* Genre/year tags for current movie */}
+      <div className="flex flex-wrap items-center justify-center gap-2 text-sm max-w-4xl" data-testid="preference-profile">
+        {currentRec.movie.genres?.length > 0 && (
           <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
             <Film className="w-4 h-4 text-primary" />
-            {preferenceProfile.topGenres.slice(0, 3).join(" · ")}
+            {currentRec.movie.genres.slice(0, 3).join(" · ")}
           </Badge>
         )}
-        {preferenceProfile.preferredEras && preferenceProfile.preferredEras.length > 0 && (
+        {currentRec.movie.year && (
           <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
             <Calendar className="w-4 h-4 text-primary" />
-            {preferenceProfile.preferredEras.slice(0, 2).join(", ")}
-          </Badge>
-        )}
-        {preferenceProfile.visualStyle && (
-          <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
-            <Palette className="w-4 h-4 text-primary shrink-0" />
-            {preferenceProfile.visualStyle}
-          </Badge>
-        )}
-        {preferenceProfile.mood && (
-          <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
-            <Sparkles className="w-4 h-4 text-primary shrink-0" />
-            {preferenceProfile.mood}
+            {currentRec.movie.year}
           </Badge>
         )}
       </div>
+
+      {/* Instruction above results */}
+      <p className="text-sm text-muted-foreground text-center">
+        When you&apos;re ready, click &quot;Watch now&quot; to start watching
+      </p>
 
       {/* Current Recommendation */}
       <div 
@@ -473,6 +504,16 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                       }
                     }}
                   />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="absolute top-2 right-2 z-10 shadow-lg bg-black/70 hover:bg-black/90 text-white border-white/20"
+                    onClick={() => setAutoPlayTrailer(false)}
+                    data-testid="button-close-trailer"
+                  >
+                    <ChevronLeft className="w-4 h-4 mr-1" />
+                    Back to picks
+                  </Button>
                 </div>
               );
             } else if (posterUrl) {
@@ -532,34 +573,39 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
             </div>
             <Button
               variant="default"
-              size="default"
+              size="lg"
               onClick={() => setShowWatchProviders(true)}
-              className="gap-2 shrink-0 w-full md:w-auto"
+              className="gap-2 shrink-0 w-full md:w-auto font-semibold"
               data-testid="button-watch-now"
             >
               <Tv className="w-4 h-4" />
-              Click to Watch
+              {watchNowLabel}
             </Button>
           </div>
           
           <p className="text-foreground/70 text-sm leading-relaxed mt-2" data-testid="text-movie-reason">
-            {currentRec.reason}
+            <span className="font-medium text-foreground/90">Why you might like this:</span> {currentRec.reason}
           </p>
         </div>
       </div>
 
-      {/* Navigation Controls */}
-      <div className="flex items-center justify-center gap-3 w-full flex-wrap">
+      {/* Helper text */}
+      <p className="text-sm text-muted-foreground text-center">
+        Not feeling this one? Try the next pick →
+      </p>
+
+      {/* Navigation Controls - sticky at bottom on mobile for always visible */}
+      <div className="flex items-center justify-center gap-3 w-full flex-wrap sticky bottom-0 py-3 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 -mx-2 md:-mx-4 px-4 md:px-4 border-t border-border/40 md:border-0 md:bg-transparent md:backdrop-blur-none md:sticky-0">
         <Button
           variant="outline"
-          size="default"
+          size="lg"
           onClick={handleBack}
           disabled={currentIndex === 0}
           className="gap-1.5"
           data-testid="button-back"
         >
           <ChevronLeft className="w-4 h-4" />
-          Back
+          Previous
         </Button>
 
         <Button
@@ -578,20 +624,20 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
           size="default"
           onClick={handleSeenIt}
           disabled={replacementMutation.isPending || !sessionId}
-          className="gap-1.5"
+          className="gap-1.5 border-2 border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/70"
           data-testid="button-seen-it"
         >
           {replacementMutation.isPending ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
-            <Eye className="w-4 h-4" />
+            <Eye className="w-5 h-5" />
           )}
           Seen It
         </Button>
 
         <Button
           variant="outline"
-          size="default"
+          size="lg"
           onClick={handleNext}
           disabled={currentIndex === totalRecs - 1}
           className="gap-1.5"
@@ -640,6 +686,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
               <Tv className="w-5 h-5 text-primary" />
               Where to Watch
             </DialogTitle>
+            <p className="text-sm text-muted-foreground">Opens in a new tab</p>
           </DialogHeader>
           
           <div className="py-4">
