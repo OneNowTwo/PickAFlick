@@ -405,11 +405,18 @@ CRITICAL NOTES:
       });
     }
 
+    const topGenres = extractTopGenres(chosenMovies);
+    const sampleTitles = chosenMovies.slice(0, 2).map((m) => m.title).join(" and ");
     return {
       recommendations: fallbackRecs,
       preferenceProfile: {
-        topGenres: extractTopGenres(chosenMovies),
+        topGenres,
         themes: [],
+        preferredEras: [],
+        visualStyle: sampleTitles
+          ? `You enjoy films like your picks "${sampleTitles}" — we've matched that vibe.`
+          : "We've matched films to your taste.",
+        mood: "Based on your choices, you're in the mood for something that hits the same notes.",
       },
     };
   }

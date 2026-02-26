@@ -572,6 +572,9 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
               {watchNowLabel}
             </Button>
           </div>
+          <p className="text-foreground/70 text-sm leading-relaxed mt-2" data-testid="text-movie-reason">
+            <span className="font-medium text-foreground/90">Why you might like this:</span> {currentRec.reason}
+          </p>
         </div>
       </div>
 
