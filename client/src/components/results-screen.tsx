@@ -388,7 +388,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
     : "Where to Watch";
 
   return (
-    <div className="flex flex-col items-center gap-1 md:gap-2 w-full max-w-7xl mx-auto px-2 md:px-4 pt-0 pb-4 md:pb-6">
+    <div className="flex flex-col items-center gap-1 md:gap-2 w-full max-w-7xl mx-auto px-2 md:px-4 pt-4 md:pt-2 pb-4 md:pb-6">
       {/* Section label */}
       <h2 className="text-lg md:text-xl font-bold text-white w-full text-center">
         Your top picks for tonight
