@@ -418,14 +418,14 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
       </div>
 
       {/* Two taste bubbles - always shown between genre tags and trailer */}
-      <div className="w-full max-w-4xl space-y-2">
-        <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-white/10 border-0 text-white/90">
-          <Palette className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-          <p className="text-sm leading-relaxed">{preferenceProfile?.visualStyle || "You enjoy films that match your taste."}</p>
+      <div style={{ width: "100%", maxWidth: "56rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", padding: "0.75rem 1rem", borderRadius: "0.5rem", backgroundColor: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.9)" }}>
+          <Palette style={{ width: "1rem", height: "1rem", flexShrink: 0, marginTop: "0.125rem" }} className="text-primary" />
+          <p style={{ fontSize: "0.875rem", lineHeight: "1.625" }}>{preferenceProfile?.visualStyle || "You enjoy films that match your taste."}</p>
         </div>
-        <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-white/10 border-0 text-white/90">
-          <Sparkles className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-          <p className="text-sm leading-relaxed">{preferenceProfile?.mood || "We've matched the mood of your picks."}</p>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", padding: "0.75rem 1rem", borderRadius: "0.5rem", backgroundColor: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.9)" }}>
+          <Sparkles style={{ width: "1rem", height: "1rem", flexShrink: 0, marginTop: "0.125rem" }} className="text-primary" />
+          <p style={{ fontSize: "0.875rem", lineHeight: "1.625" }}>{preferenceProfile?.mood || "We've matched the mood of your picks."}</p>
         </div>
       </div>
 
