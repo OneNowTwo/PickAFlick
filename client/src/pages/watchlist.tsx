@@ -79,9 +79,7 @@ export default function Watchlist() {
               className="flex items-center gap-2 hover-elevate rounded-md px-2 py-1 -ml-2 transition-colors"
               data-testid="button-logo-home"
             >
-              <span className="inline-flex items-center rounded-md bg-white/95 px-2 py-1">
-              <img src="/logo.png" alt="WhatWeWatching" className="h-10 md:h-12 w-auto object-contain" />
-            </span>
+              <img src="/logo.png" alt="WhatWeWatching" className="h-12 md:h-14 w-auto" />
             </a>
           </Link>
           <div className="flex items-center gap-3">
