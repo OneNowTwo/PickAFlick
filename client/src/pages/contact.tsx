@@ -12,7 +12,9 @@ export default function Contact() {
         <div className="w-full max-w-7xl mx-auto flex h-16 items-center justify-between px-4">
           <Link href="/">
             <a className="flex items-center gap-2 hover-elevate rounded-md px-2 py-1 -ml-2 transition-colors" data-testid="button-logo-home">
-              <img src="/logo.png" alt="WhatWeWatching" className="h-8" />
+              <span className="inline-flex items-center rounded-md bg-white/95 px-2 py-1">
+              <img src="/logo.png" alt="WhatWeWatching" className="h-10 md:h-12 w-auto object-contain" />
+            </span>
             </a>
           </Link>
           <div className="flex items-center gap-2">
