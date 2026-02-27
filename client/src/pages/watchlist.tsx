@@ -5,7 +5,8 @@ import { useWatchlistSession } from "@/hooks/use-watchlist-session";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, Trash2, Check, Film, Bookmark, Tv, ArrowLeft } from "lucide-react";
+import { Loader2, Trash2, Check, Film, Bookmark, Tv, ArrowLeft, Mail } from "lucide-react";
+import { Footer } from "@/components/footer";
 import { Link } from "wouter";
 import type { WatchlistItem, WatchProvidersResponse } from "@shared/schema";
 
@@ -70,7 +71,7 @@ export default function Watchlist() {
   const watched = watchlist?.filter((m) => m.watched) || [];
 
   return (
-    <div className="min-h-screen bg-background w-full">
+    <div className="min-h-screen bg-background w-full flex flex-col">
       <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="w-full max-w-7xl mx-auto flex h-16 items-center justify-between px-4">
           <Link href="/">
@@ -78,11 +79,16 @@ export default function Watchlist() {
               className="flex items-center gap-2 hover-elevate rounded-md px-2 py-1 -ml-2 transition-colors"
               data-testid="button-logo-home"
             >
-              <Film className="w-6 h-6 text-primary" />
-              <h1 className="text-xl font-bold text-foreground">WhatWeWatching</h1>
+              <img src="/logo.png" alt="WhatWeWatching" className="h-8" />
             </a>
           </Link>
           <div className="flex items-center gap-3">
+            <Link href="/contact">
+              <Button variant="ghost" size="sm" className="gap-2" data-testid="button-contact">
+                <Mail className="w-4 h-4" />
+                <span className="hidden sm:inline">Contact</span>
+              </Button>
+            </Link>
             <div className="flex items-center gap-2">
               <Bookmark className="w-4 h-4 text-primary" />
               <span className="font-medium text-foreground hidden sm:inline">My Watchlist</span>
@@ -115,7 +121,7 @@ export default function Watchlist() {
         </div>
       </header>
 
-      <main className="w-full max-w-7xl mx-auto py-8 px-4">
+      <main className="w-full max-w-7xl mx-auto py-8 px-4 flex-1">
         {isLoading ? (
           <div className="flex items-center justify-center min-h-[60vh]">
             <Loader2 className="w-10 h-10 animate-spin text-primary" />
@@ -287,6 +293,7 @@ export default function Watchlist() {
           </div>
         </DialogContent>
       </Dialog>
+      <Footer />
     </div>
   );
 }

@@ -7,7 +7,8 @@ import { ResultsScreen } from "@/components/results-screen";
 import { PosterGridBackground } from "@/components/poster-grid-background";
 import { GameInstructions } from "@/components/game-instructions";
 import { Button } from "@/components/ui/button";
-import { Film, Loader2, Bookmark } from "lucide-react";
+import { Film, Loader2, Bookmark, Mail } from "lucide-react";
+import { Footer } from "@/components/footer";
 import { Link } from "wouter";
 
 type GameState = "start" | "instructions" | "playing" | "loading-recommendations" | "results";
@@ -188,7 +189,7 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="min-h-screen w-full">
+    <div className="min-h-screen w-full flex flex-col">
       <PosterGridBackground />
       <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="w-full max-w-7xl mx-auto flex h-16 items-center justify-between px-4">
@@ -197,19 +198,26 @@ export default function Home() {
             className="flex items-center gap-2 hover-elevate rounded-md px-2 py-1 -ml-2 transition-colors"
             data-testid="button-logo-home"
           >
-            <Film className="w-6 h-6 text-primary" />
-            <h1 className="text-xl font-bold text-foreground">WhatWeWatching</h1>
+            <img src="/logo.png" alt="WhatWeWatching" className="h-8" />
           </button>
-          <Link href="/watchlist?from=home">
-            <Button variant="ghost" className="gap-2" data-testid="button-watchlist">
-              <Bookmark className="w-4 h-4" />
-              <span className="hidden sm:inline">My Watchlist</span>
-            </Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/contact">
+              <Button variant="ghost" className="gap-2" data-testid="button-contact">
+                <Mail className="w-4 h-4" />
+                <span className="hidden sm:inline">Contact</span>
+              </Button>
+            </Link>
+            <Link href="/watchlist?from=home">
+              <Button variant="ghost" className="gap-2" data-testid="button-watchlist">
+                <Bookmark className="w-4 h-4" />
+                <span className="hidden sm:inline">My Watchlist</span>
+              </Button>
+            </Link>
+          </div>
         </div>
       </header>
 
-      <main className={`relative z-10 w-full max-w-7xl mx-auto px-2 sm:px-4 overflow-x-hidden overflow-y-auto min-h-0 ${(gameState === "loading-recommendations" || gameState === "results") ? "py-2 md:py-4" : "py-8"}`}>
+      <main className={`relative z-10 flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 overflow-x-hidden overflow-y-auto min-h-0 ${(gameState === "loading-recommendations" || gameState === "results") ? "py-2 md:py-4" : "py-8"}`}>
         {gameState === "start" && (
           <div className="relative min-h-[70vh] flex items-center justify-center">
             <div className="relative z-10 flex flex-col items-center justify-center gap-6 text-center max-w-3xl mx-auto w-full">
@@ -337,6 +345,7 @@ export default function Home() {
           />
         )}
       </main>
+      <Footer />
     </div>
   );
 }

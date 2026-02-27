@@ -4,6 +4,7 @@ import type { RecommendationsResponse, Recommendation } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Film, Palette, Calendar, Sparkles, ChevronLeft, ChevronRight, Play, Brain, Home, Bookmark } from "lucide-react";
+import { Footer } from "@/components/footer";
 import { useState, useEffect } from "react";
 
 interface SharedRecommendationsData {
@@ -48,32 +49,38 @@ export default function SharePage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-          <p className="text-muted-foreground">Loading recommendations...</p>
+      <div className="min-h-screen bg-background flex flex-col">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+            <p className="text-muted-foreground">Loading recommendations...</p>
+          </div>
         </div>
+        <Footer />
       </div>
     );
   }
 
   if (hasInvalidId || error || !data) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center px-4">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-foreground mb-2">Recommendations Not Found</h1>
-          <p className="text-muted-foreground mb-6">
-            {hasInvalidId
-              ? "This link may be corrupted (e.g. from copy/paste). Ask your friend to share it again."
-              : "This share link may have expired or doesn't exist."}
-          </p>
-          <Link href="/">
-            <Button className="gap-2" data-testid="button-go-home">
-              <Home className="w-4 h-4" />
-              Find Your Own Picks
-            </Button>
-          </Link>
+      <div className="min-h-screen bg-background flex flex-col">
+        <div className="flex-1 flex items-center justify-center px-4">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-foreground mb-2">Recommendations Not Found</h1>
+            <p className="text-muted-foreground mb-6">
+              {hasInvalidId
+                ? "This link may be corrupted (e.g. from copy/paste). Ask your friend to share it again."
+                : "This share link may have expired or doesn't exist."}
+            </p>
+            <Link href="/">
+              <Button className="gap-2" data-testid="button-go-home">
+                <Home className="w-4 h-4" />
+                Find Your Own Picks
+              </Button>
+            </Link>
+          </div>
         </div>
+        <Footer />
       </div>
     );
   }
@@ -320,6 +327,7 @@ export default function SharePage() {
           </Link>
         </div>
       </div>
+      <Footer />
     </div>
   );
 }
