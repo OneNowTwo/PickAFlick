@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2, Trash2, Check, Film, Bookmark, Tv, ArrowLeft, Mail } from "lucide-react";
 import { Footer } from "@/components/footer";
+import { PosterGridBackground } from "@/components/poster-grid-background";
 import { Link } from "wouter";
 import type { WatchlistItem, WatchProvidersResponse } from "@shared/schema";
 
@@ -71,49 +72,35 @@ export default function Watchlist() {
   const watched = watchlist?.filter((m) => m.watched) || [];
 
   return (
-    <div className="min-h-screen bg-background w-full flex flex-col">
+    <div className="min-h-screen w-full flex flex-col">
+      <PosterGridBackground />
       <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="w-full max-w-7xl mx-auto flex h-16 items-center justify-between px-4">
           <Link href="/">
-            <a 
-              className="flex items-center gap-2 hover-elevate rounded-md px-2 py-1 -ml-2 transition-colors"
+            <span
+              className="flex items-center gap-2 hover-elevate rounded-md px-2 py-1 -ml-2 transition-colors cursor-pointer"
               data-testid="button-logo-home"
             >
               <img src="/logo.png" alt="WhatWeWatching" className="w-48 md:w-64 h-auto" />
-            </a>
+            </span>
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <Link href="/contact">
-              <Button variant="ghost" size="sm" className="gap-2" data-testid="button-contact">
+              <Button variant="ghost" className="gap-2" data-testid="button-contact">
                 <Mail className="w-4 h-4" />
                 <span className="hidden sm:inline">Contact</span>
               </Button>
             </Link>
-            <div className="flex items-center gap-2">
-              <Bookmark className="w-4 h-4 text-primary" />
-              <span className="font-medium text-foreground hidden sm:inline">My Watchlist</span>
-            </div>
             <Link href="/">
-              <Button 
-                variant="ghost" 
-                size="sm"
-                className="gap-2"
-                data-testid="button-back-home"
-              >
+              <Button variant="ghost" className="gap-2" data-testid="button-back-home">
                 <Film className="w-4 h-4" />
                 <span className="hidden sm:inline">Home</span>
-                <span className="sm:hidden">Home</span>
               </Button>
             </Link>
             <Link href={returnHref}>
-              <Button 
-                variant="outline" 
-                size="sm"
-                className="gap-2"
-                data-testid="button-back-to-recommendations"
-              >
+              <Button variant="outline" className="gap-2" data-testid="button-back-to-recommendations">
                 <ArrowLeft className="w-4 h-4" />
-                <span className="hidden sm:inline">Back to Recommendations</span>
+                <span className="hidden sm:inline">Back to Picks</span>
                 <span className="sm:hidden">Back</span>
               </Button>
             </Link>
@@ -121,7 +108,7 @@ export default function Watchlist() {
         </div>
       </header>
 
-      <main className="w-full max-w-7xl mx-auto py-8 px-4 flex-1">
+      <main className="relative z-10 w-full max-w-7xl mx-auto py-8 px-4 flex-1">
         {isLoading ? (
           <div className="flex items-center justify-center min-h-[60vh]">
             <Loader2 className="w-10 h-10 animate-spin text-primary" />

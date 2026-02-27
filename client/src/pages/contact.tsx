@@ -11,9 +11,9 @@ export default function Contact() {
       <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="w-full max-w-7xl mx-auto flex h-16 items-center justify-between px-4">
           <Link href="/">
-            <a className="flex items-center gap-2 hover-elevate rounded-md px-2 py-1 -ml-2 transition-colors" data-testid="button-logo-home">
+            <span className="flex items-center gap-2 hover-elevate rounded-md px-2 py-1 -ml-2 transition-colors cursor-pointer" data-testid="button-logo-home">
               <img src="/logo.png" alt="WhatWeWatching" className="w-48 md:w-64 h-auto" />
-            </a>
+            </span>
           </Link>
           <div className="flex items-center gap-2">
             <Link href="/watchlist?from=contact">
