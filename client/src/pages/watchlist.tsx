@@ -202,6 +202,17 @@ export default function Watchlist() {
                           href={provider.deepLink || "#"}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => {
+                            if (window.posthog) {
+                              window.posthog.capture('provider_click', {
+                                provider: provider.name,
+                                provider_type: 'subscription',
+                                movie_title: selectedMovie?.title,
+                                movie_id: selectedMovie?.tmdbId,
+                                source: 'watchlist',
+                              });
+                            }
+                          }}
                           className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
                           data-testid={`provider-${provider.id}`}
                         >
@@ -227,6 +238,17 @@ export default function Watchlist() {
                           href={provider.deepLink || "#"}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => {
+                            if (window.posthog) {
+                              window.posthog.capture('provider_click', {
+                                provider: provider.name,
+                                provider_type: 'rent',
+                                movie_title: selectedMovie?.title,
+                                movie_id: selectedMovie?.tmdbId,
+                                source: 'watchlist',
+                              });
+                            }
+                          }}
                           className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
                           data-testid={`provider-rent-${provider.id}`}
                         >
@@ -252,6 +274,17 @@ export default function Watchlist() {
                           href={provider.deepLink || "#"}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => {
+                            if (window.posthog) {
+                              window.posthog.capture('provider_click', {
+                                provider: provider.name,
+                                provider_type: 'buy',
+                                movie_title: selectedMovie?.title,
+                                movie_id: selectedMovie?.tmdbId,
+                                source: 'watchlist',
+                              });
+                            }
+                          }}
                           className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
                           data-testid={`provider-buy-${provider.id}`}
                         >

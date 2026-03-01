@@ -716,6 +716,18 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                           href={provider.deepLink || "#"}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => {
+                            if (window.posthog) {
+                              window.posthog.capture('provider_click', {
+                                provider: provider.name,
+                                provider_type: 'subscription',
+                                movie_title: currentRec?.movie.title,
+                                movie_id: currentRec?.movie.tmdbId,
+                                position: currentIndex,
+                                source: 'results',
+                              });
+                            }
+                          }}
                           className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
                           data-testid={`provider-${provider.id}`}
                         >
@@ -742,6 +754,18 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                           href={provider.deepLink || "#"}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => {
+                            if (window.posthog) {
+                              window.posthog.capture('provider_click', {
+                                provider: provider.name,
+                                provider_type: 'rent',
+                                movie_title: currentRec?.movie.title,
+                                movie_id: currentRec?.movie.tmdbId,
+                                position: currentIndex,
+                                source: 'results',
+                              });
+                            }
+                          }}
                           className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
                           data-testid={`provider-rent-${provider.id}`}
                         >
@@ -768,6 +792,18 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                           href={provider.deepLink || "#"}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => {
+                            if (window.posthog) {
+                              window.posthog.capture('provider_click', {
+                                provider: provider.name,
+                                provider_type: 'buy',
+                                movie_title: currentRec?.movie.title,
+                                movie_id: currentRec?.movie.tmdbId,
+                                position: currentIndex,
+                                source: 'results',
+                              });
+                            }
+                          }}
                           className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
                           data-testid={`provider-buy-${provider.id}`}
                         >
