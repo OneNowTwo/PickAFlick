@@ -714,9 +714,9 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                         <a
                           key={provider.id}
                           href={provider.deepLink || "#"}
-                          target="_blank"
                           rel="noopener noreferrer"
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.preventDefault();
                             if (window.posthog) {
                               window.posthog.capture('provider_click', {
                                 provider: provider.name,
@@ -727,6 +727,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                                 source: 'results',
                               });
                             }
+                            window.open(provider.deepLink || '#', '_blank', 'noopener,noreferrer');
                           }}
                           className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
                           data-testid={`provider-${provider.id}`}
@@ -752,9 +753,9 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                         <a
                           key={provider.id}
                           href={provider.deepLink || "#"}
-                          target="_blank"
                           rel="noopener noreferrer"
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.preventDefault();
                             if (window.posthog) {
                               window.posthog.capture('provider_click', {
                                 provider: provider.name,
@@ -765,6 +766,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                                 source: 'results',
                               });
                             }
+                            window.open(provider.deepLink || '#', '_blank', 'noopener,noreferrer');
                           }}
                           className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
                           data-testid={`provider-rent-${provider.id}`}
@@ -790,9 +792,9 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                         <a
                           key={provider.id}
                           href={provider.deepLink || "#"}
-                          target="_blank"
                           rel="noopener noreferrer"
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.preventDefault();
                             if (window.posthog) {
                               window.posthog.capture('provider_click', {
                                 provider: provider.name,
@@ -803,6 +805,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                                 source: 'results',
                               });
                             }
+                            window.open(provider.deepLink || '#', '_blank', 'noopener,noreferrer');
                           }}
                           className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover-elevate transition-all"
                           data-testid={`provider-buy-${provider.id}`}
