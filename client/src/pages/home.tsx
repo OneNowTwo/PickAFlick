@@ -7,11 +7,14 @@ import { ResultsScreen } from "@/components/results-screen";
 import { PosterGridBackground } from "@/components/poster-grid-background";
 import { GameInstructions } from "@/components/game-instructions";
 import { Button } from "@/components/ui/button";
-import { Film, Loader2, Bookmark, Mail } from "lucide-react";
+import { Film, Loader2, Bookmark, Mail, ChevronDown, ChevronUp } from "lucide-react";
 import { Footer } from "@/components/footer";
 import { Link } from "wouter";
 
 type GameState = "start" | "instructions" | "playing" | "loading-recommendations" | "results";
+
+// Top 8 genres shown by default
+const TOP_GENRE_IDS = ["action", "comedy", "drama", "thriller", "romance", "scifi", "family", "horror"];
 
 // Individual genre options for precise matching
 const MOOD_OPTIONS = [
@@ -40,6 +43,7 @@ export default function Home() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [recommendations, setRecommendations] = useState<RecommendationsResponse | null>(null);
   const [selectedMoods, setSelectedMoods] = useState<string[]>([]);
+  const [showMoreGenres, setShowMoreGenres] = useState(false);
 
 
   useEffect(() => {
@@ -219,79 +223,101 @@ export default function Home() {
 
       <main className={`relative z-10 flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 overflow-x-hidden overflow-y-auto min-h-0 ${(gameState === "loading-recommendations" || gameState === "results") ? "py-2 md:py-4" : "py-8"}`}>
         {gameState === "start" && (
-          <div className="relative min-h-[70vh] flex items-center justify-center">
-            <div className="relative z-10 flex flex-col items-center justify-center gap-6 text-center max-w-3xl mx-auto w-full">
-              <div className="space-y-3 p-6 md:p-8 rounded-lg" style={{ background: 'rgba(0, 0, 0, 0.7)' }}>
-                <h2 className="text-3xl md:text-4xl font-bold text-white drop-shadow-lg">
-                  Find Your Perfect Movie
+          <div className="relative flex items-center justify-center py-4 md:py-8 min-h-[calc(100vh-4rem)]">
+            <div className="relative z-10 flex flex-col items-center gap-4 text-center w-full max-w-2xl mx-auto">
+
+              {/* Headline */}
+              <div className="px-4 py-4 md:py-6 rounded-lg w-full" style={{ background: 'rgba(0, 0, 0, 0.75)' }}>
+                <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white drop-shadow-lg leading-tight">
+                  What are we watching tonight?
                 </h2>
-                <p className="text-lg text-gray-300 italic max-w-md mx-auto drop-shadow-md">
+                <p className="text-sm text-gray-400 italic mt-1 drop-shadow-md">
                   &quot;Because choosing your movie shouldn&apos;t take longer than watching it.&quot;
                 </p>
               </div>
 
-              {/* Mood Selection - Clear tappable buttons */}
-              <div className="p-4 sm:p-6 rounded-lg w-full max-w-full" style={{ background: 'rgba(0, 0, 0, 0.6)' }}>
-                <h3 className="text-xl font-bold text-white mb-1">Tap Your Mood</h3>
-                <p className="text-gray-400 text-sm mb-4">Pick one or more genres, or Surprise Me for everything</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3 w-full">
-                  {MOOD_OPTIONS.map((mood) => (
-                    <Button
-                      key={mood.id}
-                      onClick={() => toggleMood(mood.id)}
-                      variant={selectedMoods.includes(mood.id) ? "default" : "outline"}
-                      className={`h-12 md:h-14 text-sm md:text-base font-medium transition-all ${
-                        selectedMoods.includes(mood.id)
-                          ? "bg-primary text-primary-foreground border-primary ring-2 ring-primary/50"
-                          : "bg-black/40 border-white/20 text-white hover:bg-white/10 hover:border-white/40"
-                      }`}
-                      data-testid={`button-mood-${mood.id}`}
-                    >
-                      {mood.label}
-                    </Button>
-                  ))}
-                </div>
+              {/* Primary actions: Surprise Me + Show My Picks side by side */}
+              <div className="flex gap-3 w-full px-1">
                 <Button
-                  variant="outline"
+                  size="lg"
                   onClick={() => handleStart(true)}
                   disabled={startSessionMutation.isPending}
-                  className="mt-4 w-full h-11 bg-white/10 border-white/30 text-white hover:bg-white/20 hover:border-white/50 font-medium"
+                  className="flex-1 h-14 text-base font-bold shadow-lg gap-2"
                   data-testid="button-surprise-me"
                 >
                   {startSessionMutation.isPending ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <Loader2 className="w-5 h-5 animate-spin" />
                   ) : (
-                    "Surprise Me"
+                    <>🎲 Surprise Me</>
+                  )}
+                </Button>
+
+                <Button
+                  size="lg"
+                  onClick={() => handleStart(false)}
+                  disabled={startSessionMutation.isPending || selectedMoods.length === 0}
+                  className={`flex-1 h-14 text-base font-bold shadow-lg gap-2 transition-all duration-200 ${
+                    selectedMoods.length === 0
+                      ? "opacity-40 cursor-not-allowed"
+                      : "shadow-primary/30 scale-[1.02]"
+                  }`}
+                  data-testid="button-start-game"
+                >
+                  {startSessionMutation.isPending ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : selectedMoods.length === 0 ? (
+                    <span className="text-sm">Choose a genre first</span>
+                  ) : (
+                    <>
+                      <Film className="w-4 h-4" />
+                      Show My Picks ({selectedMoods.length})
+                    </>
                   )}
                 </Button>
               </div>
 
-              <Button
-                size="lg"
-                onClick={() => handleStart(false)}
-                disabled={startSessionMutation.isPending || selectedMoods.length === 0}
-                className={`text-lg px-10 py-6 font-bold shadow-lg min-w-[200px] transition-all ${
-                  selectedMoods.length === 0
-                    ? "opacity-50 cursor-not-allowed bg-muted-foreground/30"
-                    : "shadow-primary/25"
-                }`}
-                data-testid="button-start-game"
-              >
-                {startSessionMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                    Starting...
-                  </>
-                ) : (
-                  <>
-                    <Film className="w-5 h-5 mr-2" />
-                    Start Picking
-                  </>
-                )}
-              </Button>
+              {/* Genre grid */}
+              <div className="p-4 rounded-lg w-full" style={{ background: 'rgba(0, 0, 0, 0.6)' }}>
+                <h3 className="text-base font-bold text-white mb-3">Choose your mood</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 w-full">
+                  {MOOD_OPTIONS
+                    .filter(m => showMoreGenres || TOP_GENRE_IDS.includes(m.id))
+                    .map((mood) => {
+                      const isSelected = selectedMoods.includes(mood.id);
+                      return (
+                        <Button
+                          key={mood.id}
+                          onClick={() => toggleMood(mood.id)}
+                          variant={isSelected ? "default" : "outline"}
+                          className={`h-11 md:h-12 text-sm md:text-base font-medium transition-all duration-150 ${
+                            isSelected
+                              ? "bg-primary text-primary-foreground border-primary ring-2 ring-primary/50 scale-105"
+                              : "bg-black/40 border-white/20 text-white hover:bg-white/10 hover:border-white/40 hover:scale-105"
+                          }`}
+                          data-testid={`button-mood-${mood.id}`}
+                        >
+                          {mood.label}
+                        </Button>
+                      );
+                    })}
+                </div>
+
+                {/* More / fewer genres toggle */}
+                <button
+                  onClick={() => setShowMoreGenres(v => !v)}
+                  className="mt-3 flex items-center gap-1 mx-auto text-sm text-white/50 hover:text-white/80 transition-colors"
+                  data-testid="button-toggle-genres"
+                >
+                  {showMoreGenres ? (
+                    <><ChevronUp className="w-4 h-4" /> Fewer genres</>
+                  ) : (
+                    <><ChevronDown className="w-4 h-4" /> More genres ({MOOD_OPTIONS.length - TOP_GENRE_IDS.length} more)</>
+                  )}
+                </button>
+              </div>
 
               {startSessionMutation.isError && (
-                <p className="text-destructive bg-black/50 px-4 py-2 rounded">
+                <p className="text-destructive bg-black/50 px-4 py-2 rounded text-sm">
                   Movies are still loading. Please wait a moment and try again.
                 </p>
               )}
