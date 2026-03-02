@@ -226,6 +226,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
     onSuccess: async (data) => {
       const url = `${window.location.origin}/share/${data.shareId}`;
       setShareUrl(url);
+      setAutoPlayTrailer(false); // pause trailer while share card is open
       setShowShareCard(true);
     },
     onError: () => {
@@ -840,7 +841,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
       {recommendations && (
         <ShareCard
           isOpen={showShareCard}
-          onClose={() => setShowShareCard(false)}
+          onClose={() => { setShowShareCard(false); setAutoPlayTrailer(true); }}
           recommendations={displayRecs}
           preferenceProfile={recommendations.preferenceProfile}
           shareUrl={shareUrl || undefined}

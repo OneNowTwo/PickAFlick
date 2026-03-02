@@ -1,10 +1,9 @@
 import type { RecommendationsResponse, Recommendation } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { X, Copy, Check, Sparkles, Film, Palette, Clock, Zap, Heart, Compass, Glasses, Drama, Rocket, Search, Clapperboard, Moon, Smile, Wand2 } from "lucide-react";
-import { useState, useRef } from "react";
+import { X, Copy, Check, Share2, Film, Sparkles } from "lucide-react";
+import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import html2canvas from "html2canvas";
 
 interface ShareCardProps {
   isOpen: boolean;
@@ -14,344 +13,137 @@ interface ShareCardProps {
   shareUrl?: string;
 }
 
-// Movie personality type with icon instead of emoji
-interface MoviePersonality {
-  title: string;
-  icon: "moon" | "zap" | "drama" | "smile" | "wand" | "clapperboard" | "glasses" | "compass" | "rocket" | "heart" | "search" | "film";
-  description: string;
-}
-
-// Generate a fun movie personality type based on their taste
-function generateMoviePersonality(profile: RecommendationsResponse["preferenceProfile"]): MoviePersonality {
-  const genres = profile.topGenres.map(g => g.toLowerCase());
-  const mood = profile.mood?.toLowerCase() || "";
-  const visual = profile.visualStyle?.toLowerCase() || "";
-  
-  // Match personality based on genre/mood combinations
-  if (genres.some(g => g.includes("horror") || g.includes("thriller"))) {
-    if (mood.includes("intense") || mood.includes("dark")) {
-      return { title: "The Night Owl", icon: "moon", description: "You thrive when the lights go down and the tension goes up" };
-    }
-    return { title: "The Thrill Seeker", icon: "zap", description: "Life's too short for boring movies" };
-  }
-  
-  if (genres.some(g => g.includes("comedy"))) {
-    if (genres.some(g => g.includes("drama"))) {
-      return { title: "The Feeling Finder", icon: "drama", description: "You want to laugh and cry in the same sitting" };
-    }
-    return { title: "The Joy Chaser", icon: "smile", description: "Here for the good vibes and great laughs" };
-  }
-  
-  if (genres.some(g => g.includes("sci-fi") || g.includes("fantasy"))) {
-    return { title: "The World Builder", icon: "wand", description: "Reality is just the starting point for you" };
-  }
-  
-  if (genres.some(g => g.includes("drama"))) {
-    if (visual.includes("striking") || visual.includes("artistic")) {
-      return { title: "The Cinema Connoisseur", icon: "clapperboard", description: "You appreciate the art behind every frame" };
-    }
-    if (mood.includes("thought") || mood.includes("deep")) {
-      return { title: "The Deep Diver", icon: "glasses", description: "Surface-level stories need not apply" };
-    }
-    return { title: "The Story Chaser", icon: "compass", description: "A great narrative is your happy place" };
-  }
-  
-  if (genres.some(g => g.includes("action") || g.includes("adventure"))) {
-    return { title: "The Adrenaline Junkie", icon: "rocket", description: "You like your movies like you like your life: exciting" };
-  }
-  
-  if (genres.some(g => g.includes("romance"))) {
-    return { title: "The Hopeless Romantic", icon: "heart", description: "You believe in movie magic and happy endings" };
-  }
-  
-  if (genres.some(g => g.includes("mystery") || g.includes("crime"))) {
-    return { title: "The Plot Unraveler", icon: "search", description: "Nothing gets past you - except that twist ending" };
-  }
-  
-  // Default personality
-  return { title: "The Film Explorer", icon: "film", description: "Every genre is an adventure waiting to happen" };
-}
-
-// Render personality icon
-function PersonalityIcon({ icon, className }: { icon: MoviePersonality["icon"]; className?: string }) {
-  const iconClass = className || "w-12 h-12";
-  switch (icon) {
-    case "moon": return <Moon className={iconClass} />;
-    case "zap": return <Zap className={iconClass} />;
-    case "drama": return <Drama className={iconClass} />;
-    case "smile": return <Smile className={iconClass} />;
-    case "wand": return <Wand2 className={iconClass} />;
-    case "clapperboard": return <Clapperboard className={iconClass} />;
-    case "glasses": return <Glasses className={iconClass} />;
-    case "compass": return <Compass className={iconClass} />;
-    case "rocket": return <Rocket className={iconClass} />;
-    case "heart": return <Heart className={iconClass} />;
-    case "search": return <Search className={iconClass} />;
-    case "film": return <Film className={iconClass} />;
-    default: return <Film className={iconClass} />;
-  }
-}
-
-// Generate quirky stats based on their choices
-function generateQuirkyStats(profile: RecommendationsResponse["preferenceProfile"]): string[] {
-  const stats: string[] = [];
-  
-  if (profile.topGenres.length > 0) {
-    const primary = profile.topGenres[0];
-    stats.push(`${primary} is your comfort zone`);
-  }
-  
-  if (profile.preferredEras && profile.preferredEras.length > 0) {
-    const era = profile.preferredEras[0];
-    if (era.includes("classic") || era.includes("80s") || era.includes("90s")) {
-      stats.push("Old school at heart");
-    } else if (era.includes("2020") || era.includes("recent")) {
-      stats.push("Fresh picks only");
-    } else {
-      stats.push(`${era} vibes`);
-    }
-  }
-  
-  if (profile.mood) {
-    if (profile.mood.toLowerCase().includes("intense")) {
-      stats.push("Intensity seeker");
-    } else if (profile.mood.toLowerCase().includes("light")) {
-      stats.push("Feel-good hunter");
-    } else if (profile.mood.toLowerCase().includes("thought")) {
-      stats.push("Deep thinker");
-    }
-  }
-  
-  if (profile.visualStyle) {
-    if (profile.visualStyle.toLowerCase().includes("striking") || profile.visualStyle.toLowerCase().includes("artistic")) {
-      stats.push("Eyes for art");
-    }
-  }
-  
-  return stats.slice(0, 3);
-}
-
 export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile, shareUrl }: ShareCardProps) {
   const [copied, setCopied] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   const { toast } = useToast();
-  const cardRef = useRef<HTMLDivElement>(null);
-  
-  const personality = generateMoviePersonality(preferenceProfile);
-  const quirkyStats = generateQuirkyStats(preferenceProfile);
+
   const topMovies = recommendations.slice(0, 5);
-  
+
   const handleCopyLink = async () => {
-    if (shareUrl) {
+    if (!shareUrl) return;
+    try {
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
-      toast({ title: "Link copied!", description: "Share your movie picks with friends" });
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-  
-  const handleShare = async () => {
-    if (!cardRef.current || !shareUrl) return;
-    
-    if (typeof window !== 'undefined' && window.posthog) {
-      window.posthog.capture("share_clicked");
-    }
-    
-    setIsGenerating(true);
-    
-    try {
-      // Generate image from the card
-      const canvas = await html2canvas(cardRef.current, {
-        backgroundColor: null,
-        scale: 2,
-        logging: false,
-      });
-      
-      // Convert canvas to blob
-      const blob = await new Promise<Blob>((resolve) => {
-        canvas.toBlob((b) => resolve(b!), 'image/png');
-      });
-      
-      const file = new File([blob], 'my-movie-picks.png', { type: 'image/png' });
-      const shareText = `Check out my movie personality and recommendations!`;
-      
-      // Try native share with image
-      if (navigator.share && navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({
-            title: `My Movie Personality: ${personality.title}`,
-            text: shareText,
-            url: shareUrl,
-            files: [file],
-          });
-          setIsGenerating(false);
-          return;
-        } catch (err) {
-          // User cancelled or share failed, fall through to copy link
-          console.log('Share cancelled or failed:', err);
-        }
+      if (typeof window !== 'undefined' && window.posthog) {
+        window.posthog.capture("share_clicked", { method: "copy_link" });
       }
-      
-      // Fallback: just copy link
-      handleCopyLink();
-    } catch (error) {
-      console.error('Error generating share image:', error);
-      toast({ title: "Error", description: "Could not generate share image", variant: "destructive" });
-      handleCopyLink();
-    } finally {
-      setIsGenerating(false);
+      toast({ title: "Link copied!", description: "Share it with your friends" });
+      setTimeout(() => {
+        setCopied(false);
+        onClose();
+      }, 1200);
+    } catch {
+      toast({ title: "Could not copy", description: "Try copying the link manually", variant: "destructive" });
     }
   };
+
+  const handleNativeShare = async () => {
+    if (!shareUrl) return;
+    setIsSharing(true);
+    try {
+      if (typeof window !== 'undefined' && window.posthog) {
+        window.posthog.capture("share_clicked", { method: "native_share" });
+      }
+      await navigator.share({
+        title: "My WhatWeWatching Picks",
+        text: "Check out my movie picks from WhatWeWatching!",
+        url: shareUrl,
+      });
+      onClose();
+    } catch {
+      // User cancelled or share failed — stay open
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  const canNativeShare = typeof navigator !== 'undefined' && !!navigator.share;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-md p-0 overflow-hidden bg-transparent border-0">
-        <div 
-          ref={cardRef}
-          className="relative w-full bg-gradient-to-br from-violet-600 via-purple-600 to-fuchsia-600 rounded-2xl overflow-hidden"
-          data-testid="share-card"
-        >
-          {/* Close button - positioned within content bounds */}
-          <button 
+      <DialogContent className="max-w-sm p-0 overflow-hidden border border-border/50 bg-background">
+        {/* Header */}
+        <div className="relative bg-black/60 px-5 pt-5 pb-4 border-b border-border/30">
+          <button
             onClick={onClose}
-            className="absolute top-2 right-2 z-20 w-7 h-7 rounded-full bg-black/30 flex items-center justify-center text-white/80 hover:text-white transition-colors"
+            className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-white/60 hover:text-white transition-colors"
             data-testid="button-close-share-card"
           >
             <X className="w-4 h-4" />
           </button>
-          
-          {/* Background pattern */}
-          <div className="absolute inset-0 opacity-10">
-            <div className="absolute top-10 left-10 w-32 h-32 rounded-full bg-white blur-3xl" />
-            <div className="absolute bottom-20 right-10 w-40 h-40 rounded-full bg-white blur-3xl" />
-            <div className="absolute top-1/2 left-1/2 w-24 h-24 rounded-full bg-white blur-2xl" />
+          <div className="flex items-center gap-2 mb-1">
+            <Share2 className="w-4 h-4 text-primary" />
+            <span className="text-xs font-semibold uppercase tracking-widest text-primary">Share Your Picks</span>
           </div>
-          
-          {/* Content */}
-          <div className="relative z-10 p-6 text-white">
-            {/* Header */}
-            <div className="text-center mb-6">
-              <div className="inline-block px-3 py-1 bg-white/20 rounded-full text-xs font-medium mb-3">
-                WHATWEWATCHING WRAPPED
-              </div>
-              <div className="mb-2 flex justify-center">
-                <PersonalityIcon icon={personality.icon} className="w-12 h-12" />
-              </div>
-              <h2 className="text-2xl font-bold mb-1">{personality.title}</h2>
-              <p className="text-white/80 text-sm">{personality.description}</p>
-            </div>
-            
-            {/* Quirky stats */}
-            {quirkyStats.length > 0 && (
-              <div className="flex flex-wrap justify-center gap-2 mb-6">
-                {quirkyStats.map((stat, i) => (
-                  <span 
-                    key={i}
-                    className="px-3 py-1.5 bg-white/15 rounded-full text-xs font-medium backdrop-blur-sm"
-                  >
-                    {stat}
-                  </span>
-                ))}
-              </div>
-            )}
-            
-            {/* Top genres */}
-            {preferenceProfile.topGenres.length > 0 && (
-              <div className="mb-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <Film className="w-4 h-4 text-white/70" />
-                  <span className="text-xs text-white/70 uppercase tracking-wide">Your Vibe</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {preferenceProfile.topGenres.slice(0, 3).map((genre, i) => (
-                    <span 
-                      key={genre}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${
-                        i === 0 ? 'bg-white text-purple-700' : 'bg-white/20'
-                      }`}
-                    >
-                      {genre}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            
-            {/* Movie picks */}
-            <div className="mb-6">
-              <div className="flex items-center gap-2 mb-3">
-                <Sparkles className="w-4 h-4 text-white/70" />
-                <span className="text-xs text-white/70 uppercase tracking-wide">Your Perfect Picks</span>
-              </div>
-              <div className="space-y-2">
-                {topMovies.map((rec, i) => (
-                  <div 
-                    key={rec.movie.tmdbId}
-                    className="flex items-center gap-3 p-2 bg-white/10 rounded-lg backdrop-blur-sm"
-                  >
-                    <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">
-                      {i + 1}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{rec.movie.title}</p>
-                      <p className="text-xs text-white/60">{rec.movie.year} {rec.movie.genres.length > 0 && `· ${rec.movie.genres.slice(0, 2).join(", ")}`}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            
-            {/* Visual style / mood */}
-            {(preferenceProfile.visualStyle || preferenceProfile.mood) && (
-              <div className="flex flex-wrap gap-2 mb-6">
-                {preferenceProfile.visualStyle && (
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 rounded-full text-xs">
-                    <Palette className="w-3 h-3" />
-                    {preferenceProfile.visualStyle.split(" ").slice(0, 4).join(" ")}
-                  </div>
-                )}
-                {preferenceProfile.mood && (
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 rounded-full text-xs">
-                    <Clock className="w-3 h-3" />
-                    {preferenceProfile.mood.split(" ").slice(0, 4).join(" ")}
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {/* Footer / CTA */}
-            <div className="pt-4 border-t border-white/20">
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleShare}
-                  variant="secondary"
-                  className="flex-1 bg-white text-purple-700 border-0 font-semibold"
-                  data-testid="button-share-card"
-                  disabled={isGenerating}
-                >
-                  {isGenerating ? (
-                    <>
-                      <Copy className="w-4 h-4 mr-2 animate-pulse" />
-                      Preparing...
-                    </>
-                  ) : copied ? (
-                    <>
-                      <Check className="w-4 h-4 mr-2" />
-                      Copied!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4 mr-2" />
-                      Share My Picks
-                    </>
-                  )}
-                </Button>
-              </div>
-              <p className="text-center text-white/50 text-xs mt-3">
-              whatwewatching.com.au
-              </p>
-            </div>
+          <h2 className="text-lg font-bold text-white">Your top movies tonight</h2>
+          {preferenceProfile.topGenres.length > 0 && (
+            <p className="text-sm text-white/60 mt-0.5">
+              {preferenceProfile.topGenres.slice(0, 3).join(" · ")}
+            </p>
+          )}
+        </div>
+
+        {/* Movie list */}
+        <div className="px-5 py-4 space-y-2 bg-card/30">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="w-3.5 h-3.5 text-primary" />
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Your Picks</span>
           </div>
+          {topMovies.map((rec, i) => (
+            <div key={rec.movie.tmdbId} className="flex items-center gap-3">
+              <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold shrink-0">
+                {i + 1}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground truncate">{rec.movie.title}</p>
+                <p className="text-xs text-muted-foreground">
+                  {rec.movie.year}{rec.movie.genres.length > 0 && ` · ${rec.movie.genres.slice(0, 2).join(", ")}`}
+                </p>
+              </div>
+              {rec.movie.rating && (
+                <span className="text-xs text-primary font-semibold shrink-0">{rec.movie.rating.toFixed(1)}★</span>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Share actions */}
+        <div className="px-5 pb-5 pt-3 space-y-2 border-t border-border/30">
+          {canNativeShare && (
+            <Button
+              onClick={handleNativeShare}
+              disabled={isSharing || !shareUrl}
+              className="w-full gap-2"
+              data-testid="button-native-share"
+            >
+              <Share2 className="w-4 h-4" />
+              {isSharing ? "Sharing..." : "Share via..."}
+            </Button>
+          )}
+          <Button
+            onClick={handleCopyLink}
+            disabled={!shareUrl || copied}
+            variant={canNativeShare ? "outline" : "default"}
+            className="w-full gap-2"
+            data-testid="button-copy-link"
+          >
+            {copied ? (
+              <>
+                <Check className="w-4 h-4" />
+                Copied!
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4" />
+                Copy Link
+              </>
+            )}
+          </Button>
+          <p className="text-center text-muted-foreground/50 text-xs pt-1 flex items-center justify-center gap-1">
+            <Film className="w-3 h-3" />
+            whatwewatching.com.au
+          </p>
         </div>
       </DialogContent>
     </Dialog>
