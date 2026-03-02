@@ -1,7 +1,7 @@
 import type { RecommendationsResponse, Recommendation } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { X, Copy, Check, Share2, Film, Sparkles } from "lucide-react";
+import { Copy, Check, Share2, Film, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -23,12 +23,13 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
   const handleCopyLink = async () => {
     if (!shareUrl) return;
     try {
-      await navigator.clipboard.writeText(shareUrl);
+      const fullText = `${buildShareText()}\n${shareUrl}`;
+      await navigator.clipboard.writeText(fullText);
       setCopied(true);
       if (typeof window !== 'undefined' && window.posthog) {
         window.posthog.capture("share_clicked", { method: "copy_link" });
       }
-      toast({ title: "Link copied!", description: "Share it with your friends" });
+      toast({ title: "Copied!", description: "Paste it anywhere to share your picks" });
       setTimeout(() => {
         setCopied(false);
         onClose();
@@ -36,6 +37,13 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
     } catch {
       toast({ title: "Could not copy", description: "Try copying the link manually", variant: "destructive" });
     }
+  };
+
+  const buildShareText = () => {
+    const movieLines = topMovies
+      .map((rec, i) => `${i + 1}. ${rec.movie.title} (${rec.movie.year})`)
+      .join("\n");
+    return `My top movie picks tonight:\n${movieLines}\n\nSee them all 👇`;
   };
 
   const handleNativeShare = async () => {
@@ -47,7 +55,7 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
       }
       await navigator.share({
         title: "My WhatWeWatching Picks",
-        text: "Check out my movie picks from WhatWeWatching!",
+        text: buildShareText(),
         url: shareUrl,
       });
       onClose();
@@ -65,13 +73,6 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
       <DialogContent className="max-w-sm p-0 overflow-hidden border border-border/50 bg-background">
         {/* Header */}
         <div className="relative bg-black/60 px-5 pt-5 pb-4 border-b border-border/30">
-          <button
-            onClick={onClose}
-            className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-white/60 hover:text-white transition-colors"
-            data-testid="button-close-share-card"
-          >
-            <X className="w-4 h-4" />
-          </button>
           <div className="flex items-center gap-2 mb-1">
             <Share2 className="w-4 h-4 text-primary" />
             <span className="text-xs font-semibold uppercase tracking-widest text-primary">Share Your Picks</span>
