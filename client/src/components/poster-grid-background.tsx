@@ -16,7 +16,11 @@ const STREAMING_LOGOS = [
   { name: "DocPlay",      logo: "/pVoZH9ZMGfrr1Ajk1UD29weO6iA.jpg",  top: "16%", left: "1%",   anim: "logo-float-14 23s ease-in-out infinite" },
 ];
 
-export function PosterGridBackground() {
+interface PosterGridBackgroundProps {
+  hideLogos?: boolean;
+}
+
+export function PosterGridBackground({ hideLogos = false }: PosterGridBackgroundProps) {
   return (
     <div 
       className="fixed inset-0 overflow-hidden pointer-events-none z-0"
@@ -134,8 +138,8 @@ export function PosterGridBackground() {
         }}
       />
 
-      {/* Streaming logos — floating, rendered above gradient layers */}
-      {STREAMING_LOGOS.map((logo) => (
+      {/* Streaming logos — floating, only shown on start screen */}
+      {!hideLogos && STREAMING_LOGOS.map((logo) => (
         <div
           key={logo.name}
           className="absolute select-none"

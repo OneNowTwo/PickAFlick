@@ -50,11 +50,13 @@ export async function registerRoutes(
       const genres = Array.isArray(req.body?.genres) ? req.body.genres : [];
       const includeTopPicks = req.body?.includeTopPicks === true;
       const includeNewReleases = req.body?.includeNewReleases === true;
+      // Surprise Me = no genres, no special filters — restrict to English-language films only
+      const isSurpriseMe = genres.length === 0 && !includeTopPicks && !includeNewReleases;
 
       const session = sessionStorage.createSession(genres, includeTopPicks, includeNewReleases);
       
       // Generate first pair using filters
-      const pair = getRandomMoviePairFiltered(genres, includeTopPicks, new Set(), includeNewReleases);
+      const pair = getRandomMoviePairFiltered(genres, includeTopPicks, new Set(), includeNewReleases, isSurpriseMe);
       if (!pair) {
         res.status(500).json({ error: "Not enough movies available" });
         return;
@@ -114,8 +116,9 @@ export async function registerRoutes(
           session.choices.flatMap((c) => [c.leftMovie.id, c.rightMovie.id])
         );
         const filters = sessionStorage.getSessionFilters(sessionId);
+        const filtersIsSurpriseMe = filters ? filters.genres.length === 0 && !filters.includeTopPicks && !filters.includeNewReleases : false;
         const pair = filters 
-          ? getRandomMoviePairFiltered(filters.genres, filters.includeTopPicks, usedIds, filters.includeNewReleases)
+          ? getRandomMoviePairFiltered(filters.genres, filters.includeTopPicks, usedIds, filters.includeNewReleases, filtersIsSurpriseMe)
           : getRandomMoviePair(usedIds);
         
         if (!pair) {
@@ -213,8 +216,9 @@ export async function registerRoutes(
           updatedSession.choices.flatMap((c) => [c.leftMovie.id, c.rightMovie.id])
         );
         const filters = sessionStorage.getSessionFilters(sessionId);
+        const choiceIsSurpriseMe = filters ? filters.genres.length === 0 && !filters.includeTopPicks && !filters.includeNewReleases : false;
         const pair = filters 
-          ? getRandomMoviePairFiltered(filters.genres, filters.includeTopPicks, usedIds, filters.includeNewReleases)
+          ? getRandomMoviePairFiltered(filters.genres, filters.includeTopPicks, usedIds, filters.includeNewReleases, choiceIsSurpriseMe)
           : getRandomMoviePair(usedIds);
         
         if (pair) {
@@ -276,8 +280,9 @@ export async function registerRoutes(
       }
 
       const filters = sessionStorage.getSessionFilters(sessionId);
+      const skipIsSurpriseMe = filters ? filters.genres.length === 0 && !filters.includeTopPicks && !filters.includeNewReleases : false;
       const pair = filters 
-        ? getRandomMoviePairFiltered(filters.genres, filters.includeTopPicks, usedIds)
+        ? getRandomMoviePairFiltered(filters.genres, filters.includeTopPicks, usedIds, filters.includeNewReleases, skipIsSurpriseMe)
         : getRandomMoviePair(usedIds);
 
       if (!pair) {

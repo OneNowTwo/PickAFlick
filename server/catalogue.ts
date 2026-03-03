@@ -372,13 +372,18 @@ export function getRandomMoviePairFiltered(
   genres: string[],
   includeTopPicks: boolean,
   excludeIds: Set<number> = new Set(),
-  includeNewReleases: boolean = false
+  includeNewReleases: boolean = false,
+  englishOnly: boolean = false
 ): [Movie, Movie] | null {
   let available: Movie[];
   
   if (genres.length === 0 && !includeTopPicks && !includeNewReleases) {
-    // No filters - use all movies
-    available = cache.allMovies.filter((m) => !excludeIds.has(m.id));
+    // Surprise Me — no genre filters. Optionally restrict to English-language films.
+    available = cache.allMovies.filter((m) => {
+      if (excludeIds.has(m.id)) return false;
+      if (englishOnly && m.original_language && m.original_language !== 'en') return false;
+      return true;
+    });
   } else {
     // Filter by genres and/or top picks and/or new releases
     available = cache.allMovies.filter((m) => {

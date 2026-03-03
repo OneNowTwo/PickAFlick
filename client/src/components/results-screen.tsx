@@ -7,7 +7,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useWatchlistSession } from "@/hooks/use-watchlist-session";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { ShareCard } from "./share-card";
 
 // Generate personalized reveal message based on preference profile
@@ -690,7 +690,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
 
       {/* Watch Providers Dialog */}
       <Dialog open={showWatchProviders} onOpenChange={setShowWatchProviders}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Tv className="w-5 h-5 text-primary" />
@@ -833,6 +833,14 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                 <p className="text-muted-foreground">No direct movie links found for this title in Australia.</p>
               </div>
             )}
+          </div>
+          {/* Sticky close button — always reachable on mobile */}
+          <div className="pt-2 pb-1">
+            <DialogClose asChild>
+              <Button variant="outline" className="w-full" data-testid="button-close-providers">
+                ← Back to Trailers
+              </Button>
+            </DialogClose>
           </div>
         </DialogContent>
       </Dialog>
