@@ -37,7 +37,7 @@ const ALL_STEPS = [...STEPS, ...STEPS];
 export function HowToPlaySection() {
   return (
     <div className="w-full py-8 mt-4">
-      <h3 className="text-center text-sm font-semibold uppercase tracking-widest text-white/40 mb-6">
+      <h3 className="text-center text-base font-bold uppercase tracking-widest text-white/70 mb-6">
         How to Play
       </h3>
 
@@ -59,7 +59,15 @@ export function HowToPlaySection() {
                 border: '1px solid rgba(255,255,255,0.08)',
               }}
             >
-              <span className="text-3xl">{step.emoji}</span>
+              <div className="flex items-center gap-3">
+                <span
+                  className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+                  style={{ background: 'rgba(220,38,38,0.25)', color: 'hsl(350 75% 65%)', border: '1px solid rgba(220,38,38,0.35)' }}
+                >
+                  {(i % STEPS.length) + 1}
+                </span>
+                <span className="text-2xl">{step.emoji}</span>
+              </div>
               <h4 className="text-white font-bold text-sm leading-snug">{step.title}</h4>
               <p className="text-white/55 text-xs leading-relaxed">{step.description}</p>
             </div>

@@ -41,6 +41,19 @@ const TESTIMONIALS = [
 
 export function TestimonialsSection() {
   const [current, setCurrent] = useState(0);
+  const [displayed, setDisplayed] = useState(0);
+  const [contentOpacity, setContentOpacity] = useState(1);
+
+  // Smooth crossfade when current changes
+  useEffect(() => {
+    if (current === displayed) return;
+    setContentOpacity(0);
+    const t = setTimeout(() => {
+      setDisplayed(current);
+      setContentOpacity(1);
+    }, 280);
+    return () => clearTimeout(t);
+  }, [current, displayed]);
 
   // Auto-advance every 5s
   useEffect(() => {
@@ -53,11 +66,11 @@ export function TestimonialsSection() {
   const prev = () => setCurrent(c => (c - 1 + TESTIMONIALS.length) % TESTIMONIALS.length);
   const next = () => setCurrent(c => (c + 1) % TESTIMONIALS.length);
 
-  const t = TESTIMONIALS[current];
+  const t = TESTIMONIALS[displayed];
 
   return (
     <div className="w-full max-w-xl mx-auto px-2 py-4" data-testid="testimonials-section">
-      <h3 className="text-center text-sm font-semibold uppercase tracking-widest text-white/40 mb-4">
+      <h3 className="text-center text-base font-bold uppercase tracking-widest text-white/70 mb-4">
         What People Are Saying
       </h3>
 
@@ -66,22 +79,25 @@ export function TestimonialsSection() {
         className="relative rounded-xl p-5 md:p-6 text-left"
         style={{ background: 'rgba(0,0,0,0.65)', border: '1px solid rgba(255,255,255,0.08)' }}
       >
-        {/* Stars */}
-        <div className="flex gap-0.5 mb-3">
-          {[...Array(5)].map((_, i) => (
-            <Star key={i} className="w-3.5 h-3.5 fill-primary text-primary" />
-          ))}
+        {/* Fading content */}
+        <div style={{ opacity: contentOpacity, transition: 'opacity 0.28s ease' }}>
+          {/* Stars */}
+          <div className="flex gap-0.5 mb-3">
+            {[...Array(5)].map((_, i) => (
+              <Star key={i} className="w-3.5 h-3.5 fill-primary text-primary" />
+            ))}
+          </div>
+
+          {/* Quote */}
+          <p className="text-white/90 text-sm md:text-base leading-relaxed mb-4">
+            &ldquo;{t.quote}&rdquo;
+          </p>
+
+          {/* Name */}
+          <p className="text-white/50 text-xs font-medium">
+            — {t.name} ({t.location})
+          </p>
         </div>
-
-        {/* Quote */}
-        <p className="text-white/90 text-sm md:text-base leading-relaxed mb-4">
-          &ldquo;{t.quote}&rdquo;
-        </p>
-
-        {/* Name */}
-        <p className="text-white/50 text-xs font-medium">
-          — {t.name} ({t.location})
-        </p>
 
         {/* Nav arrows */}
         <div className="flex items-center justify-between mt-4">

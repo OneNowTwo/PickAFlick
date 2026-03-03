@@ -43,7 +43,7 @@ export function FAQSection() {
 
   return (
     <div className="w-full max-w-2xl mx-auto px-2 py-6">
-      <h3 className="text-center text-sm font-semibold uppercase tracking-widest text-white/40 mb-6">
+      <h3 className="text-center text-base font-bold uppercase tracking-widest text-white/70 mb-6">
         Frequently Asked Questions
       </h3>
 

@@ -137,8 +137,7 @@ export function PosterGridBackground() {
             top: logo.top,
             left: (logo as any).left,
             right: (logo as any).right,
-            opacity: 0.22,
-            filter: 'blur(1px)',
+            opacity: 0.15,
             animation: logo.anim,
           }}
         >
