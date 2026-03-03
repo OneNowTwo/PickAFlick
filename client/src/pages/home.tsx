@@ -227,103 +227,121 @@ export default function Home() {
       <main className={`relative z-10 flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 overflow-x-hidden overflow-y-auto min-h-0 ${(gameState === "loading-recommendations" || gameState === "results") ? "py-2 md:py-4" : "py-8"}`}>
         {gameState === "start" && (
           <div className="relative py-4 md:py-6">
-            <div className="relative z-10 flex flex-col items-center gap-3 text-center w-full max-w-2xl mx-auto">
+            <div className="relative z-10 flex flex-col items-center gap-6 text-center w-full max-w-2xl mx-auto">
 
-
-              {/* Headline */}
-              <div className="px-4 py-4 rounded-lg w-full" style={{ background: 'rgba(0, 0, 0, 0.75)' }}>
+              {/* Headline — separate from interaction area */}
+              <div className="px-5 py-5 rounded-xl w-full" style={{ background: 'rgba(0, 0, 0, 0.72)' }}>
                 <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white drop-shadow-lg leading-tight">
                   What are we watching tonight?
                 </h2>
-                <p className="text-sm text-gray-400 italic mt-1">
+                <p className="text-sm text-gray-400 italic mt-2">
                   &quot;Because choosing your movie shouldn&apos;t take longer than watching it.&quot;
                 </p>
               </div>
 
-              {/* Surprise Me — primary big button */}
-              <Button
-                size="lg"
-                onClick={() => handleStart(true)}
-                disabled={startSessionMutation.isPending}
-                className="w-full h-16 text-lg font-extrabold gap-2 border border-white/25 shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_0_48px_rgba(220,38,38,0.65),0_6px_24px_rgba(0,0,0,0.7)] hover:shadow-[0_0_0_1px_rgba(255,255,255,0.15),0_0_72px_rgba(220,38,38,0.9),0_10px_32px_rgba(0,0,0,0.8)] hover:-translate-y-1.5 hover:brightness-110 active:scale-95 active:brightness-95 transition-all duration-200"
-                data-testid="button-surprise-me"
+              {/* Interaction card — visually distinct, breathing animation */}
+              <div
+                className="w-full rounded-2xl relative overflow-hidden"
+                style={{
+                  background: 'rgba(6, 0, 0, 0.88)',
+                  animation: 'card-breathe 4s ease-in-out infinite',
+                }}
               >
-                {startSessionMutation.isPending ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <>🎲 Surprise Me</>
-                )}
-              </Button>
+                {/* Top red accent line */}
+                <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-primary/80 to-transparent" />
 
-              {/* Divider */}
-              <div className="flex items-center gap-3 w-full px-2">
-                <div className="flex-1 h-px bg-white/15" />
-                <span className="text-xs text-white/35 font-medium uppercase tracking-widest">or</span>
-                <div className="flex-1 h-px bg-white/15" />
-              </div>
+                <div className="p-5 md:p-7 flex flex-col items-center gap-5">
 
-              {/* Genre grid */}
-              <div className="p-4 rounded-lg w-full" style={{ background: 'rgba(0, 0, 0, 0.6)' }}>
-                <h3 className="text-sm font-semibold text-white/70 mb-3 uppercase tracking-wide">Choose your mood</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 w-full">
-                  {MOOD_OPTIONS
-                    .filter(m => showMoreGenres || TOP_GENRE_IDS.includes(m.id))
-                    .map((mood) => {
-                      const isSelected = selectedMoods.includes(mood.id);
-                      return (
-                        <Button
-                          key={mood.id}
-                          onClick={() => toggleMood(mood.id)}
-                          variant={isSelected ? "default" : "outline"}
-                          className={`h-11 text-sm font-medium transition-all duration-150 ${
-                            isSelected
-                              ? "bg-primary text-primary-foreground border-primary shadow-[0_0_12px_rgba(220,38,38,0.5)] scale-105"
-                              : "bg-black/40 border-white/15 text-white hover:bg-white/10 hover:border-white/40 hover:scale-[1.03]"
-                          }`}
-                          data-testid={`button-mood-${mood.id}`}
-                        >
-                          {mood.label}
-                        </Button>
-                      );
-                    })}
+                  {/* Surprise Me — centred, ~1/3 width */}
+                  <div className="flex flex-col items-center gap-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/30">Feeling lucky?</p>
+                    <Button
+                      size="lg"
+                      onClick={() => handleStart(true)}
+                      disabled={startSessionMutation.isPending}
+                      className="surprise-pulse-btn min-w-[220px] px-10 h-14 text-base font-extrabold gap-2 border border-white/25 hover:-translate-y-1.5 hover:brightness-115 active:scale-95 transition-all duration-200"
+                      data-testid="button-surprise-me"
+                    >
+                      {startSessionMutation.isPending ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <>🎲 Surprise Me</>
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* Divider */}
+                  <div className="flex items-center gap-3 w-full">
+                    <div className="flex-1 h-px bg-white/10" />
+                    <span className="text-[11px] text-white/25 font-semibold uppercase tracking-[0.18em]">or choose your mood</span>
+                    <div className="flex-1 h-px bg-white/10" />
+                  </div>
+
+                  {/* Genre grid */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 w-full">
+                    {MOOD_OPTIONS
+                      .filter(m => showMoreGenres || TOP_GENRE_IDS.includes(m.id))
+                      .map((mood) => {
+                        const isSelected = selectedMoods.includes(mood.id);
+                        return (
+                          <Button
+                            key={mood.id}
+                            onClick={() => toggleMood(mood.id)}
+                            variant={isSelected ? "default" : "outline"}
+                            className={`h-11 text-sm font-medium transition-all duration-150 ${
+                              isSelected
+                                ? "bg-primary text-primary-foreground border-primary shadow-[0_0_14px_rgba(220,38,38,0.6)] scale-105"
+                                : "bg-white/5 border-white/12 text-white/80 hover:bg-white/10 hover:border-white/35 hover:scale-[1.03]"
+                            }`}
+                            data-testid={`button-mood-${mood.id}`}
+                          >
+                            {mood.label}
+                          </Button>
+                        );
+                      })}
+                  </div>
+
+                  <button
+                    onClick={() => setShowMoreGenres(v => !v)}
+                    className="flex items-center gap-1 text-xs text-white/30 hover:text-white/60 transition-colors"
+                    data-testid="button-toggle-genres"
+                  >
+                    {showMoreGenres ? (
+                      <><ChevronUp className="w-3.5 h-3.5" /> Fewer genres</>
+                    ) : (
+                      <><ChevronDown className="w-3.5 h-3.5" /> More genres ({MOOD_OPTIONS.length - TOP_GENRE_IDS.length} more)</>
+                    )}
+                  </button>
+
+                  {/* Show My Picks — centred, ~1/3 width when active */}
+                  <Button
+                    size="lg"
+                    onClick={() => handleStart(false)}
+                    disabled={startSessionMutation.isPending || selectedMoods.length === 0}
+                    className={`min-w-[220px] px-10 h-14 text-base font-bold gap-2 transition-all duration-200 ${
+                      selectedMoods.length === 0
+                        ? "w-full opacity-25 cursor-not-allowed bg-white/5 border border-white/10 text-white/40"
+                        : "shadow-[0_0_24px_rgba(220,38,38,0.45)] hover:-translate-y-1 active:scale-95"
+                    }`}
+                    data-testid="button-start-game"
+                  >
+                    {startSessionMutation.isPending ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : selectedMoods.length === 0 ? (
+                      <span className="text-sm">Choose at least one genre above</span>
+                    ) : (
+                      <>
+                        <Film className="w-4 h-4" />
+                        Show My Picks ({selectedMoods.length})
+                      </>
+                    )}
+                  </Button>
+
                 </div>
 
-                <button
-                  onClick={() => setShowMoreGenres(v => !v)}
-                  className="mt-3 flex items-center gap-1 mx-auto text-xs text-white/40 hover:text-white/70 transition-colors"
-                  data-testid="button-toggle-genres"
-                >
-                  {showMoreGenres ? (
-                    <><ChevronUp className="w-3.5 h-3.5" /> Fewer genres</>
-                  ) : (
-                    <><ChevronDown className="w-3.5 h-3.5" /> More genres ({MOOD_OPTIONS.length - TOP_GENRE_IDS.length} more)</>
-                  )}
-                </button>
+                {/* Bottom accent line */}
+                <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/8 to-transparent" />
               </div>
-
-              {/* Show My Picks — enabled after genre selection */}
-              <Button
-                size="lg"
-                onClick={() => handleStart(false)}
-                disabled={startSessionMutation.isPending || selectedMoods.length === 0}
-                className={`w-full h-14 text-base font-bold gap-2 transition-all duration-200 ${
-                  selectedMoods.length === 0
-                    ? "opacity-35 cursor-not-allowed bg-white/5 border border-white/10 text-white/40"
-                    : "shadow-[0_0_20px_rgba(220,38,38,0.35)] hover:-translate-y-0.5 active:scale-95 scale-[1.01]"
-                }`}
-                data-testid="button-start-game"
-              >
-                {startSessionMutation.isPending ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : selectedMoods.length === 0 ? (
-                  <span className="text-sm">Choose at least one genre</span>
-                ) : (
-                  <>
-                    <Film className="w-4 h-4" />
-                    Show My Picks ({selectedMoods.length})
-                  </>
-                )}
-              </Button>
 
               {startSessionMutation.isError && (
                 <p className="text-destructive bg-black/50 px-4 py-2 rounded text-sm">
