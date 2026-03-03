@@ -463,6 +463,37 @@
   40% { transform: translate(16px, -18px) rotate(3deg); }
   70% { transform: translate(-20px, 14px) rotate(11deg); }
 }
+@keyframes logo-float-9 {
+  0%, 100% { transform: translate(0, 0) rotate(-9deg); }
+  35% { transform: translate(22px, 16px) rotate(-5deg); }
+  65% { transform: translate(-14px, -20px) rotate(-13deg); }
+}
+@keyframes logo-float-10 {
+  0%, 100% { transform: translate(0, 0) rotate(15deg); }
+  30% { transform: translate(-18px, -14px) rotate(11deg); }
+  60% { transform: translate(20px, 18px) rotate(19deg); }
+}
+@keyframes logo-float-11 {
+  0%, 100% { transform: translate(0, 0) rotate(-4deg); }
+  45% { transform: translate(14px, -22px) rotate(0deg); }
+  75% { transform: translate(-22px, 10px) rotate(-8deg); }
+}
+@keyframes logo-float-12 {
+  0%, 100% { transform: translate(0, 0) rotate(11deg); }
+  25% { transform: translate(-16px, 20px) rotate(7deg); }
+  55% { transform: translate(18px, -14px) rotate(15deg); }
+  80% { transform: translate(-8px, -18px) rotate(9deg); }
+}
+@keyframes logo-float-13 {
+  0%, 100% { transform: translate(0, 0) rotate(-14deg); }
+  40% { transform: translate(20px, 12px) rotate(-10deg); }
+  70% { transform: translate(-12px, -22px) rotate(-18deg); }
+}
+@keyframes logo-float-14 {
+  0%, 100% { transform: translate(0, 0) rotate(5deg); }
+  30% { transform: translate(-24px, -16px) rotate(1deg); }
+  60% { transform: translate(18px, 20px) rotate(9deg); }
+}
 
 /* Infinite marquee scroll for How to Play */
 @keyframes marquee-scroll {

@@ -245,7 +245,7 @@ export default function Home() {
                 size="lg"
                 onClick={() => handleStart(true)}
                 disabled={startSessionMutation.isPending}
-                className="w-full h-14 text-base font-bold gap-2 shadow-[0_0_24px_rgba(var(--primary-rgb,220,38,38),0.4)] hover:shadow-[0_0_32px_rgba(var(--primary-rgb,220,38,38),0.6)] hover:-translate-y-0.5 active:scale-95 transition-all duration-150"
+                className="w-full h-16 text-lg font-extrabold gap-2 border border-white/25 shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_0_48px_rgba(220,38,38,0.65),0_6px_24px_rgba(0,0,0,0.7)] hover:shadow-[0_0_0_1px_rgba(255,255,255,0.15),0_0_72px_rgba(220,38,38,0.9),0_10px_32px_rgba(0,0,0,0.8)] hover:-translate-y-1.5 hover:brightness-110 active:scale-95 active:brightness-95 transition-all duration-200"
                 data-testid="button-surprise-me"
               >
                 {startSessionMutation.isPending ? (

@@ -88,8 +88,8 @@ export function TestimonialsSection() {
             ))}
           </div>
 
-          {/* Quote */}
-          <p className="text-white/90 text-sm md:text-base leading-relaxed mb-4">
+          {/* Quote — fixed min-height prevents card from jumping between short and long quotes */}
+          <p className="text-white/90 text-sm md:text-base leading-relaxed mb-4" style={{ minHeight: '4.5rem' }}>
             &ldquo;{t.quote}&rdquo;
           </p>
 

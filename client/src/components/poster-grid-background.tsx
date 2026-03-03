@@ -1,13 +1,19 @@
-// Floating streaming service logos
+// Floating streaming service logos — left/right sides, responsive via clamp in CSS
 const STREAMING_LOGOS = [
-  { name: "Netflix",     logo: "/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg", top: "8%",  left: "5%",   size: 96,  anim: "logo-float-1 20s ease-in-out infinite" },
-  { name: "Stan",        logo: "/sSfxJXq7s8oHf3XWd0FtqagPDsF.jpg",  top: "22%", right: "4%",  size: 84,  anim: "logo-float-2 24s ease-in-out infinite" },
-  { name: "Disney+",     logo: "/97yvRBw1GzX7fXprcF80er19ot.jpg",   top: "42%", left: "4%",   size: 90,  anim: "logo-float-3 22s ease-in-out infinite" },
-  { name: "Prime Video", logo: "/pvske1MyAoymrs5bguRfVqYiM9a.jpg",  top: "60%", right: "3%",  size: 84,  anim: "logo-float-4 19s ease-in-out infinite" },
-  { name: "Apple TV+",   logo: "/mcbz1LgtErU9p4UdbZ0rG6RTWHX.jpg",  top: "76%", left: "6%",   size: 84,  anim: "logo-float-5 26s ease-in-out infinite" },
-  { name: "Foxtel Now",  logo: "/fejdSG7TwNQ5E0p6u7A6LVs280R.jpg",  top: "30%", right: "5%",  size: 84,  anim: "logo-float-6 23s ease-in-out infinite" },
-  { name: "Paramount+",  logo: "/h5DcR0J2EESLitnhR8xLG1QymTE.jpg",  top: "54%", left: "3%",   size: 84,  anim: "logo-float-7 21s ease-in-out infinite" },
-  { name: "9Now",        logo: "/xoId9luelz6lXMQkzLyJf3ssXTL.jpg",  top: "85%", right: "6%",  size: 76,  anim: "logo-float-8 25s ease-in-out infinite" },
+  { name: "Netflix",      logo: "/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg", top: "5%",  left: "2%",   anim: "logo-float-1 20s ease-in-out infinite" },
+  { name: "Stan",         logo: "/sSfxJXq7s8oHf3XWd0FtqagPDsF.jpg",  top: "18%", right: "2%",  anim: "logo-float-2 24s ease-in-out infinite" },
+  { name: "Disney+",      logo: "/97yvRBw1GzX7fXprcF80er19ot.jpg",   top: "36%", left: "1%",   anim: "logo-float-3 22s ease-in-out infinite" },
+  { name: "Prime Video",  logo: "/pvske1MyAoymrs5bguRfVqYiM9a.jpg",  top: "55%", right: "1%",  anim: "logo-float-4 19s ease-in-out infinite" },
+  { name: "Apple TV+",    logo: "/mcbz1LgtErU9p4UdbZ0rG6RTWHX.jpg",  top: "73%", left: "2%",   anim: "logo-float-5 26s ease-in-out infinite" },
+  { name: "Foxtel Now",   logo: "/fejdSG7TwNQ5E0p6u7A6LVs280R.jpg",  top: "27%", right: "2%",  anim: "logo-float-6 23s ease-in-out infinite" },
+  { name: "Paramount+",   logo: "/h5DcR0J2EESLitnhR8xLG1QymTE.jpg",  top: "46%", left: "1%",   anim: "logo-float-7 21s ease-in-out infinite" },
+  { name: "9Now",         logo: "/xoId9luelz6lXMQkzLyJf3ssXTL.jpg",  top: "83%", right: "2%",  anim: "logo-float-8 25s ease-in-out infinite" },
+  { name: "Binge",        logo: "/7QX5OdsQZrXGNBKq9SPzoPV9OYQ.jpg",  top: "63%", left: "2%",   anim: "logo-float-9 22s ease-in-out infinite" },
+  { name: "Shudder",      logo: "/vEtdiYRPRbDCp1Tcn3BEPF1Ni76.jpg",  top: "10%", right: "2%",  anim: "logo-float-10 27s ease-in-out infinite" },
+  { name: "HBO Max",      logo: "/jbe4gVSfRlbPTdESXhEKpornsfu.jpg",   top: "90%", left: "2%",   anim: "logo-float-11 20s ease-in-out infinite" },
+  { name: "SBS On Demand",logo: "/cR4okiAS0zcXb4ufs3mi4PImXPB.jpg",  top: "43%", right: "1%",  anim: "logo-float-12 24s ease-in-out infinite" },
+  { name: "ABC iview",    logo: "/zR1TJmEwssf0ZThB2iByNtZi2Oo.jpg",  top: "79%", right: "2%",  anim: "logo-float-13 21s ease-in-out infinite" },
+  { name: "DocPlay",      logo: "/pVoZH9ZMGfrr1Ajk1UD29weO6iA.jpg",  top: "16%", left: "1%",   anim: "logo-float-14 23s ease-in-out infinite" },
 ];
 
 export function PosterGridBackground() {
@@ -144,9 +150,8 @@ export function PosterGridBackground() {
           <img
             src={`https://image.tmdb.org/t/p/w154${logo.logo}`}
             alt={logo.name}
-            width={logo.size}
-            height={logo.size}
             className="rounded-2xl object-contain"
+            style={{ width: 'clamp(72px, 9vw, 148px)', height: 'auto' }}
             draggable={false}
           />
         </div>
