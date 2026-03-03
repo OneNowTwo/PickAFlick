@@ -8,6 +8,40 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
+// Rolling global tracker of recently recommended titles — prevents LLM defaulting to the same films
+const recentlyRecommendedTitles: string[] = [];
+const MAX_RECENT_TRACKED = 80;
+
+function recordRecommendedTitles(titles: string[]): void {
+  for (const t of titles) {
+    const normalised = t.toLowerCase().trim();
+    if (!recentlyRecommendedTitles.includes(normalised)) {
+      recentlyRecommendedTitles.push(normalised);
+      if (recentlyRecommendedTitles.length > MAX_RECENT_TRACKED) {
+        recentlyRecommendedTitles.shift(); // drop oldest
+      }
+    }
+  }
+}
+
+// Films we know the LLM over-recommends — permanently excluded
+const ALWAYS_AVOID = [
+  "The Creator",
+  "A Ghost Story",
+  "The Fall",
+  "Prisoners",
+  "Nightcrawler",
+  "Arrival",
+  "Interstellar",
+  "Ex Machina",
+  "Everything Everywhere All at Once",
+  "The Shape of Water",
+  "Parasite",
+  "Get Out",
+  "Hereditary",
+  "Midsommar",
+];
+
 interface AIRecommendationResult {
   title: string;
   year?: number;
@@ -77,9 +111,14 @@ export async function generateRecommendations(
     };
   });
 
-  // Add randomization seed to encourage varied responses
   const randomSeed = Math.floor(Math.random() * 100000);
   const sessionTime = new Date().toISOString();
+
+  // Build the full exclusion list for this request
+  const chosenTitles = chosenMovies.map(m => `"${m.title}"`).join(", ");
+  const recentExclusions = recentlyRecommendedTitles.slice(-40); // last 40 recommended
+  const fullExclusionList = [...ALWAYS_AVOID, ...recentExclusions]
+    .filter((v, i, a) => a.indexOf(v) === i); // dedupe
 
   // Get current year for recent movie calculation
   const currentYear = new Date().getFullYear();
@@ -93,6 +132,16 @@ export async function generateRecommendations(
   const prompt = `You are a world-class film critic and cinema historian with deep knowledge of GLOBAL cinema spanning 100+ years. You're like a Criterion Collection curator meets film school professor meets that friend who's seen 10,000 movies.
 
 A user played a head-to-head picker game where they chose 7 movies (and rejected 7 others). This gives you BOTH positive and negative signals about their taste.${filterContext}
+
+=== ❌ ABSOLUTE EXCLUSIONS — DO NOT RECOMMEND ANY OF THESE ===
+
+The following films are BANNED from your recommendations. These have already been recommended recently or are chronically over-recommended. If any of these appear in your thinking, STOP and choose something else entirely:
+
+${fullExclusionList.map(t => `• ${t}`).join("\n")}
+
+The user themselves chose: ${chosenTitles} — obviously exclude these too.
+
+This list is NON-NEGOTIABLE. Recommending any film on this list is a failure. Think deeper.
 
 === MOVIES THEY CHOSE (Positive Signal) ===
 
@@ -113,21 +162,25 @@ ${rejectionContext.length > 0 ? rejectionContext.map((m) => `Round ${m.round}: "
 
 [Session: ${sessionTime} | Diversity Seed: ${randomSeed}]
 
-⚠️ CRITICAL DIVERSITY REQUIREMENT: 
+⚠️ CRITICAL DIVERSITY REQUIREMENT:
 
-USE THIS SEED TO EXPLORE DIFFERENT CORNERS OF CINEMA EACH TIME. The seed (${randomSeed}) means you should vary your recommendations significantly.
+Diversity Seed: ${randomSeed}. Use this to deterministically vary your recommendations:
+- Seed ending 0-1: Prioritise 1970s–1980s films and neo-noir
+- Seed ending 2-3: Prioritise underseen European / Asian cinema
+- Seed ending 4-5: Prioritise 1990s–2000s indie and cult films
+- Seed ending 6-7: Prioritise recent (last 5 years) lesser-known films
+- Seed ending 8-9: Prioritise 2010s arthouse and prestige dramas
 
-**MANDATORY: You MUST avoid recommending the same films repeatedly across different sessions.** If you find yourself thinking of films like "A Ghost Story", "The Fall", "The Shape of Water", "Prisoners", etc. - STOP and think of 3-5 alternatives instead. These are great films but over-recommended.
+**MANDATORY ANTI-REPETITION RULES:**
+1. For every obvious first choice you think of — reject it and go one level deeper
+2. If a film appears in the top 20 Google results for its genre — it is too obvious, skip it
+3. Recommend directors' lesser-known works, NOT their most famous films
+4. At least 2 of your 7 recommendations must be from a country other than the US/UK
+5. No two recommendations from the same director or franchise
 
-**STRATEGY FOR DIVERSITY:**
-- For EACH genre/theme you identify, brainstorm 5 different film options
-- Prefer films from different decades than the obvious choice
-- Recommend directors' lesser-known works over their famous ones
-- Think internationally - European, Asian (non-K-pop/anime), Latin American, African cinema
-- Consider underseen gems from the 60s-90s that match their taste
-- If a film is "obvious" (appears in top 10 Google results for that genre) - dig deeper
+**BRAINSTORM BEFORE YOU COMMIT:** For each recommendation slot, mentally list 4 options then pick the most specific/surprising match — not the first that came to mind.
 
-Every user is unique and deserves FRESH discoveries tailored to their specific A/B test choices.
+Every session must feel like a personal curation from a film expert who knows this specific user's taste deeply.
 
 === THINK LIKE A FILM BUFF - MULTI-DIMENSIONAL ANALYSIS ===
 
@@ -332,6 +385,9 @@ CRITICAL NOTES:
     const resolvedRecs = (await Promise.all(recPromises)).filter((r): r is Recommendation => r !== null);
     const mainRecs = resolvedRecs.slice(0, 5);
     const recommendations: Recommendation[] = [...mainRecs];
+
+    // Record what we actually resolved so future sessions avoid them
+    recordRecommendedTitles(mainRecs.map(r => r.movie.title));
 
     // Add a "wildcard" surprise pick from the catalogue for variety
     const allMovies = getAllMovies();
@@ -575,7 +631,7 @@ Respond in JSON:
     const [movieDetails, tmdbTrailers, watchProviders] = await Promise.all([
       getMovieDetails(searchResult.id),
       getMovieTrailers(searchResult.id),
-      getWatchProviders(searchResult.id, rec.title, rec.year || null),
+      getWatchProviders(searchResult.id, result.title, result.year || null),
     ]);
     
     if (!movieDetails) return null;
