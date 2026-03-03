@@ -21,6 +21,24 @@
         api_host: 'https://us.i.posthog.com',
         person_profiles: 'identified_only'
     })
+
+    // Mark the site owner as internal so activity can be filtered in PostHog dashboards.
+    // Visit /?internal=michael once on each device to set the persistent cookie.
+    (function() {
+      var params = new URLSearchParams(window.location.search);
+      if (params.get('internal') === 'michael') {
+        // Set a 10-year cookie so this browser is always recognised
+        var expires = new Date();
+        expires.setFullYear(expires.getFullYear() + 10);
+        document.cookie = 'ph_internal=1; expires=' + expires.toUTCString() + '; path=/; SameSite=Lax';
+      }
+      var isInternal = document.cookie.indexOf('ph_internal=1') !== -1 ||
+                       window.location.hostname === 'localhost';
+      if (isInternal) {
+        posthog.identify('michael-internal');
+        posthog.people.set({ internal_user: true });
+      }
+    })();
     </script>
   </head>
   <body>
