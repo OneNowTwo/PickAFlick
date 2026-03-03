@@ -16,28 +16,6 @@ export function PosterGridBackground() {
       className="fixed inset-0 overflow-hidden pointer-events-none z-0"
       aria-hidden="true"
     >
-      {/* Streaming logos layer */}
-      {STREAMING_LOGOS.map((logo) => (
-        <div
-          key={logo.name}
-          className="absolute select-none"
-          style={{
-            top: logo.top,
-            left: (logo as any).left,
-            right: (logo as any).right,
-            transform: `rotate(${logo.rotate})`,
-            fontSize: logo.size,
-            fontWeight: 900,
-            letterSpacing: '0.08em',
-            color: 'rgba(255,255,255,0.38)',
-            filter: 'blur(1.5px)',
-            fontFamily: 'system-ui, sans-serif',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {logo.name}
-        </div>
-      ))}
       <div 
         className="absolute inset-0"
         style={{
@@ -149,6 +127,29 @@ export function PosterGridBackground() {
           filter: 'blur(18px)',
         }}
       />
+
+      {/* Streaming logos — rendered last so they sit above gradient layers */}
+      {STREAMING_LOGOS.map((logo) => (
+        <div
+          key={logo.name}
+          className="absolute select-none"
+          style={{
+            top: logo.top,
+            left: (logo as any).left,
+            right: (logo as any).right,
+            transform: `rotate(${logo.rotate})`,
+            fontSize: logo.size,
+            fontWeight: 900,
+            letterSpacing: '0.08em',
+            color: 'rgba(255,255,255,0.45)',
+            filter: 'blur(1px)',
+            fontFamily: 'system-ui, sans-serif',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {logo.name}
+        </div>
+      ))}
     </div>
   );
 }
