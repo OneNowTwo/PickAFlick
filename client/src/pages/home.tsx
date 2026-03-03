@@ -254,7 +254,7 @@ export default function Home() {
 
                   {/* Surprise Me — centred, ~1/3 width */}
                   <div className="flex flex-col items-center gap-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/30">Feeling lucky?</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/65">Feeling lucky?</p>
                     <Button
                       size="lg"
                       onClick={() => handleStart(true)}
@@ -273,7 +273,7 @@ export default function Home() {
                   {/* Divider */}
                   <div className="flex items-center gap-3 w-full">
                     <div className="flex-1 h-px bg-white/10" />
-                    <span className="text-[11px] text-white/25 font-semibold uppercase tracking-[0.18em]">or choose your mood</span>
+                    <span className="text-[11px] text-white/65 font-semibold uppercase tracking-[0.18em]">or choose your mood</span>
                     <div className="flex-1 h-px bg-white/10" />
                   </div>
 
@@ -303,7 +303,7 @@ export default function Home() {
 
                   <button
                     onClick={() => setShowMoreGenres(v => !v)}
-                    className="flex items-center gap-1 text-xs text-white/30 hover:text-white/60 transition-colors"
+                    className="flex items-center gap-1 text-xs text-white/65 hover:text-white/90 transition-colors"
                     data-testid="button-toggle-genres"
                   >
                     {showMoreGenres ? (
@@ -320,7 +320,7 @@ export default function Home() {
                     disabled={startSessionMutation.isPending || selectedMoods.length === 0}
                     className={`min-w-[220px] px-10 h-14 text-base font-bold gap-2 transition-all duration-200 ${
                       selectedMoods.length === 0
-                        ? "w-full opacity-25 cursor-not-allowed bg-white/5 border border-white/10 text-white/40"
+                        ? "w-full opacity-60 cursor-not-allowed bg-white/5 border border-white/10 text-white/65"
                         : "shadow-[0_0_24px_rgba(220,38,38,0.45)] hover:-translate-y-1 active:scale-95"
                     }`}
                     data-testid="button-start-game"
