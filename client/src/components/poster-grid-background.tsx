@@ -1,9 +1,44 @@
+// Blurred streaming service logos scattered in background
+const STREAMING_LOGOS = [
+  { name: "NETFLIX", color: "#E50914", top: "8%", left: "5%", rotate: "-15deg", size: "2.2rem" },
+  { name: "STAN", color: "#0074E0", top: "15%", right: "6%", rotate: "10deg", size: "2rem" },
+  { name: "DISNEY+", color: "#0C3675", top: "40%", left: "2%", rotate: "-8deg", size: "1.8rem" },
+  { name: "PRIME", color: "#00A8E0", top: "60%", right: "4%", rotate: "12deg", size: "1.9rem" },
+  { name: "APPLE TV+", color: "#555555", top: "75%", left: "8%", rotate: "-5deg", size: "1.6rem" },
+  { name: "BINGE", color: "#FF5A00", top: "30%", right: "2%", rotate: "18deg", size: "1.8rem" },
+  { name: "FOXTEL", color: "#00C3E3", top: "85%", right: "10%", rotate: "-12deg", size: "1.7rem" },
+  { name: "PARAMOUNT+", color: "#0064FF", top: "50%", left: "3%", rotate: "8deg", size: "1.6rem" },
+];
+
 export function PosterGridBackground() {
   return (
     <div 
       className="fixed inset-0 overflow-hidden pointer-events-none z-0"
       aria-hidden="true"
     >
+      {/* Streaming logos layer */}
+      {STREAMING_LOGOS.map((logo) => (
+        <div
+          key={logo.name}
+          className="absolute select-none"
+          style={{
+            top: logo.top,
+            left: logo.left,
+            right: logo.right,
+            transform: `rotate(${logo.rotate})`,
+            fontSize: logo.size,
+            fontWeight: 900,
+            letterSpacing: '0.05em',
+            color: logo.color,
+            opacity: 0.12,
+            filter: 'blur(3px)',
+            fontFamily: 'system-ui, sans-serif',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {logo.name}
+        </div>
+      ))}
       <div 
         className="absolute inset-0"
         style={{

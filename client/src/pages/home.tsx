@@ -7,8 +7,9 @@ import { ResultsScreen } from "@/components/results-screen";
 import { PosterGridBackground } from "@/components/poster-grid-background";
 import { GameInstructions } from "@/components/game-instructions";
 import { Button } from "@/components/ui/button";
-import { Film, Loader2, Bookmark, Mail, ChevronDown, ChevronUp } from "lucide-react";
+import { Film, Loader2, Bookmark, Mail, ChevronDown, ChevronUp, Users } from "lucide-react";
 import { Footer } from "@/components/footer";
+import { TestimonialsSection } from "@/components/testimonials";
 import { Link } from "wouter";
 
 type GameState = "start" | "instructions" | "playing" | "loading-recommendations" | "results";
@@ -223,62 +224,52 @@ export default function Home() {
 
       <main className={`relative z-10 flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 overflow-x-hidden overflow-y-auto min-h-0 ${(gameState === "loading-recommendations" || gameState === "results") ? "py-2 md:py-4" : "py-8"}`}>
         {gameState === "start" && (
-          <div className="relative flex items-center justify-center py-4 md:py-8 min-h-[calc(100vh-4rem)]">
-            <div className="relative z-10 flex flex-col items-center gap-4 text-center w-full max-w-2xl mx-auto">
+          <div className="relative py-4 md:py-6">
+            <div className="relative z-10 flex flex-col items-center gap-3 text-center w-full max-w-2xl mx-auto">
 
               {/* Headline */}
-              <div className="px-4 py-4 md:py-6 rounded-lg w-full" style={{ background: 'rgba(0, 0, 0, 0.75)' }}>
+              <div className="px-4 py-4 rounded-lg w-full" style={{ background: 'rgba(0, 0, 0, 0.75)' }}>
                 <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white drop-shadow-lg leading-tight">
                   What are we watching tonight?
                 </h2>
-                <p className="text-sm text-gray-400 italic mt-1 drop-shadow-md">
+                <p className="text-sm text-gray-400 italic mt-1">
                   &quot;Because choosing your movie shouldn&apos;t take longer than watching it.&quot;
                 </p>
               </div>
 
-              {/* Primary actions: Surprise Me + Show My Picks side by side */}
-              <div className="flex gap-3 w-full px-1">
-                <Button
-                  size="lg"
-                  onClick={() => handleStart(true)}
-                  disabled={startSessionMutation.isPending}
-                  className="flex-1 h-14 text-base font-bold shadow-lg gap-2"
-                  data-testid="button-surprise-me"
-                >
-                  {startSessionMutation.isPending ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <>🎲 Surprise Me</>
-                  )}
-                </Button>
+              {/* User counter */}
+              <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-black/50 border border-white/10">
+                <Users className="w-3.5 h-3.5 text-primary" />
+                <span className="text-xs text-white/70">
+                  <span className="font-bold text-white">43,000+</span> Australians have used WhatWeWatching
+                </span>
+              </div>
 
-                <Button
-                  size="lg"
-                  onClick={() => handleStart(false)}
-                  disabled={startSessionMutation.isPending || selectedMoods.length === 0}
-                  className={`flex-1 h-14 text-base font-bold shadow-lg gap-2 transition-all duration-200 ${
-                    selectedMoods.length === 0
-                      ? "opacity-40 cursor-not-allowed"
-                      : "shadow-primary/30 scale-[1.02]"
-                  }`}
-                  data-testid="button-start-game"
-                >
-                  {startSessionMutation.isPending ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : selectedMoods.length === 0 ? (
-                    <span className="text-sm">Choose a genre first</span>
-                  ) : (
-                    <>
-                      <Film className="w-4 h-4" />
-                      Show My Picks ({selectedMoods.length})
-                    </>
-                  )}
-                </Button>
+              {/* Surprise Me — primary big button */}
+              <Button
+                size="lg"
+                onClick={() => handleStart(true)}
+                disabled={startSessionMutation.isPending}
+                className="w-full h-14 text-base font-bold gap-2 shadow-[0_0_24px_rgba(var(--primary-rgb,220,38,38),0.4)] hover:shadow-[0_0_32px_rgba(var(--primary-rgb,220,38,38),0.6)] hover:-translate-y-0.5 active:scale-95 transition-all duration-150"
+                data-testid="button-surprise-me"
+              >
+                {startSessionMutation.isPending ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <>🎲 Surprise Me</>
+                )}
+              </Button>
+
+              {/* Divider */}
+              <div className="flex items-center gap-3 w-full px-2">
+                <div className="flex-1 h-px bg-white/15" />
+                <span className="text-xs text-white/35 font-medium uppercase tracking-widest">or</span>
+                <div className="flex-1 h-px bg-white/15" />
               </div>
 
               {/* Genre grid */}
               <div className="p-4 rounded-lg w-full" style={{ background: 'rgba(0, 0, 0, 0.6)' }}>
-                <h3 className="text-base font-bold text-white mb-3">Choose your mood</h3>
+                <h3 className="text-sm font-semibold text-white/70 mb-3 uppercase tracking-wide">Choose your mood</h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 w-full">
                   {MOOD_OPTIONS
                     .filter(m => showMoreGenres || TOP_GENRE_IDS.includes(m.id))
@@ -289,10 +280,10 @@ export default function Home() {
                           key={mood.id}
                           onClick={() => toggleMood(mood.id)}
                           variant={isSelected ? "default" : "outline"}
-                          className={`h-11 md:h-12 text-sm md:text-base font-medium transition-all duration-150 ${
+                          className={`h-11 text-sm font-medium transition-all duration-150 ${
                             isSelected
-                              ? "bg-primary text-primary-foreground border-primary ring-2 ring-primary/50 scale-105"
-                              : "bg-black/40 border-white/20 text-white hover:bg-white/10 hover:border-white/40 hover:scale-105"
+                              ? "bg-primary text-primary-foreground border-primary shadow-[0_0_12px_rgba(220,38,38,0.5)] scale-105"
+                              : "bg-black/40 border-white/15 text-white hover:bg-white/10 hover:border-white/40 hover:scale-[1.03]"
                           }`}
                           data-testid={`button-mood-${mood.id}`}
                         >
@@ -302,25 +293,51 @@ export default function Home() {
                     })}
                 </div>
 
-                {/* More / fewer genres toggle */}
                 <button
                   onClick={() => setShowMoreGenres(v => !v)}
-                  className="mt-3 flex items-center gap-1 mx-auto text-sm text-white/50 hover:text-white/80 transition-colors"
+                  className="mt-3 flex items-center gap-1 mx-auto text-xs text-white/40 hover:text-white/70 transition-colors"
                   data-testid="button-toggle-genres"
                 >
                   {showMoreGenres ? (
-                    <><ChevronUp className="w-4 h-4" /> Fewer genres</>
+                    <><ChevronUp className="w-3.5 h-3.5" /> Fewer genres</>
                   ) : (
-                    <><ChevronDown className="w-4 h-4" /> More genres ({MOOD_OPTIONS.length - TOP_GENRE_IDS.length} more)</>
+                    <><ChevronDown className="w-3.5 h-3.5" /> More genres ({MOOD_OPTIONS.length - TOP_GENRE_IDS.length} more)</>
                   )}
                 </button>
               </div>
+
+              {/* Show My Picks — enabled after genre selection */}
+              <Button
+                size="lg"
+                onClick={() => handleStart(false)}
+                disabled={startSessionMutation.isPending || selectedMoods.length === 0}
+                className={`w-full h-14 text-base font-bold gap-2 transition-all duration-200 ${
+                  selectedMoods.length === 0
+                    ? "opacity-35 cursor-not-allowed bg-white/5 border border-white/10 text-white/40"
+                    : "shadow-[0_0_20px_rgba(220,38,38,0.35)] hover:-translate-y-0.5 active:scale-95 scale-[1.01]"
+                }`}
+                data-testid="button-start-game"
+              >
+                {startSessionMutation.isPending ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : selectedMoods.length === 0 ? (
+                  <span className="text-sm">Choose at least one genre</span>
+                ) : (
+                  <>
+                    <Film className="w-4 h-4" />
+                    Show My Picks ({selectedMoods.length})
+                  </>
+                )}
+              </Button>
 
               {startSessionMutation.isError && (
                 <p className="text-destructive bg-black/50 px-4 py-2 rounded text-sm">
                   Movies are still loading. Please wait a moment and try again.
                 </p>
               )}
+
+              {/* Testimonials */}
+              <TestimonialsSection />
             </div>
           </div>
         )}
