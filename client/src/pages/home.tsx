@@ -237,14 +237,6 @@ export default function Home() {
                 </p>
               </div>
 
-              {/* User counter */}
-              <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-black/50 border border-white/10">
-                <Users className="w-3.5 h-3.5 text-primary" />
-                <span className="text-xs text-white/70">
-                  <span className="font-bold text-white">43,000+</span> Australians have used WhatWeWatching
-                </span>
-              </div>
-
               {/* Surprise Me — primary big button */}
               <Button
                 size="lg"
@@ -338,6 +330,14 @@ export default function Home() {
 
               {/* Testimonials */}
               <TestimonialsSection />
+
+              {/* User counter — below testimonials */}
+              <div className="flex items-center justify-center gap-2.5 px-5 py-3 rounded-full bg-black/50 border border-white/10">
+                <Users className="w-4 h-4 text-primary flex-shrink-0" />
+                <span className="text-sm text-white/70">
+                  <span className="font-bold text-white text-base">43,000+</span> Australians have used WhatWeWatching
+                </span>
+              </div>
             </div>
           </div>
         )}
