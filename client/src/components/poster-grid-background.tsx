@@ -1,13 +1,13 @@
 // Blurred streaming service logos scattered in background
 const STREAMING_LOGOS = [
-  { name: "NETFLIX", color: "#E50914", top: "8%", left: "5%", rotate: "-15deg", size: "2.2rem" },
-  { name: "STAN", color: "#0074E0", top: "15%", right: "6%", rotate: "10deg", size: "2rem" },
-  { name: "DISNEY+", color: "#0C3675", top: "40%", left: "2%", rotate: "-8deg", size: "1.8rem" },
-  { name: "PRIME", color: "#00A8E0", top: "60%", right: "4%", rotate: "12deg", size: "1.9rem" },
-  { name: "APPLE TV+", color: "#555555", top: "75%", left: "8%", rotate: "-5deg", size: "1.6rem" },
-  { name: "BINGE", color: "#FF5A00", top: "30%", right: "2%", rotate: "18deg", size: "1.8rem" },
-  { name: "FOXTEL", color: "#00C3E3", top: "85%", right: "10%", rotate: "-12deg", size: "1.7rem" },
-  { name: "PARAMOUNT+", color: "#0064FF", top: "50%", left: "3%", rotate: "8deg", size: "1.6rem" },
+  { name: "NETFLIX", color: "#E50914", top: "10%", left: "3%", rotate: "-15deg", size: "2.8rem" },
+  { name: "STAN", color: "#4FC3F7", top: "18%", right: "4%", rotate: "10deg", size: "2.6rem" },
+  { name: "DISNEY+", color: "#5B9BD5", top: "42%", left: "1%", rotate: "-8deg", size: "2.4rem" },
+  { name: "PRIME VIDEO", color: "#00A8E0", top: "62%", right: "2%", rotate: "12deg", size: "2.2rem" },
+  { name: "APPLE TV+", color: "#aaaaaa", top: "76%", left: "5%", rotate: "-5deg", size: "2.2rem" },
+  { name: "BINGE", color: "#FF7A30", top: "32%", right: "1%", rotate: "18deg", size: "2.4rem" },
+  { name: "FOXTEL", color: "#00D4F5", top: "86%", right: "8%", rotate: "-12deg", size: "2.2rem" },
+  { name: "PARAMOUNT+", color: "#6699FF", top: "52%", left: "2%", rotate: "8deg", size: "2.2rem" },
 ];
 
 export function PosterGridBackground() {
@@ -30,8 +30,8 @@ export function PosterGridBackground() {
             fontWeight: 900,
             letterSpacing: '0.05em',
             color: logo.color,
-            opacity: 0.12,
-            filter: 'blur(3px)',
+            opacity: 0.22,
+            filter: 'blur(2px)',
             fontFamily: 'system-ui, sans-serif',
             whiteSpace: 'nowrap',
           }}
