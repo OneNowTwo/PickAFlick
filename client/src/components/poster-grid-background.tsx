@@ -1,13 +1,13 @@
 // Blurred streaming service logos scattered in background
 const STREAMING_LOGOS = [
-  { name: "NETFLIX",     top: "8%",  left: "6%",   rotate: "-12deg", size: "3rem" },
-  { name: "STAN",        top: "22%", right: "6%",  rotate: "10deg",  size: "2.8rem" },
-  { name: "DISNEY+",     top: "40%", left: "4%",   rotate: "-8deg",  size: "2.6rem" },
-  { name: "PRIME VIDEO", top: "60%", right: "5%",  rotate: "14deg",  size: "2.6rem" },
-  { name: "APPLE TV+",   top: "74%", left: "7%",   rotate: "-6deg",  size: "2.4rem" },
-  { name: "BINGE",       top: "30%", right: "4%",  rotate: "20deg",  size: "2.8rem" },
-  { name: "FOXTEL",      top: "84%", right: "8%",  rotate: "-10deg", size: "2.4rem" },
-  { name: "PARAMOUNT+",  top: "52%", left: "3%",   rotate: "7deg",   size: "2.4rem" },
+  { name: "Netflix",       logo: "/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg", top: "8%",  left: "5%",   rotate: "-12deg", size: 64 },
+  { name: "Stan",          logo: "/sSfxJXq7s8oHf3XWd0FtqagPDsF.jpg",  top: "24%", right: "5%",  rotate: "10deg",  size: 56 },
+  { name: "Disney+",       logo: "/97yvRBw1GzX7fXprcF80er19ot.jpg",   top: "42%", left: "4%",   rotate: "-8deg",  size: 60 },
+  { name: "Prime Video",   logo: "/pvske1MyAoymrs5bguRfVqYiM9a.jpg",  top: "62%", right: "4%",  rotate: "14deg",  size: 56 },
+  { name: "Apple TV+",     logo: "/mcbz1LgtErU9p4UdbZ0rG6RTWHX.jpg",  top: "76%", left: "6%",   rotate: "-6deg",  size: 56 },
+  { name: "Foxtel Now",    logo: "/fejdSG7TwNQ5E0p6u7A6LVs280R.jpg",  top: "32%", right: "4%",  rotate: "18deg",  size: 56 },
+  { name: "Paramount+",   logo: "/h5DcR0J2EESLitnhR8xLG1QymTE.jpg",  top: "54%", left: "3%",   rotate: "7deg",   size: 56 },
+  { name: "9Now",          logo: "/xoId9luelz6lXMQkzLyJf3ssXTL.jpg",  top: "86%", right: "7%",  rotate: "-10deg", size: 52 },
 ];
 
 export function PosterGridBackground() {
@@ -138,16 +138,18 @@ export function PosterGridBackground() {
             left: (logo as any).left,
             right: (logo as any).right,
             transform: `rotate(${logo.rotate})`,
-            fontSize: logo.size,
-            fontWeight: 900,
-            letterSpacing: '0.08em',
-            color: 'rgba(255,255,255,0.45)',
-            filter: 'blur(1px)',
-            fontFamily: 'system-ui, sans-serif',
-            whiteSpace: 'nowrap',
+            opacity: 0.18,
+            filter: 'blur(1.5px)',
           }}
         >
-          {logo.name}
+          <img
+            src={`https://image.tmdb.org/t/p/w92${logo.logo}`}
+            alt={logo.name}
+            width={logo.size}
+            height={logo.size}
+            className="rounded-xl object-contain"
+            draggable={false}
+          />
         </div>
       ))}
     </div>
