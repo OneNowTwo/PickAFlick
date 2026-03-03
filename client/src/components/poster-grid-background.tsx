@@ -1,13 +1,13 @@
-// Blurred streaming service logos scattered in background
+// Floating streaming service logos
 const STREAMING_LOGOS = [
-  { name: "Netflix",       logo: "/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg", top: "8%",  left: "5%",   rotate: "-12deg", size: 64 },
-  { name: "Stan",          logo: "/sSfxJXq7s8oHf3XWd0FtqagPDsF.jpg",  top: "24%", right: "5%",  rotate: "10deg",  size: 56 },
-  { name: "Disney+",       logo: "/97yvRBw1GzX7fXprcF80er19ot.jpg",   top: "42%", left: "4%",   rotate: "-8deg",  size: 60 },
-  { name: "Prime Video",   logo: "/pvske1MyAoymrs5bguRfVqYiM9a.jpg",  top: "62%", right: "4%",  rotate: "14deg",  size: 56 },
-  { name: "Apple TV+",     logo: "/mcbz1LgtErU9p4UdbZ0rG6RTWHX.jpg",  top: "76%", left: "6%",   rotate: "-6deg",  size: 56 },
-  { name: "Foxtel Now",    logo: "/fejdSG7TwNQ5E0p6u7A6LVs280R.jpg",  top: "32%", right: "4%",  rotate: "18deg",  size: 56 },
-  { name: "Paramount+",   logo: "/h5DcR0J2EESLitnhR8xLG1QymTE.jpg",  top: "54%", left: "3%",   rotate: "7deg",   size: 56 },
-  { name: "9Now",          logo: "/xoId9luelz6lXMQkzLyJf3ssXTL.jpg",  top: "86%", right: "7%",  rotate: "-10deg", size: 52 },
+  { name: "Netflix",     logo: "/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg", top: "8%",  left: "5%",   size: 96,  anim: "logo-float-1 20s ease-in-out infinite" },
+  { name: "Stan",        logo: "/sSfxJXq7s8oHf3XWd0FtqagPDsF.jpg",  top: "22%", right: "4%",  size: 84,  anim: "logo-float-2 24s ease-in-out infinite" },
+  { name: "Disney+",     logo: "/97yvRBw1GzX7fXprcF80er19ot.jpg",   top: "42%", left: "4%",   size: 90,  anim: "logo-float-3 22s ease-in-out infinite" },
+  { name: "Prime Video", logo: "/pvske1MyAoymrs5bguRfVqYiM9a.jpg",  top: "60%", right: "3%",  size: 84,  anim: "logo-float-4 19s ease-in-out infinite" },
+  { name: "Apple TV+",   logo: "/mcbz1LgtErU9p4UdbZ0rG6RTWHX.jpg",  top: "76%", left: "6%",   size: 84,  anim: "logo-float-5 26s ease-in-out infinite" },
+  { name: "Foxtel Now",  logo: "/fejdSG7TwNQ5E0p6u7A6LVs280R.jpg",  top: "30%", right: "5%",  size: 84,  anim: "logo-float-6 23s ease-in-out infinite" },
+  { name: "Paramount+",  logo: "/h5DcR0J2EESLitnhR8xLG1QymTE.jpg",  top: "54%", left: "3%",   size: 84,  anim: "logo-float-7 21s ease-in-out infinite" },
+  { name: "9Now",        logo: "/xoId9luelz6lXMQkzLyJf3ssXTL.jpg",  top: "85%", right: "6%",  size: 76,  anim: "logo-float-8 25s ease-in-out infinite" },
 ];
 
 export function PosterGridBackground() {
@@ -128,7 +128,7 @@ export function PosterGridBackground() {
         }}
       />
 
-      {/* Streaming logos — rendered last so they sit above gradient layers */}
+      {/* Streaming logos — floating, rendered above gradient layers */}
       {STREAMING_LOGOS.map((logo) => (
         <div
           key={logo.name}
@@ -137,17 +137,17 @@ export function PosterGridBackground() {
             top: logo.top,
             left: (logo as any).left,
             right: (logo as any).right,
-            transform: `rotate(${logo.rotate})`,
-            opacity: 0.18,
-            filter: 'blur(1.5px)',
+            opacity: 0.22,
+            filter: 'blur(1px)',
+            animation: logo.anim,
           }}
         >
           <img
-            src={`https://image.tmdb.org/t/p/w92${logo.logo}`}
+            src={`https://image.tmdb.org/t/p/w154${logo.logo}`}
             alt={logo.name}
             width={logo.size}
             height={logo.size}
-            className="rounded-xl object-contain"
+            className="rounded-2xl object-contain"
             draggable={false}
           />
         </div>

@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Film, Loader2, Bookmark, Mail, ChevronDown, ChevronUp, Users } from "lucide-react";
 import { Footer } from "@/components/footer";
 import { TestimonialsSection } from "@/components/testimonials";
+import { HowToPlaySection } from "@/components/how-to-play";
+import { FAQSection } from "@/components/faq-section";
 import { Link } from "wouter";
 
 type GameState = "start" | "instructions" | "playing" | "loading-recommendations" | "results";
@@ -227,6 +229,7 @@ export default function Home() {
           <div className="relative py-4 md:py-6">
             <div className="relative z-10 flex flex-col items-center gap-3 text-center w-full max-w-2xl mx-auto">
 
+
               {/* Headline */}
               <div className="px-4 py-4 rounded-lg w-full" style={{ background: 'rgba(0, 0, 0, 0.75)' }}>
                 <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white drop-shadow-lg leading-tight">
@@ -339,6 +342,12 @@ export default function Home() {
                 </span>
               </div>
             </div>
+
+            {/* How to Play — full width marquee */}
+            <HowToPlaySection />
+
+            {/* FAQ — centred, max-w-2xl */}
+            <FAQSection />
           </div>
         )}
 
