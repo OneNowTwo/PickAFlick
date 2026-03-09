@@ -260,19 +260,16 @@ export async function registerRoutes(
         return;
       }
 
-      // Add an extra round as the "cost" of skipping
-      const updatedSession = sessionStorage.addRound(sessionId);
-      if (!updatedSession) {
-        res.status(500).json({ error: "Failed to update session" });
-        return;
-      }
+      // Skip simply replaces the current pair — it does NOT extend the game.
+      // Removing the old addRound call that caused totalRounds to grow unboundedly,
+      // breaking the progress ring and causing perpetual picking.
 
-      // Generate a new pair for the current round (replacing the skipped one)
+      // Generate a new pair for the current round, excluding already-seen movies
+      // plus the pair being skipped so users never see the same pair twice.
       const usedIds = new Set(
         session.choices.flatMap((c) => [c.leftMovie.id, c.rightMovie.id])
       );
       
-      // Also exclude the current pair from the new selection
       const currentPair = sessionPairs.get(sessionId);
       if (currentPair) {
         usedIds.add(currentPair.leftMovie.id);
@@ -300,7 +297,7 @@ export async function registerRoutes(
       res.json({
         success: true,
         round: session.currentRound,
-        totalRounds: updatedSession.totalRounds,
+        totalRounds: session.totalRounds,
         leftMovie: pair[0],
         rightMovie: pair[1],
       });

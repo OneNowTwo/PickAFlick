@@ -463,6 +463,13 @@ export function getRandomMoviePairFiltered(
     return null;
   }
 
-  const shuffled = shuffleArray(available);
+  // Prefer well-known, recognisable films (rating >= 7.0) so the A/B posters
+  // feel familiar and meaningful to users. Fall back to the full filtered pool
+  // if the tier is too small (e.g. very niche genre selections).
+  const RECOGNIZABLE_MIN_RATING = 7.0;
+  const recognizable = available.filter(m => m.rating != null && m.rating >= RECOGNIZABLE_MIN_RATING);
+  const pickPool = recognizable.length >= 4 ? recognizable : available;
+
+  const shuffled = shuffleArray(pickPool);
   return [shuffled[0], shuffled[1]];
 }

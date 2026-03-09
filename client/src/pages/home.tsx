@@ -61,7 +61,12 @@ export default function Home() {
         selectedMoods?: string[];
       };
 
-      if (parsed.gameState && parsed.gameState !== "start") {
+      // Only restore states where we have meaningful data to show.
+      // "instructions" is a transient step tied to a live server session — if the
+      // server restarted (Render cold start / idle shutdown) the session is gone and
+      // the user would be stuck. Always re-enter from "start" in that case.
+      const restorableStates: GameState[] = ["playing", "loading-recommendations", "results"];
+      if (parsed.gameState && restorableStates.includes(parsed.gameState)) {
         setGameState(parsed.gameState);
         setSessionId(parsed.sessionId ?? null);
         setRecommendations(parsed.recommendations ?? null);
@@ -119,6 +124,13 @@ export default function Home() {
     queryKey: ["/api/session", sessionId, "round"],
     queryFn: async () => {
       const res = await fetch(`/api/session/${sessionId}/round`);
+      // Session expired (server restart / cold start) — reset cleanly to start screen
+      if (res.status === 404) {
+        sessionStorage.removeItem("homeState");
+        setGameState("start");
+        setSessionId(null);
+        throw new Error("Session expired");
+      }
       if (!res.ok) throw new Error("Failed to get round");
       return res.json();
     },

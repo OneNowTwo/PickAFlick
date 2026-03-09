@@ -550,7 +550,7 @@ export function RoundPicker({
           data-testid="button-skip-round"
         >
           <Shuffle className="w-4 h-4 mr-2" />
-          Skip & Get New Pair (+1 round)
+          Skip this pair
         </Button>
       )}
 
