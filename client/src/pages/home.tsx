@@ -244,10 +244,10 @@ export default function Home() {
               {/* Headline — separate from interaction area */}
               <div className="px-5 py-5 rounded-xl w-full" style={{ background: 'rgba(0, 0, 0, 0.72)' }}>
                 <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white drop-shadow-lg leading-tight">
-                  What are we watching tonight?
+                  Stop searching. Start watching.
                 </h2>
-                <p className="text-sm text-gray-400 italic mt-2">
-                  &quot;Because choosing your movie shouldn&apos;t take longer than watching it.&quot;
+                <p className="text-sm sm:text-base text-white/80 font-medium mt-3 leading-snug">
+                  Because choosing your movie shouldn&apos;t take longer than watching it.
                 </p>
               </div>
 

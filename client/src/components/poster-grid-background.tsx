@@ -1,19 +1,18 @@
-// Floating streaming service logos — left/right sides, responsive via clamp in CSS
-const STREAMING_LOGOS = [
-  { name: "Netflix",      logo: "/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg", top: "5%",  left: "2%",   anim: "logo-float-1 20s ease-in-out infinite" },
-  { name: "Stan",         logo: "/sSfxJXq7s8oHf3XWd0FtqagPDsF.jpg",  top: "18%", right: "2%",  anim: "logo-float-2 24s ease-in-out infinite" },
-  { name: "Disney+",      logo: "/97yvRBw1GzX7fXprcF80er19ot.jpg",   top: "36%", left: "1%",   anim: "logo-float-3 22s ease-in-out infinite" },
-  { name: "Prime Video",  logo: "/pvske1MyAoymrs5bguRfVqYiM9a.jpg",  top: "55%", right: "1%",  anim: "logo-float-4 19s ease-in-out infinite" },
-  { name: "Apple TV+",    logo: "/mcbz1LgtErU9p4UdbZ0rG6RTWHX.jpg",  top: "73%", left: "2%",   anim: "logo-float-5 26s ease-in-out infinite" },
-  { name: "Foxtel Now",   logo: "/fejdSG7TwNQ5E0p6u7A6LVs280R.jpg",  top: "27%", right: "2%",  anim: "logo-float-6 23s ease-in-out infinite" },
-  { name: "Paramount+",   logo: "/h5DcR0J2EESLitnhR8xLG1QymTE.jpg",  top: "46%", left: "1%",   anim: "logo-float-7 21s ease-in-out infinite" },
-  { name: "9Now",         logo: "/xoId9luelz6lXMQkzLyJf3ssXTL.jpg",  top: "83%", right: "2%",  anim: "logo-float-8 25s ease-in-out infinite" },
-  { name: "Binge",        logo: "/7QX5OdsQZrXGNBKq9SPzoPV9OYQ.jpg",  top: "63%", left: "2%",   anim: "logo-float-9 22s ease-in-out infinite" },
-  { name: "Shudder",      logo: "/vEtdiYRPRbDCp1Tcn3BEPF1Ni76.jpg",  top: "10%", right: "2%",  anim: "logo-float-10 27s ease-in-out infinite" },
-  { name: "HBO Max",      logo: "/jbe4gVSfRlbPTdESXhEKpornsfu.jpg",   top: "90%", left: "2%",   anim: "logo-float-11 20s ease-in-out infinite" },
-  { name: "SBS On Demand",logo: "/cR4okiAS0zcXb4ufs3mi4PImXPB.jpg",  top: "43%", right: "1%",  anim: "logo-float-12 24s ease-in-out infinite" },
-  { name: "ABC iview",    logo: "/zR1TJmEwssf0ZThB2iByNtZi2Oo.jpg",  top: "79%", right: "2%",  anim: "logo-float-13 21s ease-in-out infinite" },
-  { name: "DocPlay",      logo: "/pVoZH9ZMGfrr1Ajk1UD29weO6iA.jpg",  top: "16%", left: "1%",   anim: "logo-float-14 23s ease-in-out infinite" },
+// Iconic movie scene backdrops — floated around the edges of the start screen
+// Using TMDb backdrop images (w780 size, 16:9 aspect ratio)
+const MOVIE_SCENES = [
+  { title: "The Dark Knight",        backdrop: "/hkBaDkMWbLaf8B1lsWsKX7Ew3Xq.jpg", top: "4%",  left: "1%",   anim: "logo-float-1 20s ease-in-out infinite" },
+  { title: "Inception",              backdrop: "/s3TBrRGB1iav7gFOCNx3H31MoES.jpg",  top: "20%", right: "1%",  anim: "logo-float-2 24s ease-in-out infinite" },
+  { title: "Pulp Fiction",           backdrop: "/suaEOtk1N1sgg2QM528GlLY1kkH.jpg", top: "38%", left: "1%",   anim: "logo-float-3 22s ease-in-out infinite" },
+  { title: "Interstellar",           backdrop: "/rAiYTfKGqDCRIIqo664sY9XZIvQ.jpg", top: "56%", right: "1%",  anim: "logo-float-4 19s ease-in-out infinite" },
+  { title: "The Matrix",             backdrop: "/fNG7i7RqMErkcqhohV2a6cV1Ehy.jpg", top: "72%", left: "1%",   anim: "logo-float-5 26s ease-in-out infinite" },
+  { title: "The Shawshank Redemption", backdrop: "/kXfqcdQKsToO0OUXHcrrNCHDBzO.jpg", top: "28%", right: "1%", anim: "logo-float-6 23s ease-in-out infinite" },
+  { title: "The Godfather",          backdrop: "/tmU7GeKVybMWFButWEGl2M4GeiP.jpg", top: "48%", left: "1%",   anim: "logo-float-7 21s ease-in-out infinite" },
+  { title: "Blade Runner 2049",      backdrop: "/ilRyazdMJwN05exqhwK4tMKBYZs.jpg", top: "84%", right: "1%",  anim: "logo-float-8 25s ease-in-out infinite" },
+  { title: "Fight Club",             backdrop: "/rr7E0NoGKxvbkb89eR1GwfoYjpA.jpg", top: "64%", left: "1%",   anim: "logo-float-9 22s ease-in-out infinite" },
+  { title: "Parasite",               backdrop: "/TU9NIjwzjoKPwQHoHshkFcQUCG.jpg",  top: "10%", right: "1%",  anim: "logo-float-10 27s ease-in-out infinite" },
+  { title: "Mad Max: Fury Road",     backdrop: "/phszHPFMBMM5oMiKiSMDMcOuVoN.jpg", top: "90%", left: "1%",   anim: "logo-float-11 20s ease-in-out infinite" },
+  { title: "Avengers: Endgame",      backdrop: "/orjiB3oUIsyz60hoEqkiGpy5CeO.jpg", top: "44%", right: "1%",  anim: "logo-float-12 24s ease-in-out infinite" },
 ];
 
 interface PosterGridBackgroundProps {
@@ -138,24 +137,27 @@ export function PosterGridBackground({ hideLogos = false }: PosterGridBackground
         }}
       />
 
-      {/* Streaming logos — floating, only shown on start screen */}
-      {!hideLogos && STREAMING_LOGOS.map((logo) => (
+      {/* Movie scene backdrops — floating widescreen stills, only on start screen */}
+      {!hideLogos && MOVIE_SCENES.map((scene) => (
         <div
-          key={logo.name}
+          key={scene.title}
           className="absolute select-none"
           style={{
-            top: logo.top,
-            left: (logo as any).left,
-            right: (logo as any).right,
-            opacity: 0.15,
-            animation: logo.anim,
+            top: scene.top,
+            left: (scene as any).left,
+            right: (scene as any).right,
+            opacity: 0.12,
+            animation: scene.anim,
           }}
         >
           <img
-            src={`https://image.tmdb.org/t/p/w154${logo.logo}`}
-            alt={logo.name}
-            className="rounded-2xl object-contain"
-            style={{ width: 'clamp(72px, 9vw, 148px)', height: 'auto' }}
+            src={`https://image.tmdb.org/t/p/w780${scene.backdrop}`}
+            alt={scene.title}
+            className="rounded-xl object-cover"
+            style={{
+              width: 'clamp(120px, 14vw, 220px)',
+              aspectRatio: '16/9',
+            }}
             draggable={false}
           />
         </div>
