@@ -1,18 +1,32 @@
-// Iconic movie scene backdrops — floated around the edges of the start screen.
+// Iconic movie scene backdrops — scattered across the FULL viewport as a mosaic.
+// 5 columns × 4 rows = 20 tiles, staggered so no dead space anywhere.
 // Backdrop paths verified via TMDb API (w780, 16:9).
 const MOVIE_SCENES = [
-  { title: "The Dark Knight",          backdrop: "/dqK9Hag1054tghRQSqLSfrkvQnA.jpg", top: "4%",  left: "2%",   anim: "logo-float-1 20s ease-in-out infinite" },
-  { title: "Inception",                backdrop: "/8ZTVqvKDQ8emSGUEMjsS4yHAwrp.jpg", top: "22%", right: "2%",  anim: "logo-float-2 24s ease-in-out infinite" },
-  { title: "Pulp Fiction",             backdrop: "/suaEOtk1N1sgg2MTM7oZd2cfVp3.jpg", top: "40%", left: "2%",   anim: "logo-float-3 22s ease-in-out infinite" },
-  { title: "Interstellar",             backdrop: "/2ssWTSVklAEc98frZUQhgtGHx7s.jpg", top: "58%", right: "2%",  anim: "logo-float-4 19s ease-in-out infinite" },
-  { title: "The Matrix",               backdrop: "/tlm8UkiQsitc8rSuIAscQDCnP8d.jpg", top: "74%", left: "2%",   anim: "logo-float-5 26s ease-in-out infinite" },
-  { title: "The Shawshank Redemption", backdrop: "/zfbjgQE1uSd9wiPTX4VzsLi0rGG.jpg", top: "30%", right: "2%", anim: "logo-float-6 23s ease-in-out infinite" },
-  { title: "The Godfather",            backdrop: "/tSPT36ZKlP2WVHJLM4cQPLSzv3b.jpg", top: "50%", left: "2%",  anim: "logo-float-7 21s ease-in-out infinite" },
-  { title: "Blade Runner 2049",        backdrop: "/askFH4GSk2u9z3ZE5ypdKIMeqLJ.jpg", top: "86%", right: "2%", anim: "logo-float-8 25s ease-in-out infinite" },
-  { title: "Fight Club",               backdrop: "/xRyINp9KfMLVjRiO5nCsoRDdvvF.jpg", top: "66%", left: "2%",  anim: "logo-float-9 22s ease-in-out infinite" },
-  { title: "Parasite",                 backdrop: "/hiKmpZMGZsrkA3cdce8a7Dpos1j.jpg", top: "12%", right: "2%", anim: "logo-float-10 27s ease-in-out infinite" },
-  { title: "Mad Max: Fury Road",       backdrop: "/l0eIS009XtEO80aC6zjM3o3AkEl.jpg", top: "90%", left: "2%",  anim: "logo-float-11 20s ease-in-out infinite" },
-  { title: "Avengers: Endgame",        backdrop: "/7RyHsO4yDXtBv1zUU3mTpHeQ0d5.jpg", top: "46%", right: "2%", anim: "logo-float-12 24s ease-in-out infinite" },
+  // Column 1 — far left
+  { title: "The Dark Knight",          backdrop: "/dqK9Hag1054tghRQSqLSfrkvQnA.jpg", top: "0%",   left: "0%",  anim: "logo-float-1 20s ease-in-out infinite" },
+  { title: "Pulp Fiction",             backdrop: "/suaEOtk1N1sgg2MTM7oZd2cfVp3.jpg", top: "26%",  left: "0%",  anim: "logo-float-3 22s ease-in-out infinite" },
+  { title: "The Godfather",            backdrop: "/tSPT36ZKlP2WVHJLM4cQPLSzv3b.jpg", top: "52%",  left: "0%",  anim: "logo-float-7 21s ease-in-out infinite" },
+  { title: "Mad Max: Fury Road",       backdrop: "/l0eIS009XtEO80aC6zjM3o3AkEl.jpg", top: "78%",  left: "0%",  anim: "logo-float-11 20s ease-in-out infinite" },
+  // Column 2 — left-centre
+  { title: "Inception",                backdrop: "/8ZTVqvKDQ8emSGUEMjsS4yHAwrp.jpg", top: "13%",  left: "21%", anim: "logo-float-2 24s ease-in-out infinite" },
+  { title: "Fight Club",               backdrop: "/xRyINp9KfMLVjRiO5nCsoRDdvvF.jpg", top: "39%",  left: "21%", anim: "logo-float-9 22s ease-in-out infinite" },
+  { title: "Parasite",                 backdrop: "/hiKmpZMGZsrkA3cdce8a7Dpos1j.jpg", top: "65%",  left: "21%", anim: "logo-float-10 27s ease-in-out infinite" },
+  { title: "The Matrix",               backdrop: "/tlm8UkiQsitc8rSuIAscQDCnP8d.jpg", top: "88%",  left: "21%", anim: "logo-float-5 26s ease-in-out infinite" },
+  // Column 3 — centre
+  { title: "Interstellar",             backdrop: "/2ssWTSVklAEc98frZUQhgtGHx7s.jpg", top: "0%",   left: "42%", anim: "logo-float-4 19s ease-in-out infinite" },
+  { title: "Blade Runner 2049",        backdrop: "/askFH4GSk2u9z3ZE5ypdKIMeqLJ.jpg", top: "26%",  left: "42%", anim: "logo-float-8 25s ease-in-out infinite" },
+  { title: "Avengers: Endgame",        backdrop: "/7RyHsO4yDXtBv1zUU3mTpHeQ0d5.jpg", top: "52%",  left: "42%", anim: "logo-float-12 24s ease-in-out infinite" },
+  { title: "The Dark Knight",          backdrop: "/dqK9Hag1054tghRQSqLSfrkvQnA.jpg", top: "78%",  left: "42%", anim: "logo-float-6 23s ease-in-out infinite" },
+  // Column 4 — right-centre
+  { title: "The Shawshank Redemption", backdrop: "/zfbjgQE1uSd9wiPTX4VzsLi0rGG.jpg", top: "13%",  left: "63%", anim: "logo-float-6 23s ease-in-out infinite" },
+  { title: "Inception",                backdrop: "/8ZTVqvKDQ8emSGUEMjsS4yHAwrp.jpg", top: "39%",  left: "63%", anim: "logo-float-2 24s ease-in-out infinite" },
+  { title: "Pulp Fiction",             backdrop: "/suaEOtk1N1sgg2MTM7oZd2cfVp3.jpg", top: "65%",  left: "63%", anim: "logo-float-3 22s ease-in-out infinite" },
+  { title: "Interstellar",             backdrop: "/2ssWTSVklAEc98frZUQhgtGHx7s.jpg", top: "88%",  left: "63%", anim: "logo-float-4 19s ease-in-out infinite" },
+  // Column 5 — far right
+  { title: "Fight Club",               backdrop: "/xRyINp9KfMLVjRiO5nCsoRDdvvF.jpg", top: "0%",   left: "80%", anim: "logo-float-9 22s ease-in-out infinite" },
+  { title: "The Matrix",               backdrop: "/tlm8UkiQsitc8rSuIAscQDCnP8d.jpg", top: "26%",  left: "80%", anim: "logo-float-5 26s ease-in-out infinite" },
+  { title: "Mad Max: Fury Road",       backdrop: "/l0eIS009XtEO80aC6zjM3o3AkEl.jpg", top: "52%",  left: "80%", anim: "logo-float-11 20s ease-in-out infinite" },
+  { title: "Parasite",                 backdrop: "/hiKmpZMGZsrkA3cdce8a7Dpos1j.jpg", top: "78%",  left: "80%", anim: "logo-float-10 27s ease-in-out infinite" },
 ];
 
 interface PosterGridBackgroundProps {
@@ -137,25 +151,24 @@ export function PosterGridBackground({ hideLogos = false }: PosterGridBackground
         }}
       />
 
-      {/* Movie scene backdrops — floating widescreen stills, only on start screen */}
-      {!hideLogos && MOVIE_SCENES.map((scene) => (
+      {/* Movie scene mosaic — full-viewport tiled backdrops, only on start screen */}
+      {!hideLogos && MOVIE_SCENES.map((scene, i) => (
         <div
-          key={scene.title}
+          key={`${scene.title}-${i}`}
           className="absolute select-none"
           style={{
             top: scene.top,
-            left: (scene as any).left,
-            right: (scene as any).right,
-            opacity: 0.12,
+            left: scene.left,
+            opacity: 0.13,
             animation: scene.anim,
           }}
         >
           <img
             src={`https://image.tmdb.org/t/p/w780${scene.backdrop}`}
             alt={scene.title}
-            className="rounded-xl object-cover shadow-lg"
+            className="rounded-lg object-cover"
             style={{
-              width: 'clamp(160px, 18vw, 300px)',
+              width: 'clamp(200px, 21vw, 340px)',
               aspectRatio: '16/9',
             }}
             draggable={false}
