@@ -4,6 +4,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { setupAuth } from "./auth";
+import { pool } from "./db";
 
 const app = express();
 const httpServer = createServer(app);
@@ -77,6 +78,24 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Ensure all required tables exist before starting (safe to run on every startup)
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        google_id TEXT NOT NULL UNIQUE,
+        email TEXT NOT NULL UNIQUE,
+        display_name TEXT NOT NULL,
+        avatar_url TEXT,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS session_id TEXT;
+    `);
+    console.log("[startup] Schema check complete");
+  } catch (err) {
+    console.error("[startup] Schema check failed:", err);
+  }
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
