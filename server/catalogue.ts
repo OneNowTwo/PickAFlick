@@ -198,6 +198,7 @@ async function buildCatalogue(): Promise<void> {
         allMovies.push(...newReleaseMovies);
         console.log(`Got ${newReleaseMovies.length} New Releases movies total`);
       }
+
     } else {
       // IMDb scraping failed, use TMDb fallback
       console.log("IMDb scraping failed, falling back to TMDb API...");

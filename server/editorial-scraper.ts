@@ -102,7 +102,10 @@ function parseGenericTitleYear(html: string): EditorialListItem[] {
   const genericPattern = /(?:^|\n)\s*[#\d.]*\s*["']?([^"'\n]{2,80})["']?\s*\((\d{4})\)/gm;
   let match;
   while ((match = genericPattern.exec(html)) !== null) {
-    const raw = match[1].trim();
+    const raw = match[1].trim()
+      // Strip leading list numbering: "49) " or "1. " or "49: "
+      .replace(/^\d+[.):\s]+/, "")
+      .trim();
     const title = decodeHtmlEntities(stripHtmlTags(raw));
     const year = parseInt(match[2], 10);
     if (title && title.length > 1 && year >= 1900 && year <= 2030) {

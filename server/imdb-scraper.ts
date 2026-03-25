@@ -72,9 +72,78 @@ const IMDB_LISTS = [
   { id: "ls072723334", name: "Family" }, // Best Rated Family Movies
 ];
 
+/** Recursively find an array of movie items anywhere in the __NEXT_DATA__ JSON */
+function findMovieItemsDeep(obj: any, depth = 0): any[] {
+  if (depth > 20 || !obj || typeof obj !== "object") return [];
+
+  // If it's an array, check if it looks like a list of movie items
+  if (Array.isArray(obj) && obj.length > 0) {
+    const sample = obj[0];
+    if (
+      sample?.titleText?.text ||
+      sample?.item?.titleText?.text ||
+      sample?.listItem?.titleText?.text ||
+      sample?.node?.titleText?.text ||
+      sample?.node?.item?.titleText?.text ||
+      sample?.node?.listItem?.titleText?.text ||
+      sample?.originalTitleText?.text
+    ) {
+      return obj;
+    }
+  }
+
+  // Search high-priority keys first
+  const priority = ["items", "edges", "results", "titleListItemSearch", "predefinedList", "listMainColumnData", "contentData", "pageData", "serverData", "mainColumnData"];
+  for (const key of priority) {
+    if (key in obj) {
+      const found = findMovieItemsDeep(obj[key], depth + 1);
+      if (found.length > 0) return found;
+    }
+  }
+
+  // Then search everything else
+  for (const [key, val] of Object.entries(obj)) {
+    if (!priority.includes(key) && typeof val === "object") {
+      const found = findMovieItemsDeep(val, depth + 1);
+      if (found.length > 0) return found;
+    }
+  }
+
+  return [];
+}
+
+/** Extract title + year from one movie item regardless of field naming */
+function extractTitleYear(item: any): { title: string; year: number | undefined } | null {
+  const titleText =
+    item?.titleText?.text ||
+    item?.item?.titleText?.text ||
+    item?.listItem?.titleText?.text ||
+    item?.node?.titleText?.text ||
+    item?.node?.item?.titleText?.text ||
+    item?.node?.listItem?.titleText?.text ||
+    item?.originalTitleText?.text ||
+    item?.item?.originalTitleText?.text ||
+    item?.node?.item?.originalTitleText?.text ||
+    item?.primaryTitle ||
+    item?.title;
+
+  const year =
+    item?.releaseYear?.year ||
+    item?.item?.releaseYear?.year ||
+    item?.listItem?.releaseYear?.year ||
+    item?.node?.releaseYear?.year ||
+    item?.node?.item?.releaseYear?.year ||
+    item?.node?.listItem?.releaseYear?.year ||
+    item?.startYear ||
+    item?.year;
+
+  if (!titleText || typeof titleText !== "string") return null;
+  return { title: decodeHtmlEntities(titleText), year: typeof year === "number" ? year : undefined };
+}
+
 async function fetchIMDbList(listId: string): Promise<IMDbListItem[]> {
   const url = `https://www.imdb.com/list/${listId}/`;
-  
+
   try {
     const response = await fetch(url, {
       headers: {
@@ -97,99 +166,108 @@ async function fetchIMDbList(listId: string): Promise<IMDbListItem[]> {
     }
 
     const html = await response.text();
+
+    if (html.length < 3000) {
+      console.warn(`IMDb list ${listId}: response too short (${html.length} chars) — likely blocked`);
+      return [];
+    }
+
     const items: IMDbListItem[] = [];
 
-    // Try parsing __NEXT_DATA__ JSON (modern IMDb uses Next.js)
+    // ── Method 1: __NEXT_DATA__ with deep search ───────────────────────────
     const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">([^<]+)<\/script>/);
     if (nextDataMatch) {
       try {
         const nextData = JSON.parse(nextDataMatch[1]);
-        const listItems = nextData?.props?.pageProps?.list?.items || 
-                          nextData?.props?.pageProps?.mainColumnData?.predefinedList?.titleListItemSearch?.edges ||
-                          [];
-        
+        const listItems = findMovieItemsDeep(nextData);
+
         for (const item of listItems) {
-          const titleText = item?.item?.titleText?.text || 
-                           item?.listItem?.titleText?.text ||
-                           item?.node?.item?.titleText?.text ||
-                           item?.node?.listItem?.titleText?.text;
-          const year = item?.item?.releaseYear?.year || 
-                      item?.listItem?.releaseYear?.year ||
-                      item?.node?.item?.releaseYear?.year ||
-                      item?.node?.listItem?.releaseYear?.year;
-          
-          if (titleText) {
-            items.push({
-              title: decodeHtmlEntities(titleText),
-              year: year || undefined,
-            });
-          }
+          const extracted = extractTitleYear(item);
+          if (extracted) items.push(extracted);
         }
-        
+
         if (items.length > 0) {
-          console.log(`Parsed ${items.length} movies from __NEXT_DATA__ for list ${listId}`);
+          console.log(`Parsed ${items.length} movies via __NEXT_DATA__ deep search for list ${listId}`);
         }
       } catch (e) {
-        console.log("Failed to parse __NEXT_DATA__, trying other methods");
+        console.log(`Failed to parse __NEXT_DATA__ for ${listId}`);
       }
     }
 
-    // Try JSON-LD structured data
+    // ── Method 2: JSON-LD structured data ─────────────────────────────────
     if (items.length === 0) {
-      const jsonLdMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
-      if (jsonLdMatch) {
+      const jsonLdMatches = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
+      for (const m of jsonLdMatches) {
         try {
-          const jsonData = JSON.parse(jsonLdMatch[1]);
+          const jsonData = JSON.parse(m[1]);
           if (jsonData.itemListElement && Array.isArray(jsonData.itemListElement)) {
-            for (const item of jsonData.itemListElement) {
-              if (item.item && item.item.name) {
-                const yearMatch = item.item.name.match(/\((\d{4})\)/);
+            for (const entry of jsonData.itemListElement) {
+              const name = entry?.item?.name || entry?.name;
+              if (name) {
+                const yearMatch = String(name).match(/\((\d{4})\)/);
                 items.push({
-                  title: decodeHtmlEntities(item.item.name.replace(/\s*\(\d{4}\)\s*$/, "").trim()),
+                  title: decodeHtmlEntities(String(name).replace(/\s*\(\d{4}\)\s*$/, "").trim()),
                   year: yearMatch ? parseInt(yearMatch[1]) : undefined,
                 });
               }
             }
           }
-        } catch (e) {
-          console.log("Failed to parse JSON-LD");
+          if (items.length > 0) break;
+        } catch {}
+      }
+      if (items.length > 0) console.log(`Parsed ${items.length} movies via JSON-LD for list ${listId}`);
+    }
+
+    // ── Method 3: Multiple inline JSON patterns ────────────────────────────
+    if (items.length === 0) {
+      const jsonPatterns: RegExp[] = [
+        // Standard IMDb __NEXT_DATA__ field names
+        /"titleText"\s*:\s*\{\s*"text"\s*:\s*"([^"]+)"[^}]*\}[^}]*"releaseYear"\s*:\s*\{\s*"year"\s*:\s*(\d{4})/g,
+        // Alternate: originalTitleText
+        /"originalTitleText"\s*:\s*\{\s*"text"\s*:\s*"([^"]+)"[^}]*\}[^}]*"releaseYear"\s*:\s*\{\s*"year"\s*:\s*(\d{4})/g,
+        // IMDb API v2: primaryTitle + startYear
+        /"primaryTitle"\s*:\s*"([^"]+)"[^}]*"startYear"\s*:\s*(\d{4})/g,
+        // Simple title + year objects
+        /"title"\s*:\s*"([A-Z][^"]{1,100})"\s*,\s*"year"\s*:\s*(\d{4})/g,
+      ];
+
+      for (const pattern of jsonPatterns) {
+        pattern.lastIndex = 0;
+        let match;
+        const patternItems: IMDbListItem[] = [];
+        while ((match = pattern.exec(html)) !== null) {
+          const title = decodeHtmlEntities(match[1]);
+          if (title && title.length > 1 && !title.startsWith("/") && !title.includes("http")) {
+            patternItems.push({ title, year: parseInt(match[2]) });
+          }
+        }
+        if (patternItems.length > 5) {
+          items.push(...patternItems);
+          console.log(`Parsed ${patternItems.length} movies via inline JSON pattern for list ${listId}`);
+          break;
         }
       }
     }
 
-    // Try extracting from inline JSON data patterns
+    // ── Method 4: HTML aria-label fallback ────────────────────────────────
     if (items.length === 0) {
-      const titleYearRegex = /"titleText":\s*\{\s*"text"\s*:\s*"([^"]+)"\s*\}[^}]*"releaseYear":\s*\{\s*"year"\s*:\s*(\d{4})/g;
+      const ariaRegex = /aria-label="([^"]+)"\s[^>]*>\s*(?:[^<]*<[^>]+>)*[^<]*\((\d{4})\)/g;
       let match;
-      while ((match = titleYearRegex.exec(html)) !== null) {
-        items.push({
-          title: decodeHtmlEntities(match[1]),
-          year: parseInt(match[2]),
-        });
-      }
-    }
-
-    // Fallback: Try extracting title/year from visible HTML
-    if (items.length === 0) {
-      const listItemRegex = /data-testid="list-page-mc-list-item"[\s\S]*?aria-label="([^"]+)"[\s\S]*?\((\d{4})\)/g;
-      let match;
-      while ((match = listItemRegex.exec(html)) !== null) {
-        items.push({
-          title: decodeHtmlEntities(match[1].trim()),
-          year: parseInt(match[2]),
-        });
-      }
-    }
-
-    // Another fallback pattern for h3 titles
-    if (items.length === 0) {
-      const altRegex = /<a[^>]*href="\/title\/tt\d+\/?"[^>]*class="[^"]*ipc-title-link-wrapper[^"]*"[^>]*>[\s\S]*?<h3[^>]*>([^<]+)<\/h3>/g;
-      let match;
-      while ((match = altRegex.exec(html)) !== null) {
-        const title = decodeHtmlEntities(match[1].replace(/^\d+\.\s*/, '').trim());
+      while ((match = ariaRegex.exec(html)) !== null) {
+        const title = decodeHtmlEntities(match[1].trim());
         if (title && title.length > 1) {
-          items.push({ title, year: undefined });
+          items.push({ title, year: parseInt(match[2]) });
         }
+      }
+    }
+
+    // ── Method 5: ipc-title-link h3 fallback ──────────────────────────────
+    if (items.length === 0) {
+      const h3Regex = /<a[^>]*href="\/title\/tt\d+\/?"[^>]*class="[^"]*ipc-title-link-wrapper[^"]*"[^>]*>[\s\S]*?<h3[^>]*>([^<]+)<\/h3>/g;
+      let match;
+      while ((match = h3Regex.exec(html)) !== null) {
+        const title = decodeHtmlEntities(match[1].replace(/^\d+[.)]\s*/, "").trim());
+        if (title && title.length > 1) items.push({ title, year: undefined });
       }
     }
 
