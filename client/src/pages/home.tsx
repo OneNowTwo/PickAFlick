@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { StartSessionResponse, RoundPairResponse, ChoiceResponse, RecommendationsResponse } from "@shared/schema";
@@ -6,13 +6,14 @@ import { RoundPicker } from "@/components/round-picker";
 import { ResultsScreen } from "@/components/results-screen";
 import { PosterGridBackground } from "@/components/poster-grid-background";
 import { GameInstructions } from "@/components/game-instructions";
+import { AuthPromptModal } from "@/components/auth-prompt-modal";
 import { Button } from "@/components/ui/button";
-import { Film, Loader2, Bookmark, Mail, ChevronDown, ChevronUp, Users, LogIn, LogOut } from "lucide-react";
+import { Film, Loader2, Bookmark, Mail, ChevronDown, ChevronUp, Users } from "lucide-react";
 import { Footer } from "@/components/footer";
 import { TestimonialsSection } from "@/components/testimonials";
 import { HowToPlaySection } from "@/components/how-to-play";
 import { FAQSection } from "@/components/faq-section";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 
 type GameState = "start" | "instructions" | "playing" | "loading-recommendations" | "results";
@@ -49,6 +50,10 @@ export default function Home() {
   const [recommendations, setRecommendations] = useState<RecommendationsResponse | null>(null);
   const [selectedMoods, setSelectedMoods] = useState<string[]>([]);
   const [showMoreGenres, setShowMoreGenres] = useState(false);
+  const [showAuthPrompt, setShowAuthPrompt] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const authPromptShownRef = useRef(false);
+  const [, navigate] = useLocation();
 
 
   useEffect(() => {
@@ -209,6 +214,19 @@ export default function Home() {
     setGameState("playing");
   }, []);
 
+  // Show auth prompt once after the first completed voting flow if not signed in
+  useEffect(() => {
+    if (
+      gameState === "results" &&
+      !authLoading &&
+      !user &&
+      !authPromptShownRef.current
+    ) {
+      authPromptShownRef.current = true;
+      setShowAuthPrompt(true);
+    }
+  }, [gameState, user, authLoading]);
+
   return (
     <div className="min-h-screen w-full flex flex-col">
       <PosterGridBackground hideLogos={gameState !== "start"} />
@@ -221,49 +239,78 @@ export default function Home() {
           >
             <img src="/logo.png" alt="WhatWeWatching" className="w-48 md:w-64 h-auto" />
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <Link href="/contact">
               <Button variant="ghost" className="gap-2" data-testid="button-contact">
                 <Mail className="w-4 h-4" />
                 <span className="hidden sm:inline">Contact</span>
               </Button>
             </Link>
-            <Link href="/watchlist?from=home">
-              <Button variant="ghost" className="gap-2" data-testid="button-watchlist">
-                <Bookmark className="w-4 h-4" />
-                <span className="hidden sm:inline">My Watchlist</span>
-              </Button>
-            </Link>
+
             {!authLoading && (
               user ? (
-                <div className="flex items-center gap-2">
-                  {user.avatarUrl && (
-                    <img
-                      src={user.avatarUrl}
-                      alt={user.displayName}
-                      className="w-8 h-8 rounded-full object-cover hidden sm:block"
-                    />
-                  )}
-                  <Button
-                    variant="ghost"
-                    className="gap-2"
-                    onClick={() => logout()}
-                    data-testid="button-logout"
+                // Signed-in: avatar + first name + dropdown
+                <div className="relative">
+                  <button
+                    onClick={() => setShowUserMenu(v => !v)}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-white/5 transition-colors"
+                    data-testid="button-user-menu"
                   >
-                    <LogOut className="w-4 h-4" />
-                    <span className="hidden sm:inline">Sign out</span>
-                  </Button>
+                    {user.avatarUrl ? (
+                      <img
+                        src={user.avatarUrl}
+                        alt={user.displayName}
+                        className="w-7 h-7 rounded-full object-cover flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center flex-shrink-0">
+                        <span className="text-primary text-xs font-bold">
+                          {user.displayName.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                    )}
+                    <span className="hidden sm:inline text-sm text-white/80 font-medium">
+                      {user.displayName.split(" ")[0]}
+                    </span>
+                    <ChevronDown className="w-3.5 h-3.5 text-white/40" />
+                  </button>
+
+                  {showUserMenu && (
+                    <>
+                      {/* Backdrop to close on outside click */}
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setShowUserMenu(false)}
+                      />
+                      <div className="absolute right-0 top-full mt-1 z-50 w-44 bg-black/95 border border-white/10 rounded-lg py-1 shadow-xl">
+                        <button
+                          onClick={() => { setShowUserMenu(false); navigate("/watchlist?from=home"); }}
+                          className="w-full text-left px-4 py-2.5 text-sm text-white/80 hover:text-white hover:bg-white/5 flex items-center gap-2 transition-colors"
+                        >
+                          <Bookmark className="w-4 h-4" />
+                          My Watchlist
+                        </button>
+                        <div className="border-t border-white/5 my-1" />
+                        <button
+                          onClick={() => { setShowUserMenu(false); logout(); }}
+                          className="w-full text-left px-4 py-2.5 text-sm text-white/50 hover:text-white/80 hover:bg-white/5 flex items-center gap-2 transition-colors"
+                          data-testid="button-logout"
+                        >
+                          Sign Out
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : (
-                <Button
-                  variant="outline"
-                  className="gap-2 text-xs sm:text-sm"
+                // Signed-out: plain text link
+                <button
                   onClick={login}
+                  className="text-sm text-white/60 hover:text-white transition-colors px-2 py-1.5"
                   data-testid="button-google-login"
                 >
-                  <LogIn className="w-4 h-4" />
-                  <span>Sign in</span>
-                </Button>
+                  Sign In
+                </button>
               )
             )}
           </div>
@@ -462,6 +509,10 @@ export default function Home() {
         )}
       </main>
       <Footer />
+
+      {showAuthPrompt && (
+        <AuthPromptModal onSkip={() => setShowAuthPrompt(false)} />
+      )}
     </div>
   );
 }
