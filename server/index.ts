@@ -1,13 +1,19 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { setupAuth } from "./auth";
 import { pool } from "./db";
 
+const PgSession = connectPgSimple(session);
+
 const app = express();
 const httpServer = createServer(app);
+
+// Required for secure cookies to work behind Render's HTTPS proxy
+app.set("trust proxy", 1);
 
 declare module "http" {
   interface IncomingMessage {
@@ -27,12 +33,18 @@ app.use(express.urlencoded({ extended: false }));
 
 app.use(
   session({
+    store: new PgSession({
+      pool,                    // use the existing DB connection pool
+      tableName: "user_sessions",
+      createTableIfMissing: true, // auto-create sessions table on first run
+    }),
     secret: process.env.SESSION_SECRET || "pickaflick-dev-secret-change-in-prod",
     resave: false,
     saveUninitialized: false,
     cookie: {
       secure: process.env.NODE_ENV === "production",
       httpOnly: true,
+      sameSite: process.env.NODE_ENV === "production" ? "lax" : false,
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     },
   })

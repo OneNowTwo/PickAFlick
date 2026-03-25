@@ -227,6 +227,13 @@ export default function Home() {
     }
   }, [gameState, user, authLoading]);
 
+  // Auto-dismiss the modal as soon as the user becomes authenticated
+  useEffect(() => {
+    if (user && showAuthPrompt) {
+      setShowAuthPrompt(false);
+    }
+  }, [user, showAuthPrompt]);
+
   return (
     <div className="min-h-screen w-full flex flex-col">
       <PosterGridBackground hideLogos={gameState !== "start"} />
