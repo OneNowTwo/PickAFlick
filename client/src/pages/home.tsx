@@ -512,6 +512,7 @@ export default function Home() {
             isLoading={gameState === "loading-recommendations"}
             onPlayAgain={handlePlayAgain}
             sessionId={sessionId}
+            suppressTrailer={showAuthPrompt}
           />
         )}
       </main>

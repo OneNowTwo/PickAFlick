@@ -52,10 +52,11 @@ interface ResultsScreenProps {
   recommendations: RecommendationsResponse | null;
   isLoading: boolean;
   onPlayAgain: () => void;
-  sessionId?: string | null; // Needed for replacement requests
+  sessionId?: string | null;
+  suppressTrailer?: boolean; // hide iframe when an overlay modal is open (YouTube z-index fix)
 }
 
-export function ResultsScreen({ recommendations, isLoading, onPlayAgain, sessionId }: ResultsScreenProps) {
+export function ResultsScreen({ recommendations, isLoading, onPlayAgain, sessionId, suppressTrailer = false }: ResultsScreenProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [likedMovies, setLikedMovies] = useState<Set<number>>(new Set());
   const [maybeMovies, setMaybeMovies] = useState<Set<number>>(new Set());
@@ -477,7 +478,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                 }
               };
               
-              if (currentTrailerUrl && autoPlayTrailer && !allTrailersFailed) {
+              if (currentTrailerUrl && autoPlayTrailer && !allTrailersFailed && !suppressTrailer) {
                 const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
                 const muteParam = (isMobile && !hasInteracted) ? 1 : 0;
                 

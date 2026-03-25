@@ -34,9 +34,8 @@ app.use(express.urlencoded({ extended: false }));
 app.use(
   session({
     store: new PgSession({
-      pool,                    // use the existing DB connection pool
+      pool,
       tableName: "user_sessions",
-      createTableIfMissing: true, // auto-create sessions table on first run
     }),
     secret: process.env.SESSION_SECRET || "pickaflick-dev-secret-change-in-prod",
     resave: false,
@@ -102,6 +101,13 @@ app.use((req, res, next) => {
         created_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
       ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS session_id TEXT;
+      CREATE TABLE IF NOT EXISTS user_sessions (
+        sid VARCHAR NOT NULL COLLATE "default",
+        sess JSON NOT NULL,
+        expire TIMESTAMP(6) NOT NULL,
+        CONSTRAINT user_sessions_pkey PRIMARY KEY (sid) NOT DEFERRABLE INITIALLY IMMEDIATE
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_sessions_expire ON user_sessions (expire);
     `);
     console.log("[startup] Schema check complete");
   } catch (err) {
