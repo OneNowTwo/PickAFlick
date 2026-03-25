@@ -225,6 +225,14 @@ export function RoundPicker({
       setAddedToWatchlist(prev => new Set(prev).add(movie.tmdbId));
       queryClient.invalidateQueries({ queryKey: ["/api/watchlist", watchlistSessionId] });
     },
+    onError: (_err, movie) => {
+      // Remove optimistic state if save failed
+      setAddedToWatchlist(prev => {
+        const next = new Set(prev);
+        next.delete(movie.tmdbId);
+        return next;
+      });
+    },
   });
 
   const handleSelect = (side: "left" | "right", movieId: number) => {

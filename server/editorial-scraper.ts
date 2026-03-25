@@ -37,12 +37,24 @@ const EDITORIAL_SOURCES: EditorialSource[] = [
   { url: "https://www.indiewire.com/feature/best-romance-movies-ranked-1201849113/", listName: "Romance", pattern: /##\s+"([^"]+)"\s+\([^)]*(\d{4})\)/g },
 ];
 
+function stripHtmlTags(text: string): string {
+  return text.replace(/<[^>]+>/g, "").trim();
+}
+
 function decodeHtmlEntities(text: string): string {
   return text
+    // Named entities
     .replace(/&amp;/g, "&")
     .replace(/&apos;/g, "'")
     .replace(/&#39;/g, "'")
     .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ")
+    // Numeric decimal entities (e.g. &#8220; &#8216;)
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
+    // Numeric hex entities (e.g. &#x2019;)
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)))
     .trim();
 }
 
@@ -72,14 +84,12 @@ function parseWithPattern(html: string, source: EditorialSource): EditorialListI
   let match;
 
   while ((match = pattern.exec(html)) !== null) {
-    const title = (match[1] || "").trim();
+    const raw = (match[1] || "").trim();
+    const title = decodeHtmlEntities(stripHtmlTags(raw));
     const year = parseInt(match[2], 10);
 
     if (title && title.length > 1 && year >= 1900 && year <= 2030) {
-      items.push({
-        title: decodeHtmlEntities(title),
-        year,
-      });
+      items.push({ title, year });
     }
   }
 
@@ -92,10 +102,11 @@ function parseGenericTitleYear(html: string): EditorialListItem[] {
   const genericPattern = /(?:^|\n)\s*[#\d.]*\s*["']?([^"'\n]{2,80})["']?\s*\((\d{4})\)/gm;
   let match;
   while ((match = genericPattern.exec(html)) !== null) {
-    const title = match[1].trim();
+    const raw = match[1].trim();
+    const title = decodeHtmlEntities(stripHtmlTags(raw));
     const year = parseInt(match[2], 10);
-    if (title && year >= 1900 && year <= 2030) {
-      items.push({ title: decodeHtmlEntities(title), year });
+    if (title && title.length > 1 && year >= 1900 && year <= 2030) {
+      items.push({ title, year });
     }
   }
   return items;

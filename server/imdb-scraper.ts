@@ -3,8 +3,12 @@ interface IMDbListItem {
   year: number | undefined;
 }
 
+function stripHtmlTags(text: string): string {
+  return text.replace(/<[^>]+>/g, "").trim();
+}
+
 function decodeHtmlEntities(text: string): string {
-  return text
+  return stripHtmlTags(text)
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
@@ -13,7 +17,11 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&apos;/g, "'")
     .replace(/&#x27;/g, "'")
     .replace(/&#x2F;/g, "/")
-    .replace(/&nbsp;/g, " ");
+    .replace(/&nbsp;/g, " ")
+    // Numeric decimal entities (e.g. &#8220; &#8216; &#8217; &#8221;)
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
+    // Numeric hex entities
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)));
 }
 
 const IMDB_LISTS = [

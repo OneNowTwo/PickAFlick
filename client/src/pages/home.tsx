@@ -7,12 +7,13 @@ import { ResultsScreen } from "@/components/results-screen";
 import { PosterGridBackground } from "@/components/poster-grid-background";
 import { GameInstructions } from "@/components/game-instructions";
 import { Button } from "@/components/ui/button";
-import { Film, Loader2, Bookmark, Mail, ChevronDown, ChevronUp, Users } from "lucide-react";
+import { Film, Loader2, Bookmark, Mail, ChevronDown, ChevronUp, Users, LogIn, LogOut } from "lucide-react";
 import { Footer } from "@/components/footer";
 import { TestimonialsSection } from "@/components/testimonials";
 import { HowToPlaySection } from "@/components/how-to-play";
 import { FAQSection } from "@/components/faq-section";
 import { Link } from "wouter";
+import { useAuth } from "@/contexts/AuthContext";
 
 type GameState = "start" | "instructions" | "playing" | "loading-recommendations" | "results";
 
@@ -42,6 +43,7 @@ const MOOD_OPTIONS = [
 ];
 
 export default function Home() {
+  const { user, loading: authLoading, login, logout } = useAuth();
   const [gameState, setGameState] = useState<GameState>("start");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [recommendations, setRecommendations] = useState<RecommendationsResponse | null>(null);
@@ -232,6 +234,38 @@ export default function Home() {
                 <span className="hidden sm:inline">My Watchlist</span>
               </Button>
             </Link>
+            {!authLoading && (
+              user ? (
+                <div className="flex items-center gap-2">
+                  {user.avatarUrl && (
+                    <img
+                      src={user.avatarUrl}
+                      alt={user.displayName}
+                      className="w-8 h-8 rounded-full object-cover hidden sm:block"
+                    />
+                  )}
+                  <Button
+                    variant="ghost"
+                    className="gap-2"
+                    onClick={() => logout()}
+                    data-testid="button-logout"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span className="hidden sm:inline">Sign out</span>
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  className="gap-2 text-xs sm:text-sm"
+                  onClick={login}
+                  data-testid="button-google-login"
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span>Sign in</span>
+                </Button>
+              )
+            )}
           </div>
         </div>
       </header>

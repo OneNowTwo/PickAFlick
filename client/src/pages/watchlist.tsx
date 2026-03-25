@@ -30,6 +30,8 @@ export default function Watchlist() {
       return res.json();
     },
     enabled: !!watchlistSessionId,
+    staleTime: 0, // Always fetch fresh when the page loads
+    refetchOnMount: true,
   });
 
   const { data: watchProviders, isLoading: isLoadingProviders } = useQuery<WatchProvidersResponse>({

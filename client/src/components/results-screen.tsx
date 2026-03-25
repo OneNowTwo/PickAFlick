@@ -211,6 +211,13 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         description: "Movie saved to your watchlist!",
       });
     },
+    onError: () => {
+      toast({
+        title: "Couldn't save",
+        description: "Failed to add to watchlist. Please try again.",
+        variant: "destructive",
+      });
+    },
   });
 
   // Share mutation - generates link and shows share card
