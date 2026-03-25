@@ -153,7 +153,9 @@ async function buildCatalogue(): Promise<void> {
       const listMovies: Movie[] = [];
 
       for (const item of items.slice(0, 200)) {
-        const movie = await resolveMovieFromTitle(item.title, item.year, listName);
+        // Strip leading number prefixes like "49) " or "1. " produced by some editorial scrapers
+        const cleanTitle = item.title.replace(/^\d+[.):\s]+/, "").trim();
+        const movie = await resolveMovieFromTitle(cleanTitle, item.year, listName);
         if (movie && movie.posterPath && movie.posterPath.trim() && movie.rating && movie.rating >= 6.0) {
           if (movie.original_language && asianLanguages.includes(movie.original_language)) {
             console.log(`Filtered out "${movie.title}" - Asian language film (${movie.original_language})`);
@@ -173,40 +175,55 @@ async function buildCatalogue(): Promise<void> {
       console.log(`Resolved ${listMovies.length} movies for ${listName}`);
     }
 
-    // Supplement any genre with fewer than MIN_GENRE_MOVIES using TMDb discover
-    // This fills gaps when editorial/IMDb sources fail for a genre, without replacing working ones
+    // Supplement any genre with fewer than MIN_GENRE_MOVIES using TMDb discover.
+    // Curated sources are preferred; TMDb fills gaps. 4 pages ≈ 80 movies per genre.
     const MIN_GENRE_MOVIES = 10;
-    const TMDB_GENRE_MAP: Record<string, { genreIds: number[] }> = {
-      "Action":            { genreIds: [28] },
-      "Comedy":            { genreIds: [35] },
-      "Classic Movies":    { genreIds: [18, 80] },   // Drama + Crime — classic feel
-      "Critically Acclaimed": { genreIds: [18] },
-      "Indie Films":       { genreIds: [18, 10749] },
-      "Western":           { genreIds: [37] },
-      "Thriller":          { genreIds: [53] },
-      "War":               { genreIds: [10752] },
-      "Documentary":       { genreIds: [99] },
-      "Family":            { genreIds: [10751] },
-      "Top 250 Movies":    { genreIds: [18, 28, 35, 53] }, // broad mix
-      "Fantasy":           { genreIds: [14] },
-      "Horror":            { genreIds: [27] },
-      "Romance":           { genreIds: [10749] },
-      "Sci-Fi":            { genreIds: [878] },
+    const SUPPLEMENT_PAGES = 4;
+
+    // Each genre maps to a TMDb config. genreIds are joined with | (OR logic in TMDb).
+    // Special value genreIds: [] means use getTopRatedMovies (no genre filter).
+    const TMDB_GENRE_MAP: Record<string, { genreIds: number[]; minRating?: number }> = {
+      "Action":               { genreIds: [28] },
+      "Comedy":               { genreIds: [35] },
+      "Classic Movies":       { genreIds: [18, 80, 53, 37] }, // Drama|Crime|Thriller|Western
+      "Critically Acclaimed": { genreIds: [], minRating: 7.8 }, // Top-rated, no genre filter
+      "Indie Films":          { genreIds: [18, 53], minRating: 7.0 },
+      "Western":              { genreIds: [37] },
+      "Thriller":             { genreIds: [53] },
+      "War":                  { genreIds: [10752] },
+      "Documentary":          { genreIds: [99] },
+      "Family":               { genreIds: [10751] },
+      "Top 250 Movies":       { genreIds: [], minRating: 7.8 }, // Top-rated, no genre filter
+      "Fantasy":              { genreIds: [14] },
+      "Horror":               { genreIds: [27] },
+      "Romance":              { genreIds: [10749] },
+      "Sci-Fi":               { genreIds: [878] },
     };
 
     for (const [listName, genreCfg] of Object.entries(TMDB_GENRE_MAP)) {
       const existing = (grouped[listName] || []).length;
       if (existing < MIN_GENRE_MOVIES) {
-        console.log(`${listName} has only ${existing} movies — supplementing with TMDb discover...`);
+        console.log(`${listName} has only ${existing} movies — supplementing with TMDb...`);
         const supplementMovies: Movie[] = [];
-        for (let page = 1; page <= 2 && supplementMovies.length < 40; page++) {
-          const movies = await discoverMovies(listName, {
-            genreIds: genreCfg.genreIds,
-            minRating: 6.5,
-            page,
-          });
-          supplementMovies.push(...movies);
+
+        for (let page = 1; page <= SUPPLEMENT_PAGES; page++) {
+          let pageMovies: Movie[];
+          if (genreCfg.genreIds.length === 0) {
+            // Use top-rated endpoint (no genre filter) — for Top 250 / Critically Acclaimed
+            pageMovies = await getTopRatedMovies(listName, page);
+            if (genreCfg.minRating) {
+              pageMovies = pageMovies.filter(m => m.rating != null && m.rating >= genreCfg.minRating!);
+            }
+          } else {
+            pageMovies = await discoverMovies(listName, {
+              genreIds: genreCfg.genreIds,
+              minRating: genreCfg.minRating ?? 6.5,
+              page,
+            });
+          }
+          supplementMovies.push(...pageMovies);
         }
+
         if (supplementMovies.length > 0) {
           const prev = grouped[listName] || [];
           const existingIds = new Set(prev.map(m => m.tmdbId));
@@ -386,7 +403,7 @@ export function getAllMovies(): Movie[] {
 
 // Get a random pair of movies for a round
 export function getRandomMoviePair(excludeIds: Set<number> = new Set()): [Movie, Movie] | null {
-  const available = cache.allMovies.filter((m) => !excludeIds.has(m.id));
+  const available = cache.allMovies.filter((m) => !excludeIds.has(m.id) && (!m.year || m.year >= 1980));
   
   if (available.length < 2) {
     return null;
@@ -410,6 +427,7 @@ export function getRandomMoviePairFiltered(
     // Surprise Me — no genre filters. Optionally restrict to English-language films.
     available = cache.allMovies.filter((m) => {
       if (excludeIds.has(m.id)) return false;
+      if (!m.year || m.year < 1980) return false;
       if (englishOnly && m.original_language && m.original_language !== 'en') return false;
       return true;
     });
@@ -417,6 +435,7 @@ export function getRandomMoviePairFiltered(
     // Filter by genres and/or top picks and/or new releases
     available = cache.allMovies.filter((m) => {
       if (excludeIds.has(m.id)) return false;
+      if (!m.year || m.year < 1980) return false;
       
       // Check if movie is from top picks lists (Top Rated, Popular Now)
       const isTopPick = m.listSource === "Top Rated" || m.listSource === "Popular Now";
@@ -460,31 +479,30 @@ export function getRandomMoviePairFiltered(
   if (available.length < 2) {
     console.log(`Not enough filtered movies (${available.length}), expanding search...`);
     
-    // Try expanding to ALL genres (not just primary 2) - still respect Horror/Indie/etc filters
+    // Try expanding to ALL genres (not just primary) - still respect Horror/Indie/etc filters
     available = cache.allMovies.filter((m) => {
       if (excludeIds.has(m.id)) return false;
-      
+      if (!m.year || m.year < 1980) return false;
+
       const isTopPick = m.listSource === "Top Rated" || m.listSource === "Popular Now";
       const isNewRelease = m.listSource === "New Releases";
       const isIndie = genres.includes("Indie") && m.listSource === "Indie Films";
       
-      // Check list source (exact match only)
       const isFromGenreList = genres.some(g => {
         if (g === "Indie") return false;
         return m.listSource === g;
       });
       
-      // Check PRIMARY movie genre (first in array)
       const genreFilters = genres.filter(g => g !== "Indie");
       const matchesGenre = genreFilters.length > 0 && m.genres.length > 0 && genreFilters.includes(m.genres[0]);
       
       return matchesGenre || isIndie || isFromGenreList || (includeTopPicks && isTopPick) || (includeNewReleases && isNewRelease);
     });
     
-    // If STILL not enough, only then use all movies
+    // If STILL not enough, use all post-1980 movies
     if (available.length < 2) {
       console.log("Still not enough, using all available movies");
-      available = cache.allMovies.filter((m) => !excludeIds.has(m.id));
+      available = cache.allMovies.filter((m) => !excludeIds.has(m.id) && (!m.year || m.year >= 1980));
     }
   }
   

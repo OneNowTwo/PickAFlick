@@ -317,7 +317,8 @@ export async function discoverMovies(
     };
 
     if (options.genreIds && options.genreIds.length > 0) {
-      params.with_genres = options.genreIds.join(",");
+      // Use | (OR) so a movie only needs to match one of the genres, not all of them
+      params.with_genres = options.genreIds.join("|");
     }
 
     const data = await tmdbFetch<{ results: TMDbSearchResult[] }>("/discover/movie", params);
