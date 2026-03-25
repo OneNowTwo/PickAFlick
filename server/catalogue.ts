@@ -292,26 +292,32 @@ export async function initCatalogue(): Promise<void> {
     
     if (dbCache) {
       const cacheAge = (Date.now() - new Date(dbCache.updatedAt).getTime()) / (1000 * 60 * 60);
-      console.log(`Found database cache (${cacheAge.toFixed(1)} hours old)`);
-      
-      // Load cached data immediately
       const cachedMovies: Movie[] = JSON.parse(dbCache.movies);
       const cachedGrouped: Record<string, Movie[]> = JSON.parse(dbCache.grouped);
-      
-      cache.allMovies = cachedMovies;
-      cache.grouped = cachedGrouped;
-      cache.lastUpdated = new Date(dbCache.updatedAt);
-      cache.buildComplete = true;
-      selectNewCatalogue();
-      
-      console.log(`Loaded ${cachedMovies.length} movies from database cache - ready to serve!`);
-      
-      // If cache is stale, rebuild in background (but don't block startup)
-      if (cacheAge > CATALOGUE_TTL_HOURS) {
-        console.log("Cache is stale, rebuilding in background...");
-        buildCatalogueAndSave().catch(err => console.error("Background rebuild failed:", err));
+
+      // Discard cache if it looks broken (too few movies — scraper must have failed)
+      const MIN_HEALTHY_CATALOGUE = 100;
+      if (cachedMovies.length < MIN_HEALTHY_CATALOGUE) {
+        console.log(`Cache has only ${cachedMovies.length} movies (below ${MIN_HEALTHY_CATALOGUE} minimum) — discarding and rebuilding...`);
+        await storage.clearCatalogueCache().catch(() => {});
+      } else {
+        console.log(`Found database cache (${cacheAge.toFixed(1)} hours old, ${cachedMovies.length} movies)`);
+
+        cache.allMovies = cachedMovies;
+        cache.grouped = cachedGrouped;
+        cache.lastUpdated = new Date(dbCache.updatedAt);
+        cache.buildComplete = true;
+        selectNewCatalogue();
+
+        console.log(`Loaded ${cachedMovies.length} movies from database cache - ready to serve!`);
+
+        // If cache is stale, rebuild in background (but don't block startup)
+        if (cacheAge > CATALOGUE_TTL_HOURS) {
+          console.log("Cache is stale, rebuilding in background...");
+          buildCatalogueAndSave().catch(err => console.error("Background rebuild failed:", err));
+        }
+        return;
       }
-      return;
     }
   } catch (error) {
     console.log("No database cache found, will build fresh catalogue");
