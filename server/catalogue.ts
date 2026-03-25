@@ -143,69 +143,93 @@ async function buildCatalogue(): Promise<void> {
       imdbMovies.set(listName, [...existing, ...items]);
     }
 
-    let allMovies: Movie[] = [];
-    let grouped: Record<string, Movie[]> = {};
-    let usedTMDbFallback = false;
+    const allMovies: Movie[] = [];
+    const grouped: Record<string, Movie[]> = {};
 
-    // Check if IMDb scraping returned any movies
-    let imdbTotalCount = 0;
-    for (const [, items] of Array.from(imdbMovies.entries())) {
-      imdbTotalCount += items.length;
+    // Process all curated sources (IMDb + editorial) regardless of count
+    const asianLanguages = ['ko', 'ja', 'zh', 'th', 'vi'];
+    for (const [listName, items] of Array.from(imdbMovies.entries())) {
+      console.log(`Processing ${listName}: ${items.length} movies`);
+      const listMovies: Movie[] = [];
+
+      for (const item of items.slice(0, 200)) {
+        const movie = await resolveMovieFromTitle(item.title, item.year, listName);
+        if (movie && movie.posterPath && movie.posterPath.trim() && movie.rating && movie.rating >= 6.0) {
+          if (movie.original_language && asianLanguages.includes(movie.original_language)) {
+            console.log(`Filtered out "${movie.title}" - Asian language film (${movie.original_language})`);
+          } else {
+            listMovies.push(movie);
+          }
+        } else if (movie && (!movie.posterPath || !movie.posterPath.trim())) {
+          console.log(`Filtered out "${movie.title}" - no poster`);
+        } else if (movie && movie.rating && movie.rating < 6.0) {
+          console.log(`Filtered out "${movie.title}" - rating ${movie.rating} below 6.0`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      grouped[listName] = listMovies;
+      allMovies.push(...listMovies);
+      console.log(`Resolved ${listMovies.length} movies for ${listName}`);
     }
 
-    if (imdbTotalCount > 0) {
-      // IMDb scraping worked, use it
-      // NO rating filters - accept all movies from curated IMDb lists
-      
-      for (const [listName, items] of Array.from(imdbMovies.entries())) {
-        console.log(`Processing ${listName}: ${items.length} movies`);
-        const listMovies: Movie[] = [];
+    // Supplement any genre with fewer than MIN_GENRE_MOVIES using TMDb discover
+    // This fills gaps when editorial/IMDb sources fail for a genre, without replacing working ones
+    const MIN_GENRE_MOVIES = 10;
+    const TMDB_GENRE_MAP: Record<string, { genreIds: number[] }> = {
+      "Action":            { genreIds: [28] },
+      "Comedy":            { genreIds: [35] },
+      "Classic Movies":    { genreIds: [18, 80] },   // Drama + Crime — classic feel
+      "Critically Acclaimed": { genreIds: [18] },
+      "Indie Films":       { genreIds: [18, 10749] },
+      "Western":           { genreIds: [37] },
+      "Thriller":          { genreIds: [53] },
+      "War":               { genreIds: [10752] },
+      "Documentary":       { genreIds: [99] },
+      "Family":            { genreIds: [10751] },
+      "Top 250 Movies":    { genreIds: [18, 28, 35, 53] }, // broad mix
+      "Fantasy":           { genreIds: [14] },
+      "Horror":            { genreIds: [27] },
+      "Romance":           { genreIds: [10749] },
+      "Sci-Fi":            { genreIds: [878] },
+    };
 
-        for (const item of items.slice(0, 200)) {
-          const movie = await resolveMovieFromTitle(item.title, item.year, listName);
-          // Filter out movies without posters, low ratings, or Korean/Asian language films
-          if (movie && movie.posterPath && movie.posterPath.trim() && movie.rating && movie.rating >= 6.0) {
-            // Filter out Korean, Japanese, Chinese, Thai movies (original_language check)
-            const asianLanguages = ['ko', 'ja', 'zh', 'th', 'vi'];
-            if (movie.original_language && asianLanguages.includes(movie.original_language)) {
-              console.log(`Filtered out "${movie.title}" - Asian language film (${movie.original_language})`);
-            } else {
-              listMovies.push(movie);
-            }
-          } else if (movie && (!movie.posterPath || !movie.posterPath.trim())) {
-            console.log(`Filtered out "${movie.title}" - no poster`);
-          } else if (movie && movie.rating && movie.rating < 6.0) {
-            console.log(`Filtered out "${movie.title}" - rating ${movie.rating} below 6.0`);
-          }
-          await new Promise((resolve) => setTimeout(resolve, 100));
+    for (const [listName, genreCfg] of Object.entries(TMDB_GENRE_MAP)) {
+      const existing = (grouped[listName] || []).length;
+      if (existing < MIN_GENRE_MOVIES) {
+        console.log(`${listName} has only ${existing} movies — supplementing with TMDb discover...`);
+        const supplementMovies: Movie[] = [];
+        for (let page = 1; page <= 2 && supplementMovies.length < 40; page++) {
+          const movies = await discoverMovies(listName, {
+            genreIds: genreCfg.genreIds,
+            minRating: 6.5,
+            page,
+          });
+          supplementMovies.push(...movies);
         }
+        if (supplementMovies.length > 0) {
+          const prev = grouped[listName] || [];
+          const existingIds = new Set(prev.map(m => m.tmdbId));
+          const fresh = supplementMovies.filter(m => !existingIds.has(m.tmdbId));
+          grouped[listName] = [...prev, ...fresh];
+          allMovies.push(...fresh);
+          console.log(`  Added ${fresh.length} TMDb movies to ${listName} (total: ${grouped[listName].length})`);
+        }
+      }
+    }
 
-        grouped[listName] = listMovies;
-        allMovies.push(...listMovies);
-        console.log(`Resolved ${listMovies.length} movies for ${listName}`);
-      }
-      
-      // Always add New Releases from TMDb (Now Playing) even when IMDb works
-      console.log("Adding New Releases from TMDb...");
-      const newReleaseMovies: Movie[] = [];
-      for (let page = 1; page <= 2; page++) {
-        const movies = await getNowPlayingMovies("New Releases", page);
-        newReleaseMovies.push(...movies);
-        console.log(`  Page ${page}: ${movies.length} movies`);
-      }
-      if (newReleaseMovies.length > 0) {
-        grouped["New Releases"] = newReleaseMovies;
-        allMovies.push(...newReleaseMovies);
-        console.log(`Got ${newReleaseMovies.length} New Releases movies total`);
-      }
-
-    } else {
-      // IMDb scraping failed, use TMDb fallback
-      console.log("IMDb scraping failed, falling back to TMDb API...");
-      usedTMDbFallback = true;
-      const tmdbResult = await buildCatalogueFromTMDb();
-      allMovies = tmdbResult.allMovies;
-      grouped = tmdbResult.grouped;
+    // Always add New Releases from TMDb (Now Playing)
+    console.log("Adding New Releases from TMDb...");
+    const newReleaseMovies: Movie[] = [];
+    for (let page = 1; page <= 2; page++) {
+      const movies = await getNowPlayingMovies("New Releases", page);
+      newReleaseMovies.push(...movies);
+      console.log(`  Page ${page}: ${movies.length} movies`);
+    }
+    if (newReleaseMovies.length > 0) {
+      grouped["New Releases"] = newReleaseMovies;
+      allMovies.push(...newReleaseMovies);
+      console.log(`Got ${newReleaseMovies.length} New Releases movies total`);
     }
 
     // Deduplicate allMovies by tmdbId to prevent same movie appearing twice
@@ -223,8 +247,6 @@ async function buildCatalogue(): Promise<void> {
     if (allMovies.length === 0) {
       cache.buildError = "Failed to load movies. Please check your TMDB_API_KEY and try again.";
       console.error("Catalogue build completed but no movies were loaded!");
-    } else if (usedTMDbFallback) {
-      console.log("Using TMDb fallback catalogue successfully");
     }
 
     selectNewCatalogue();
