@@ -72,6 +72,92 @@ const IMDB_LISTS = [
   { id: "ls072723334", name: "Family" }, // Best Rated Family Movies
 ];
 
+const IMDB_REQUEST_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Cache-Control": "no-cache",
+};
+
+/** Parse a single CSV line respecting quoted fields */
+function parseCSVLine(line: string): string[] {
+  const fields: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { field += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === "," && !inQuotes) {
+      fields.push(field); field = "";
+    } else {
+      field += ch;
+    }
+  }
+  fields.push(field);
+  return fields;
+}
+
+/**
+ * Primary method: fetch the list via IMDb's CSV export endpoint.
+ * This is structured data and much harder to block than HTML scraping.
+ * Returns title + year for every movie in the list.
+ */
+async function fetchIMDbListCSV(listId: string): Promise<IMDbListItem[]> {
+  const url = `https://www.imdb.com/list/${listId}/export`;
+  try {
+    const response = await fetch(url, {
+      headers: {
+        ...IMDB_REQUEST_HEADERS,
+        "Accept": "text/csv,text/plain,*/*",
+        "Referer": `https://www.imdb.com/list/${listId}/`,
+      },
+    });
+
+    if (!response.ok) {
+      console.log(`IMDb CSV export ${listId}: HTTP ${response.status}`);
+      return [];
+    }
+
+    const text = await response.text();
+    if (text.length < 100 || !text.includes(",")) {
+      console.log(`IMDb CSV export ${listId}: empty/invalid response`);
+      return [];
+    }
+
+    const lines = text.split("\n").filter(l => l.trim());
+    if (lines.length < 2) return [];
+
+    // Discover column indices from header row
+    const header = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase());
+    const titleIdx = header.findIndex(h => h === "title");
+    const yearIdx  = header.findIndex(h => h === "year");
+
+    if (titleIdx === -1) {
+      console.log(`IMDb CSV export ${listId}: no Title column found`);
+      return [];
+    }
+
+    const items: IMDbListItem[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const fields = parseCSVLine(lines[i]);
+      const title = fields[titleIdx]?.trim();
+      const yearRaw = yearIdx >= 0 ? parseInt(fields[yearIdx], 10) : NaN;
+      if (title && title.length > 0) {
+        items.push({ title, year: isNaN(yearRaw) ? undefined : yearRaw });
+      }
+    }
+
+    if (items.length > 0) {
+      console.log(`Fetched ${items.length} movies via CSV export for list ${listId}`);
+    }
+    return items;
+  } catch (error) {
+    console.error(`CSV export error for ${listId}:`, error);
+    return [];
+  }
+}
+
 /** Recursively find an array of movie items anywhere in the __NEXT_DATA__ JSON */
 function findMovieItemsDeep(obj: any, depth = 0): any[] {
   if (depth > 20 || !obj || typeof obj !== "object") return [];
@@ -142,15 +228,17 @@ function extractTitleYear(item: any): { title: string; year: number | undefined 
 }
 
 async function fetchIMDbList(listId: string): Promise<IMDbListItem[]> {
-  const url = `https://www.imdb.com/list/${listId}/`;
+  // ── Try CSV export first (structured data, not scraping) ──────────────
+  const csvItems = await fetchIMDbListCSV(listId);
+  if (csvItems.length > 0) return csvItems;
 
+  // ── Fall back to HTML scraping ─────────────────────────────────────────
+  const url = `https://www.imdb.com/list/${listId}/`;
   try {
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        ...IMDB_REQUEST_HEADERS,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Cache-Control": "no-cache",
         "Pragma": "no-cache",
         "Sec-Fetch-Dest": "document",
         "Sec-Fetch-Mode": "navigate",
