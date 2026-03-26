@@ -413,7 +413,8 @@ export default function Home() {
         {/* ── GENRE SELECT STEP ── */}
         {gameState === "genre-select" && (
           <div className="relative py-6">
-            <div className="relative z-10 flex flex-col items-center gap-6 text-center w-full max-w-2xl mx-auto">
+            {/* Extra bottom padding on mobile so content clears the fixed Start Picking bar */}
+            <div className="relative z-10 flex flex-col items-center gap-6 text-center w-full max-w-2xl mx-auto pb-28 md:pb-0">
 
               {/* Back link */}
               <button
@@ -449,7 +450,7 @@ export default function Home() {
                             key={mood.id}
                             onClick={() => toggleMood(mood.id)}
                             variant={isSelected ? "default" : "outline"}
-                            className={`h-11 text-sm font-medium transition-all duration-150 ${
+                            className={`h-9 md:h-11 text-sm font-medium transition-all duration-150 ${
                               isSelected
                                 ? "bg-primary text-primary-foreground border-primary shadow-[0_0_14px_rgba(220,38,38,0.6)] scale-105"
                                 : "bg-white/5 border-white/12 text-white/80 hover:bg-white/10 hover:border-white/35 hover:scale-[1.03]"
@@ -473,13 +474,6 @@ export default function Home() {
                       <><ChevronDown className="w-3.5 h-3.5" /> More genres ({MOOD_OPTIONS.length - TOP_GENRE_IDS.length} more)</>
                     )}
                   </button>
-
-                  {/* Divider */}
-                  <div className="flex items-center gap-3 w-full">
-                    <div className="flex-1 h-px bg-white/10" />
-                    <span className="text-[11px] text-white/50 font-semibold uppercase tracking-[0.18em]">or</span>
-                    <div className="flex-1 h-px bg-white/10" />
-                  </div>
 
                   {/* Surprise Me inside genre step */}
                   <Button
@@ -536,12 +530,12 @@ export default function Home() {
 
             {/* Fixed bottom bar — mobile only, appears when at least one genre is selected */}
             {selectedMoods.length > 0 && (
-              <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] bg-black/90 backdrop-blur border-t border-white/10">
+              <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-black/90 backdrop-blur border-t border-white/10">
                 <Button
                   size="lg"
                   onClick={() => handleStart(false)}
                   disabled={startSessionMutation.isPending}
-                  className="w-full h-14 text-base font-bold gap-2 shadow-[0_0_24px_rgba(220,38,38,0.45)] active:scale-95 transition-all duration-200"
+                  className="w-full h-[52px] text-base font-bold gap-2 shadow-[0_0_24px_rgba(220,38,38,0.45)] active:scale-95 transition-all duration-200"
                   data-testid="button-start-game-mobile"
                 >
                   {startSessionMutation.isPending ? (
