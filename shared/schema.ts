@@ -38,6 +38,21 @@ export const usersRelations = relations(users, ({ many }) => ({
 export type UserVote = typeof userVotes.$inferSelect;
 export type InsertUserVote = typeof userVotes.$inferInsert;
 
+// User-based watchlist (requires login — separate from the legacy session-based watchlist)
+export const userWatchlist = pgTable("user_watchlist", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  tmdbId: integer("tmdb_id").notNull(),
+  title: text("title").notNull(),
+  posterPath: text("poster_path"),
+  releaseYear: integer("release_year"),
+  genres: text("genres").array().notNull().default([]),
+  addedAt: timestamp("added_at").defaultNow().notNull(),
+});
+
+export type UserWatchlistItem = typeof userWatchlist.$inferSelect;
+export type InsertUserWatchlistItem = typeof userWatchlist.$inferInsert;
+
 // Shared recommendations table for shareable results
 export const sharedRecommendations = pgTable("shared_recommendations", {
   id: serial("id").primaryKey(),

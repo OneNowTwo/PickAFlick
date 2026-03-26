@@ -6,7 +6,6 @@ import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useWatchlistSession } from "@/hooks/use-watchlist-session";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { ShareCard } from "./share-card";
 import { AuthPromptModal } from "./auth-prompt-modal";
@@ -77,7 +76,6 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   const [loadingStage, setLoadingStage] = useState("Analyzing your choices…");
   const [hasInteracted, setHasInteracted] = useState(false); // Track if user has clicked anything
   const { toast } = useToast();
-  const watchlistSessionId = useWatchlistSession();
 
   // Track when results screen loads with recommendations
   useEffect(() => {
@@ -204,15 +202,18 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   const addToWatchlistMutation = useMutation({
     mutationFn: async (movie: { tmdbId: number; title: string; year: number | null; posterPath: string | null; genres: string[]; rating: number | null }) => {
       const res = await apiRequest("POST", "/api/watchlist", {
-        ...movie,
-        sessionId: watchlistSessionId,
+        tmdbId: movie.tmdbId,
+        title: movie.title,
+        posterPath: movie.posterPath,
+        releaseYear: movie.year,
+        genres: movie.genres,
       });
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/watchlist", watchlistSessionId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/watchlist"] });
       toast({
-        title: "Added to watchlist",
+        title: "Saved to watchlist ✓",
         description: "Movie saved to your watchlist!",
       });
     },

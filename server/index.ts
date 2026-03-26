@@ -5,6 +5,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { setupAuth } from "./auth";
+import { setupWatchlistRoutes } from "./watchlist";
 import { pool } from "./db";
 
 const PgSession = connectPgSimple(session);
@@ -123,11 +124,26 @@ app.use((req, res, next) => {
       );
       CREATE INDEX IF NOT EXISTS idx_user_votes_user_id ON user_votes (user_id);
       CREATE INDEX IF NOT EXISTS idx_user_votes_session_id ON user_votes (session_id);
+      CREATE TABLE IF NOT EXISTS user_watchlist (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        poster_path TEXT,
+        release_year INTEGER,
+        genres TEXT[] NOT NULL DEFAULT '{}',
+        added_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        UNIQUE (user_id, tmdb_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_watchlist_user_id ON user_watchlist (user_id);
     `);
     console.log("[startup] Schema check complete");
   } catch (err) {
     console.error("[startup] Schema check failed:", err);
   }
+
+  // Auth-gated user watchlist — registered before legacy session-based routes so they match first
+  setupWatchlistRoutes(app);
 
   await registerRoutes(httpServer, app);
 
