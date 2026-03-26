@@ -300,10 +300,11 @@ export default function Home() {
                   )}
                 </div>
               ) : (
-                // Signed-out: plain text link
+                // Signed-out: subtle outlined button
                 <button
                   onClick={login}
-                  className="text-sm text-white/60 hover:text-white transition-colors px-2 py-1.5"
+                  className="text-sm text-white font-medium px-3 py-1.5 rounded-md border transition-colors hover:bg-white/5"
+                  style={{ borderColor: "hsl(var(--primary))" }}
                   data-testid="button-google-login"
                 >
                   Sign In
@@ -409,6 +410,19 @@ export default function Home() {
                         );
                       })}
                   </div>
+
+                  {/* Benefits nudge — logged-out users only */}
+                  {!user && (
+                    <p className="text-xs text-white/40 text-center leading-relaxed">
+                      Sign in free to save picks, build your taste profile and get smarter recommendations every Friday night.{" "}
+                      <button
+                        onClick={login}
+                        className="text-white/60 hover:text-white underline underline-offset-2 transition-colors"
+                      >
+                        Sign in with Google →
+                      </button>
+                    </p>
+                  )}
 
                   <button
                     onClick={() => setShowMoreGenres(v => !v)}
