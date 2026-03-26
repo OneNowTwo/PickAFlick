@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { StartSessionResponse, RoundPairResponse, ChoiceResponse, RecommendationsResponse } from "@shared/schema";
@@ -6,7 +6,6 @@ import { RoundPicker } from "@/components/round-picker";
 import { ResultsScreen } from "@/components/results-screen";
 import { PosterGridBackground } from "@/components/poster-grid-background";
 import { GameInstructions } from "@/components/game-instructions";
-import { AuthPromptModal } from "@/components/auth-prompt-modal";
 import { Button } from "@/components/ui/button";
 import { Film, Loader2, Bookmark, Mail, ChevronDown, ChevronUp, Users } from "lucide-react";
 import { Footer } from "@/components/footer";
@@ -50,9 +49,7 @@ export default function Home() {
   const [recommendations, setRecommendations] = useState<RecommendationsResponse | null>(null);
   const [selectedMoods, setSelectedMoods] = useState<string[]>([]);
   const [showMoreGenres, setShowMoreGenres] = useState(false);
-  const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const authPromptShownRef = useRef(false);
   const [, navigate] = useLocation();
 
 
@@ -214,25 +211,6 @@ export default function Home() {
     setGameState("playing");
   }, []);
 
-  // Show auth prompt once after the first completed voting flow if not signed in
-  useEffect(() => {
-    if (
-      gameState === "results" &&
-      !authLoading &&
-      !user &&
-      !authPromptShownRef.current
-    ) {
-      authPromptShownRef.current = true;
-      setShowAuthPrompt(true);
-    }
-  }, [gameState, user, authLoading]);
-
-  // Auto-dismiss the modal as soon as the user becomes authenticated
-  useEffect(() => {
-    if (user && showAuthPrompt) {
-      setShowAuthPrompt(false);
-    }
-  }, [user, showAuthPrompt]);
 
   return (
     <div className="min-h-screen w-full flex flex-col">
@@ -512,15 +490,11 @@ export default function Home() {
             isLoading={gameState === "loading-recommendations"}
             onPlayAgain={handlePlayAgain}
             sessionId={sessionId}
-            suppressTrailer={showAuthPrompt}
           />
         )}
       </main>
       <Footer />
 
-      {showAuthPrompt && (
-        <AuthPromptModal onSkip={() => setShowAuthPrompt(false)} />
-      )}
     </div>
   );
 }

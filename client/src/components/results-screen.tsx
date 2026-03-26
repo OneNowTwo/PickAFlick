@@ -9,6 +9,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useWatchlistSession } from "@/hooks/use-watchlist-session";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { ShareCard } from "./share-card";
+import { AuthPromptModal } from "./auth-prompt-modal";
+import { useAuth } from "@/contexts/AuthContext";
 
 // Generate personalized reveal message based on preference profile
 function generateRevealMessage(profile: RecommendationsResponse["preferenceProfile"]): string {
@@ -57,6 +59,8 @@ interface ResultsScreenProps {
 }
 
 export function ResultsScreen({ recommendations, isLoading, onPlayAgain, sessionId, suppressTrailer = false }: ResultsScreenProps) {
+  const { user } = useAuth();
+  const [authModalHeading, setAuthModalHeading] = useState<string | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [likedMovies, setLikedMovies] = useState<Set<number>>(new Set());
   const [maybeMovies, setMaybeMovies] = useState<Set<number>>(new Set());
@@ -336,6 +340,10 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   };
 
   const handleLike = () => {
+    if (!user) {
+      setAuthModalHeading("Save your picks & build your taste profile");
+      return;
+    }
     const movie = currentRec.movie;
     const movieId = movie.id;
     const newLiked = new Set(likedMovies);
@@ -478,7 +486,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                 }
               };
               
-              if (currentTrailerUrl && autoPlayTrailer && !allTrailersFailed && !suppressTrailer) {
+              if (currentTrailerUrl && autoPlayTrailer && !allTrailersFailed && !suppressTrailer && !authModalHeading) {
                 const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
                 const muteParam = (isMobile && !hasInteracted) ? 1 : 0;
                 
@@ -557,7 +565,13 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
               <Button
                 variant="default"
                 size="lg"
-                onClick={() => setShowWatchProviders(true)}
+                onClick={() => {
+                  if (!user) {
+                    setAuthModalHeading("Sign in to track what you watch and get better picks next time");
+                    return;
+                  }
+                  setShowWatchProviders(true);
+                }}
                 className="gap-2 shrink-0 w-full md:w-auto font-semibold"
                 data-testid="button-watch-now"
               >
@@ -861,6 +875,13 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
           recommendations={displayRecs}
           preferenceProfile={recommendations.preferenceProfile}
           shareUrl={shareUrl || undefined}
+        />
+      )}
+
+      {authModalHeading && (
+        <AuthPromptModal
+          heading={authModalHeading}
+          onSkip={() => setAuthModalHeading(null)}
         />
       )}
     </div>

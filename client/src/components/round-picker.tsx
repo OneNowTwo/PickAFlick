@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useWatchlistSession } from "@/hooks/use-watchlist-session";
+import { useAuth } from "@/contexts/AuthContext";
+import { AuthPromptModal } from "./auth-prompt-modal";
 
 interface RoundPickerProps {
   round: number;
@@ -195,6 +197,8 @@ export function RoundPicker({
   choiceHistory = [],
   selectedGenres = []
 }: RoundPickerProps) {
+  const { user } = useAuth();
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [selectedSide, setSelectedSide] = useState<"left" | "right" | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
   const [showSynopsis, setShowSynopsis] = useState<"left" | "right" | null>(null);
@@ -364,6 +368,10 @@ export function RoundPicker({
 
     const handleAddToWatchlist = (e: React.MouseEvent) => {
       e.stopPropagation();
+      if (!user) {
+        setShowAuthModal(true);
+        return;
+      }
       if (!isAdded) {
         addToWatchlistMutation.mutate(movie);
       }
@@ -566,6 +574,13 @@ export function RoundPicker({
       <p className="text-muted-foreground/40 text-[10px] text-center md:hidden">
         Swipe left/right or tap • Tap title for details
       </p>
+
+      {showAuthModal && (
+        <AuthPromptModal
+          heading="Save your picks & build your taste profile"
+          onSkip={() => setShowAuthModal(false)}
+        />
+      )}
     </div>
   );
 }

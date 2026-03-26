@@ -4,9 +4,10 @@ import { useAuth } from "@/contexts/AuthContext";
 
 interface AuthPromptModalProps {
   onSkip: () => void;
+  heading?: string;
 }
 
-export function AuthPromptModal({ onSkip }: AuthPromptModalProps) {
+export function AuthPromptModal({ onSkip, heading = "Save your picks & build your taste profile" }: AuthPromptModalProps) {
   const { login } = useAuth();
 
   return (
@@ -15,7 +16,7 @@ export function AuthPromptModal({ onSkip }: AuthPromptModalProps) {
 
         <div>
           <h2 className="text-xl font-bold text-white leading-snug">
-            Save your results &amp; build your taste profile
+            {heading}
           </h2>
         </div>
 
