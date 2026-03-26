@@ -412,7 +412,7 @@ export default function Home() {
 
         {/* ── GENRE SELECT STEP ── */}
         {gameState === "genre-select" && (
-          <div className="relative py-6 md:min-h-[calc(100vh-4rem)] md:flex md:items-center md:py-0">
+          <div className="relative py-6 md:pt-16 md:pb-12">
             {/* Extra bottom padding on mobile so content clears the fixed Start Picking bar */}
             <div className="relative z-10 flex flex-col items-center gap-6 text-center w-full max-w-2xl mx-auto pb-28 md:pb-0">
 
@@ -450,16 +450,20 @@ export default function Home() {
                         <Button
                           key={mood.id}
                           onClick={() => toggleMood(mood.id)}
-                          variant="outline"
+                          variant="ghost"
                           className={`
-                            text-sm font-medium transition-all duration-150
+                            text-sm font-medium transition-all duration-150 border
                             h-9 md:h-auto md:py-3.5
                             ${isExtra && !showMoreGenres ? "hidden md:flex" : ""}
                             ${isSelected
-                              ? "bg-transparent border-2 border-primary text-white shadow-[0_0_10px_rgba(220,38,38,0.35)] scale-105"
-                              : "bg-white/5 border-white/12 text-white/80 hover:bg-white/10 hover:border-white/35 hover:scale-[1.03]"
+                              ? "text-white scale-105 shadow-[0_0_10px_rgba(220,38,38,0.35)] hover:bg-white/5"
+                              : "text-white/80 hover:text-white hover:scale-[1.03]"
                             }
                           `}
+                          style={isSelected
+                            ? { backgroundColor: "transparent", borderWidth: "2px", borderColor: "hsl(var(--primary))" }
+                            : { backgroundColor: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.18)" }
+                          }
                           data-testid={`button-mood-${mood.id}`}
                         >
                           {mood.label}
