@@ -4,7 +4,6 @@ import { Loader2, Star, Shuffle, X, Brain, Bookmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useWatchlistSession } from "@/hooks/use-watchlist-session";
 import { useAuth } from "@/contexts/AuthContext";
 import { AuthPromptModal } from "./auth-prompt-modal";
 
@@ -212,22 +211,19 @@ export function RoundPicker({
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
   const [swipeOffset, setSwipeOffset] = useState<number>(0);
 
-  const watchlistSessionId = useWatchlistSession();
   const addToWatchlistMutation = useMutation({
     mutationFn: async (movie: Movie) => {
       return await apiRequest("POST", "/api/watchlist", {
         tmdbId: movie.tmdbId,
         title: movie.title,
-        year: movie.year,
         posterPath: movie.posterPath,
+        releaseYear: movie.year,
         genres: movie.genres,
-        rating: movie.rating,
-        sessionId: watchlistSessionId,
       });
     },
     onSuccess: (_data, movie) => {
       setAddedToWatchlist(prev => new Set(prev).add(movie.tmdbId));
-      queryClient.invalidateQueries({ queryKey: ["/api/watchlist", watchlistSessionId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/watchlist"] });
     },
     onError: (_err, movie) => {
       // Remove optimistic state if save failed
