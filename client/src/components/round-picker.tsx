@@ -550,6 +550,7 @@ export function RoundPicker({
             style={{
               fontFamily: "var(--font-display)",
               color: "#ff2d55",
+              WebkitTextStroke: "2px white",
               textShadow:
                 "0 0 8px rgba(255,45,85,0.9), 0 0 20px rgba(255,45,85,0.7), 0 0 40px rgba(255,45,85,0.5), 0 0 80px rgba(255,45,85,0.3)",
               letterSpacing: "0.05em",
