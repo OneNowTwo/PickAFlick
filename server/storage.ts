@@ -1,6 +1,6 @@
-import { watchlist, sharedRecommendations, movieCatalogueCache, type WatchlistItem, type InsertWatchlistItem, type SharedRecommendation, type MovieCatalogueCache } from "@shared/schema";
+import { watchlist, sharedRecommendations, movieCatalogueCache, userVotes, type WatchlistItem, type InsertWatchlistItem, type SharedRecommendation, type MovieCatalogueCache, type UserVote, type InsertUserVote } from "@shared/schema";
 import { db } from "./db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 
 /** Bump when adding new IMDb/editorial lists - invalidates old cache so catalogue rebuilds on deploy */
 const CATALOGUE_CACHE_KEY = "catalogue_v7";
@@ -16,6 +16,8 @@ export interface IStorage {
   getCatalogueCache(): Promise<MovieCatalogueCache | undefined>;
   saveCatalogueCache(movies: string, grouped: string): Promise<void>;
   clearCatalogueCache(): Promise<void>;
+  saveVote(vote: InsertUserVote): Promise<void>;
+  getUserVotes(userId: number): Promise<UserVote[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -91,6 +93,18 @@ export class DatabaseStorage implements IStorage {
 
   async clearCatalogueCache(): Promise<void> {
     await db.delete(movieCatalogueCache).where(eq(movieCatalogueCache.cacheKey, CATALOGUE_CACHE_KEY));
+  }
+
+  async saveVote(vote: InsertUserVote): Promise<void> {
+    await db.insert(userVotes).values(vote);
+  }
+
+  async getUserVotes(userId: number): Promise<UserVote[]> {
+    return await db
+      .select()
+      .from(userVotes)
+      .where(eq(userVotes.userId, userId))
+      .orderBy(desc(userVotes.votedAt));
   }
 }
 

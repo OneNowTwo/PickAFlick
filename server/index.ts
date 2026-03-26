@@ -108,6 +108,21 @@ app.use((req, res, next) => {
         CONSTRAINT user_sessions_pkey PRIMARY KEY (sid) NOT DEFERRABLE INITIALLY IMMEDIATE
       );
       CREATE INDEX IF NOT EXISTS idx_user_sessions_expire ON user_sessions (expire);
+      CREATE TABLE IF NOT EXISTS user_votes (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        session_id TEXT NOT NULL,
+        round INTEGER NOT NULL,
+        chosen_tmdb_id INTEGER NOT NULL,
+        rejected_tmdb_id INTEGER NOT NULL,
+        chosen_title TEXT NOT NULL,
+        rejected_title TEXT NOT NULL,
+        chosen_genres TEXT[] NOT NULL DEFAULT '{}',
+        rejected_genres TEXT[] NOT NULL DEFAULT '{}',
+        voted_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_votes_user_id ON user_votes (user_id);
+      CREATE INDEX IF NOT EXISTS idx_user_votes_session_id ON user_votes (session_id);
     `);
     console.log("[startup] Schema check complete");
   } catch (err) {

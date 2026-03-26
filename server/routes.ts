@@ -196,7 +196,7 @@ export async function registerRoutes(
         return;
       }
 
-      // Record the choice
+      // Record the choice in-memory
       const updatedSession = sessionStorage.addChoice(
         sessionId,
         session.currentRound,
@@ -208,6 +208,26 @@ export async function registerRoutes(
       if (!updatedSession) {
         res.status(500).json({ error: "Failed to record choice" });
         return;
+      }
+
+      // Persist vote to DB for logged-in users (fire-and-forget — don't block the response)
+      if (req.isAuthenticated() && req.user) {
+        const chosenMovie = chosenMovieId === currentPair.leftMovie.id
+          ? currentPair.leftMovie : currentPair.rightMovie;
+        const rejectedMovie = chosenMovieId === currentPair.leftMovie.id
+          ? currentPair.rightMovie : currentPair.leftMovie;
+
+        storage.saveVote({
+          userId: req.user.id,
+          sessionId,
+          round: session.currentRound,
+          chosenTmdbId: chosenMovie.tmdbId,
+          rejectedTmdbId: rejectedMovie.tmdbId,
+          chosenTitle: chosenMovie.title,
+          rejectedTitle: rejectedMovie.title,
+          chosenGenres: chosenMovie.genres ?? [],
+          rejectedGenres: rejectedMovie.genres ?? [],
+        }).catch(err => console.error("[votes] Failed to save vote:", err));
       }
 
       // Prepare next pair if not complete

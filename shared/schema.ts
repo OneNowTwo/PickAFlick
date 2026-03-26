@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { pgTable, serial, text, integer, boolean, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
+import { relations } from "drizzle-orm";
 
 // Users table for Google OAuth authentication
 export const users = pgTable("users", {
@@ -14,6 +15,28 @@ export const users = pgTable("users", {
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+
+// Every A/B vote cast by a logged-in user
+export const userVotes = pgTable("user_votes", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  sessionId: text("session_id").notNull(),
+  round: integer("round").notNull(),
+  chosenTmdbId: integer("chosen_tmdb_id").notNull(),
+  rejectedTmdbId: integer("rejected_tmdb_id").notNull(),
+  chosenTitle: text("chosen_title").notNull(),
+  rejectedTitle: text("rejected_title").notNull(),
+  chosenGenres: text("chosen_genres").array().notNull().default([]),
+  rejectedGenres: text("rejected_genres").array().notNull().default([]),
+  votedAt: timestamp("voted_at").defaultNow().notNull(),
+});
+
+export const usersRelations = relations(users, ({ many }) => ({
+  votes: many(userVotes),
+}));
+
+export type UserVote = typeof userVotes.$inferSelect;
+export type InsertUserVote = typeof userVotes.$inferInsert;
 
 // Shared recommendations table for shareable results
 export const sharedRecommendations = pgTable("shared_recommendations", {
