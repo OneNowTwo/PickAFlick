@@ -320,7 +320,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
     );
   }
 
-  const { preferenceProfile } = recommendations;
+  const { preferenceProfile, hasPersonalisation } = recommendations;
   const totalRecs = displayRecs.length;
   const revealMessage = generateRevealMessage(preferenceProfile);
 
@@ -411,6 +411,13 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
       <h2 className="text-lg md:text-xl font-bold text-white w-full text-center">
         Your top picks for tonight
       </h2>
+
+      {/* Personalisation indicator — only visible for logged-in users with history */}
+      {hasPersonalisation && (
+        <p className="text-xs text-white/40 text-center -mt-1" data-testid="personalisation-label">
+          Based on your taste profile
+        </p>
+      )}
 
       {/* Pagination */}
       <div className="flex items-center justify-center gap-3 w-full">
@@ -560,6 +567,11 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                 {currentRec.movie.rating && (
                   <Badge variant="secondary" className="bg-primary/20 text-primary border-0 shrink-0 text-sm" data-testid="text-movie-rating">
                     {currentRec.movie.rating.toFixed(1)}★
+                  </Badge>
+                )}
+                {currentRec.wildcardBadge && (
+                  <Badge variant="secondary" className="bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0 text-xs" data-testid="wildcard-badge">
+                    ✦ {currentRec.wildcardBadge}
                   </Badge>
                 )}
               </div>

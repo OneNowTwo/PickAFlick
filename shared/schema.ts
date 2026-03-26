@@ -186,6 +186,7 @@ export const recommendationSchema = z.object({
   trailerUrl: z.string().nullable(),
   trailerUrls: z.array(z.string()).optional(), // Multiple trailer URLs for fallback
   reason: z.string(),
+  wildcardBadge: z.string().optional(), // Set on personalised wildcard picks
 });
 
 export type Recommendation = z.infer<typeof recommendationSchema>;
@@ -200,6 +201,8 @@ export const recommendationsResponseSchema = z.object({
     visualStyle: z.string().optional(),
     mood: z.string().optional(),
   }),
+  // True when results have been re-ranked using the user's full vote history
+  hasPersonalisation: z.boolean().optional(),
 });
 
 export type RecommendationsResponse = z.infer<typeof recommendationsResponseSchema>;

@@ -4,6 +4,7 @@ import { getCatalogue, getRecommendations, getHealth, initCatalogue, isCatalogue
 import { getMovieTrailer, getMovieTrailers, getWatchProviders } from "./tmdb";
 import { sessionStorage } from "./session-storage";
 import { generateRecommendations, generateReplacementRecommendation } from "./ai-recommender";
+import { buildGenreProfile, rankRecommendations } from "./recommendations";
 import { storage } from "./storage";
 import type { RoundPairResponse, ChoiceResponse } from "@shared/schema";
 import { insertWatchlistSchema } from "@shared/schema";
@@ -353,14 +354,34 @@ export async function registerRoutes(
         return;
       }
 
-      const recommendations = await generateRecommendations(
+      const aiResult = await generateRecommendations(
         chosenMovies,
         rejectedMovies,
         initialGenreFilters
       );
 
+      // For logged-in users, re-rank using their full cross-session vote history
+      let hasPersonalisation = false;
+      let finalRecs = aiResult.recommendations;
+
+      if (req.isAuthenticated() && req.user) {
+        try {
+          const profile = await buildGenreProfile(req.user.id);
+          if (profile.length > 0) {
+            finalRecs = rankRecommendations(aiResult.recommendations, profile);
+            hasPersonalisation = true;
+            console.log(
+              `[personalisation] User ${req.user.id} — ${profile.length} genre signals, re-ranked ${finalRecs.length} recs`
+            );
+          }
+        } catch (err) {
+          // Non-fatal — fall back to AI ordering
+          console.error("[personalisation] Failed to build genre profile:", err);
+        }
+      }
+
       res.set(NO_CACHE_HEADERS);
-      res.json(recommendations);
+      res.json({ ...aiResult, recommendations: finalRecs, hasPersonalisation });
     } catch (error) {
       console.error("Error generating recommendations:", error);
       res.status(500).json({ error: "Failed to generate recommendations" });
