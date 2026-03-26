@@ -449,10 +449,10 @@ export default function Home() {
                           <Button
                             key={mood.id}
                             onClick={() => toggleMood(mood.id)}
-                            variant={isSelected ? "default" : "outline"}
+                            variant="outline"
                             className={`h-9 md:h-11 text-sm font-medium transition-all duration-150 ${
                               isSelected
-                                ? "bg-primary text-primary-foreground border-primary shadow-[0_0_14px_rgba(220,38,38,0.6)] scale-105"
+                                ? "bg-transparent border-2 border-primary text-white shadow-[0_0_10px_rgba(220,38,38,0.35)] scale-105"
                                 : "bg-white/5 border-white/12 text-white/80 hover:bg-white/10 hover:border-white/35 hover:scale-[1.03]"
                             }`}
                             data-testid={`button-mood-${mood.id}`}
@@ -475,26 +475,17 @@ export default function Home() {
                     )}
                   </button>
 
-                  {/* Surprise Me inside genre step */}
+                  {/* Surprise Me — ghost/outlined style, secondary to Start Picking */}
                   <Button
                     size="lg"
                     onClick={() => handleStart(true)}
                     disabled={startSessionMutation.isPending}
-                    className="surprise-pulse-btn w-full h-12 text-base font-extrabold gap-2 border border-white/25 hover:-translate-y-1 hover:brightness-115 active:scale-95 transition-all duration-200"
+                    variant="outline"
+                    className="w-full h-12 text-base font-semibold gap-2 bg-transparent border border-white/30 text-white hover:bg-white/5 hover:border-white/50 active:scale-95 transition-all duration-200"
                     data-testid="button-surprise-me-genre"
                   >
-                    {startSessionMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <>🎲 Surprise Me — skip genre selection</>}
+                    {startSessionMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <>🎲 Surprise Me</>}
                   </Button>
-
-                  {/* Benefits nudge — logged-out only */}
-                  {!user && (
-                    <p className="text-xs text-white/40 text-center leading-relaxed">
-                      Sign in free to save picks, build your taste profile and get smarter recommendations every Friday night.{" "}
-                      <button onClick={login} className="text-white/60 hover:text-white underline underline-offset-2 transition-colors">
-                        Sign in with Google →
-                      </button>
-                    </p>
-                  )}
 
                   {/* Start button — always visible on desktop; on mobile only shown when no genres selected (inactive state) */}
                   <Button
