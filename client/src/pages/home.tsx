@@ -15,7 +15,7 @@ import { FAQSection } from "@/components/faq-section";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 
-type GameState = "start" | "instructions" | "playing" | "loading-recommendations" | "results";
+type GameState = "start" | "genre-select" | "instructions" | "playing" | "loading-recommendations" | "results";
 
 // Top 8 genres shown by default
 const TOP_GENRE_IDS = ["action", "comedy", "drama", "thriller", "romance", "scifi", "family", "horror"];
@@ -317,75 +317,126 @@ export default function Home() {
 
       <main className={`relative z-10 flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 overflow-x-hidden overflow-y-auto min-h-0 ${(gameState === "loading-recommendations" || gameState === "results") ? "py-2 md:py-4" : "py-8"}`}>
         {gameState === "start" && (
-          <div className="relative py-4 md:py-6">
-            <div className="relative z-10 flex flex-col items-center gap-6 text-center w-full max-w-2xl mx-auto">
-
-              {/* Headline — separate from interaction area */}
+          <div className="relative">
+            {/* ── ABOVE THE FOLD ── fills viewport height minus nav */}
+            <div
+              className="flex flex-col items-center justify-center text-center w-full max-w-xl mx-auto"
+              style={{ minHeight: "calc(100vh - 4rem - 4rem)" }}
+            >
               {(() => {
                 const isReturning = !!user && !!tasteSummary?.topGenre;
                 const firstName = user?.displayName?.split(" ")[0] ?? "";
                 return (
-                  <div className="px-5 py-5 rounded-xl w-full" style={{ background: 'rgba(0, 0, 0, 0.72)' }}>
-                    {isReturning ? (
-                      <>
-                        <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white drop-shadow-lg leading-tight">
-                          Welcome back {firstName} — ready to find tonight&apos;s movie?
-                        </h2>
-                        <p className="text-sm text-white/50 font-medium mt-2 leading-snug">
-                          Your top genre: {tasteSummary!.topGenre}
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white drop-shadow-lg leading-tight">
-                          Stop searching. Start watching.
-                        </h2>
-                        <p className="text-sm sm:text-base text-white/80 font-medium mt-3 leading-snug">
-                          Because choosing your movie shouldn&apos;t take longer than watching it.
-                        </p>
-                      </>
-                    )}
+                  <div className="flex flex-col items-center gap-6 px-4">
+                    {/* Headline */}
+                    <div>
+                      <h2 className="text-4xl sm:text-5xl md:text-6xl font-bold text-white drop-shadow-lg leading-tight">
+                        {isReturning
+                          ? `Welcome back ${firstName} —`
+                          : "Stop searching."}
+                      </h2>
+                      <h2 className="text-4xl sm:text-5xl md:text-6xl font-bold text-white drop-shadow-lg leading-tight">
+                        {isReturning ? "ready to find tonight\u2019s movie?" : "Start watching."}
+                      </h2>
+                      {isReturning && tasteSummary?.topGenre ? (
+                        <p className="text-sm text-white/50 mt-3">Your top genre: {tasteSummary.topGenre}</p>
+                      ) : (
+                        <p className="text-lg sm:text-xl text-white/70 mt-3">Pick a movie in under 2 minutes.</p>
+                      )}
+                    </div>
+
+                    {/* Primary CTA */}
+                    <Button
+                      size="lg"
+                      onClick={() => setGameState("genre-select")}
+                      className="min-w-[220px] px-10 h-14 text-lg font-bold gap-2 shadow-[0_0_28px_rgba(220,38,38,0.5)] hover:-translate-y-1 active:scale-95 transition-all duration-200"
+                      data-testid="button-start-picking"
+                    >
+                      <Film className="w-5 h-5" />
+                      Start Picking →
+                    </Button>
+
+                    <p className="text-xs text-white/35">No sign up needed. Takes 30 seconds.</p>
                   </div>
                 );
               })()}
+            </div>
 
-              {/* Interaction card — visually distinct, breathing animation */}
+            {/* ── BELOW THE FOLD ── */}
+            <div className="flex flex-col items-center gap-10 w-full max-w-2xl mx-auto pb-12 pt-4 px-4">
+
+              {/* Surprise Me */}
+              <div className="flex flex-col items-center gap-3 w-full">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/50">Feeling lucky?</p>
+                <Button
+                  size="lg"
+                  onClick={() => handleStart(true)}
+                  disabled={startSessionMutation.isPending}
+                  className="surprise-pulse-btn min-w-[220px] px-10 h-14 text-base font-extrabold gap-2 border border-white/25 hover:-translate-y-1.5 hover:brightness-115 active:scale-95 transition-all duration-200"
+                  data-testid="button-surprise-me"
+                >
+                  {startSessionMutation.isPending ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <>🎲 Surprise Me</>
+                  )}
+                </Button>
+                <p className="text-xs text-white/35">Skip genre selection — we&apos;ll pick for you</p>
+              </div>
+
+              {startSessionMutation.isError && (
+                <p className="text-destructive bg-black/50 px-4 py-2 rounded text-sm text-center">
+                  Movies are still loading. Please wait a moment and try again.
+                </p>
+              )}
+
+              {/* User counter */}
+              <div className="flex items-center justify-center gap-2.5 px-5 py-3 rounded-full bg-black/50 border border-white/10">
+                <Users className="w-4 h-4 text-primary flex-shrink-0" />
+                <span className="text-sm text-white/70">
+                  <span className="font-bold text-white text-base">43,000+</span> Australians have used WhatWeWatching
+                </span>
+              </div>
+
+              {/* Testimonials */}
+              <TestimonialsSection />
+            </div>
+
+            {/* How to Play — full width */}
+            <HowToPlaySection />
+
+            {/* FAQ */}
+            <FAQSection />
+          </div>
+        )}
+
+        {/* ── GENRE SELECT STEP ── */}
+        {gameState === "genre-select" && (
+          <div className="relative py-6">
+            <div className="relative z-10 flex flex-col items-center gap-6 text-center w-full max-w-2xl mx-auto">
+
+              {/* Back link */}
+              <button
+                onClick={() => setGameState("start")}
+                className="self-start flex items-center gap-1.5 text-sm text-white/50 hover:text-white/80 transition-colors"
+              >
+                <ChevronDown className="w-4 h-4 rotate-90" />
+                Back
+              </button>
+
+              <div>
+                <h2 className="text-2xl sm:text-3xl font-bold text-white">What are you in the mood for?</h2>
+                <p className="text-sm text-white/50 mt-1">Pick one or more genres to narrow your picks</p>
+              </div>
+
+              {/* Interaction card */}
               <div
                 className="w-full rounded-2xl relative overflow-hidden"
-                style={{
-                  background: 'rgba(6, 0, 0, 0.88)',
-                  animation: 'card-breathe 4s ease-in-out infinite',
-                }}
+                style={{ background: 'rgba(6, 0, 0, 0.88)', animation: 'card-breathe 4s ease-in-out infinite' }}
               >
-                {/* Top red accent line */}
                 <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-primary/80 to-transparent" />
 
                 <div className="p-5 md:p-7 flex flex-col items-center gap-5">
-
-                  {/* Surprise Me — centred, ~1/3 width */}
-                  <div className="flex flex-col items-center gap-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/65">Feeling lucky?</p>
-                    <Button
-                      size="lg"
-                      onClick={() => handleStart(true)}
-                      disabled={startSessionMutation.isPending}
-                      className="surprise-pulse-btn min-w-[220px] px-10 h-14 text-base font-extrabold gap-2 border border-white/25 hover:-translate-y-1.5 hover:brightness-115 active:scale-95 transition-all duration-200"
-                      data-testid="button-surprise-me"
-                    >
-                      {startSessionMutation.isPending ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                      ) : (
-                        <>🎲 Surprise Me</>
-                      )}
-                    </Button>
-                  </div>
-
-                  {/* Divider */}
-                  <div className="flex items-center gap-3 w-full">
-                    <div className="flex-1 h-px bg-white/10" />
-                    <span className="text-[11px] text-white/65 font-semibold uppercase tracking-[0.18em]">or choose your mood</span>
-                    <div className="flex-1 h-px bg-white/10" />
-                  </div>
 
                   {/* Genre grid */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2 w-full">
@@ -411,19 +462,6 @@ export default function Home() {
                       })}
                   </div>
 
-                  {/* Benefits nudge — logged-out users only */}
-                  {!user && (
-                    <p className="text-xs text-white/40 text-center leading-relaxed">
-                      Sign in free to save picks, build your taste profile and get smarter recommendations every Friday night.{" "}
-                      <button
-                        onClick={login}
-                        className="text-white/60 hover:text-white underline underline-offset-2 transition-colors"
-                      >
-                        Sign in with Google →
-                      </button>
-                    </p>
-                  )}
-
                   <button
                     onClick={() => setShowMoreGenres(v => !v)}
                     className="flex items-center gap-1 text-xs text-white/65 hover:text-white/90 transition-colors"
@@ -436,7 +474,35 @@ export default function Home() {
                     )}
                   </button>
 
-                  {/* Show My Picks — centred, ~1/3 width when active */}
+                  {/* Divider */}
+                  <div className="flex items-center gap-3 w-full">
+                    <div className="flex-1 h-px bg-white/10" />
+                    <span className="text-[11px] text-white/50 font-semibold uppercase tracking-[0.18em]">or</span>
+                    <div className="flex-1 h-px bg-white/10" />
+                  </div>
+
+                  {/* Surprise Me inside genre step */}
+                  <Button
+                    size="lg"
+                    onClick={() => handleStart(true)}
+                    disabled={startSessionMutation.isPending}
+                    className="surprise-pulse-btn w-full h-12 text-base font-extrabold gap-2 border border-white/25 hover:-translate-y-1 hover:brightness-115 active:scale-95 transition-all duration-200"
+                    data-testid="button-surprise-me-genre"
+                  >
+                    {startSessionMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <>🎲 Surprise Me — skip genre selection</>}
+                  </Button>
+
+                  {/* Benefits nudge — logged-out only */}
+                  {!user && (
+                    <p className="text-xs text-white/40 text-center leading-relaxed">
+                      Sign in free to save picks, build your taste profile and get smarter recommendations every Friday night.{" "}
+                      <button onClick={login} className="text-white/60 hover:text-white underline underline-offset-2 transition-colors">
+                        Sign in with Google →
+                      </button>
+                    </p>
+                  )}
+
+                  {/* Start button */}
                   <Button
                     size="lg"
                     onClick={() => handleStart(false)}
@@ -453,16 +519,11 @@ export default function Home() {
                     ) : selectedMoods.length === 0 ? (
                       <span className="text-sm">Choose at least one genre above</span>
                     ) : (
-                      <>
-                        <Film className="w-4 h-4" />
-                        Show My Picks ({selectedMoods.length})
-                      </>
+                      <><Film className="w-4 h-4" /> Start Picking ({selectedMoods.length} selected)</>
                     )}
                   </Button>
 
                 </div>
-
-                {/* Bottom accent line */}
                 <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/8 to-transparent" />
               </div>
 
@@ -471,24 +532,7 @@ export default function Home() {
                   Movies are still loading. Please wait a moment and try again.
                 </p>
               )}
-
-              {/* Testimonials */}
-              <TestimonialsSection />
-
-              {/* User counter — below testimonials */}
-              <div className="flex items-center justify-center gap-2.5 px-5 py-3 rounded-full bg-black/50 border border-white/10">
-                <Users className="w-4 h-4 text-primary flex-shrink-0" />
-                <span className="text-sm text-white/70">
-                  <span className="font-bold text-white text-base">43,000+</span> Australians have used WhatWeWatching
-                </span>
-              </div>
             </div>
-
-            {/* How to Play — full width marquee */}
-            <HowToPlaySection />
-
-            {/* FAQ — centred, max-w-2xl */}
-            <FAQSection />
           </div>
         )}
 
