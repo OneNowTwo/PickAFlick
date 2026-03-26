@@ -544,20 +544,20 @@ export function RoundPicker({
       >
         {renderMovieCard(leftMovie, "left", leftPosterUrl)}
 
-        {/* VS image — absolutely centred so it bleeds over both poster edges */}
-        <div
-          className={`absolute inset-0 flex items-center justify-center pointer-events-none z-10 transition-opacity duration-300 ${selectedSide ? "opacity-0" : "opacity-100"}`}
-        >
-          <img
-            src="/vs.png"
-            alt="VS"
-            className="w-24 md:w-40 select-none"
-            draggable={false}
-          />
+        <div className={`flex items-center justify-center transition-opacity duration-300 ${selectedSide ? "opacity-0" : "opacity-100"}`}>
+          <span
+            className="text-4xl md:text-7xl font-black select-none"
+            style={{
+              fontFamily: "var(--font-display)",
+              color: "#ff2d55",
+              textShadow:
+                "0 0 8px rgba(255,45,85,0.9), 0 0 20px rgba(255,45,85,0.7), 0 0 40px rgba(255,45,85,0.5), 0 0 80px rgba(255,45,85,0.3)",
+              letterSpacing: "0.05em",
+            }}
+          >
+            VS
+          </span>
         </div>
-
-        {/* Spacer so the flex row still reserves horizontal gap between cards */}
-        <div className="w-16 md:w-32 shrink-0" />
 
         {renderMovieCard(rightMovie, "right", rightPosterUrl)}
       </div>
