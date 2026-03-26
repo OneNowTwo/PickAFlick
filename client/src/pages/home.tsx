@@ -412,7 +412,7 @@ export default function Home() {
 
         {/* ── GENRE SELECT STEP ── */}
         {gameState === "genre-select" && (
-          <div className="relative py-6">
+          <div className="relative py-6 md:min-h-[calc(100vh-4rem)] md:flex md:items-center md:py-0">
             {/* Extra bottom padding on mobile so content clears the fixed Start Picking bar */}
             <div className="relative z-10 flex flex-col items-center gap-6 text-center w-full max-w-2xl mx-auto pb-28 md:pb-0">
 
@@ -439,55 +439,63 @@ export default function Home() {
 
                 <div className="p-5 md:p-7 flex flex-col items-center gap-5">
 
-                  {/* Genre grid */}
+                  {/* Genre grid
+                      Mobile: show TOP_GENRE_IDS only unless expanded (hidden md:flex handles extras)
+                      Desktop: all genres always visible (hidden md:flex reveals them) */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2 w-full">
-                    {MOOD_OPTIONS
-                      .filter(m => showMoreGenres || TOP_GENRE_IDS.includes(m.id))
-                      .map((mood) => {
-                        const isSelected = selectedMoods.includes(mood.id);
-                        return (
-                          <Button
-                            key={mood.id}
-                            onClick={() => toggleMood(mood.id)}
-                            variant="outline"
-                            className={`h-9 md:h-11 text-sm font-medium transition-all duration-150 ${
-                              isSelected
-                                ? "bg-transparent border-2 border-primary text-white shadow-[0_0_10px_rgba(220,38,38,0.35)] scale-105"
-                                : "bg-white/5 border-white/12 text-white/80 hover:bg-white/10 hover:border-white/35 hover:scale-[1.03]"
-                            }`}
-                            data-testid={`button-mood-${mood.id}`}
-                          >
-                            {mood.label}
-                          </Button>
-                        );
-                      })}
+                    {MOOD_OPTIONS.map((mood) => {
+                      const isSelected = selectedMoods.includes(mood.id);
+                      const isExtra = !TOP_GENRE_IDS.includes(mood.id);
+                      return (
+                        <Button
+                          key={mood.id}
+                          onClick={() => toggleMood(mood.id)}
+                          variant="outline"
+                          className={`
+                            text-sm font-medium transition-all duration-150
+                            h-9 md:h-auto md:py-3.5
+                            ${isExtra && !showMoreGenres ? "hidden md:flex" : ""}
+                            ${isSelected
+                              ? "bg-transparent border-2 border-primary text-white shadow-[0_0_10px_rgba(220,38,38,0.35)] scale-105"
+                              : "bg-white/5 border-white/12 text-white/80 hover:bg-white/10 hover:border-white/35 hover:scale-[1.03]"
+                            }
+                          `}
+                          data-testid={`button-mood-${mood.id}`}
+                        >
+                          {mood.label}
+                        </Button>
+                      );
+                    })}
                   </div>
 
+                  {/* More/fewer genres toggle — mobile only (desktop always shows all) */}
                   <button
                     onClick={() => setShowMoreGenres(v => !v)}
-                    className="flex items-center gap-1 text-xs text-white/65 hover:text-white/90 transition-colors"
+                    className="md:hidden flex items-center gap-1 text-xs font-semibold transition-colors"
+                    style={{ color: showMoreGenres ? undefined : "hsl(var(--primary))" }}
                     data-testid="button-toggle-genres"
                   >
                     {showMoreGenres ? (
-                      <><ChevronUp className="w-3.5 h-3.5" /> Fewer genres</>
+                      <><ChevronUp className="w-3.5 h-3.5 text-white/65" /><span className="text-white/65">Fewer genres</span></>
                     ) : (
                       <><ChevronDown className="w-3.5 h-3.5" /> More genres ({MOOD_OPTIONS.length - TOP_GENRE_IDS.length} more)</>
                     )}
                   </button>
 
-                  {/* Surprise Me — ghost/outlined style, secondary to Start Picking */}
+                  {/* Surprise Me — ghost style, #555 border, secondary to Start Picking */}
                   <Button
                     size="lg"
                     onClick={() => handleStart(true)}
                     disabled={startSessionMutation.isPending}
                     variant="outline"
-                    className="w-full h-12 text-base font-semibold gap-2 bg-transparent border border-white/30 text-white hover:bg-white/5 hover:border-white/50 active:scale-95 transition-all duration-200"
+                    className="w-full h-12 text-base font-semibold gap-2 bg-transparent text-white hover:bg-white/5 active:scale-95 transition-all duration-200"
+                    style={{ borderColor: "#555" }}
                     data-testid="button-surprise-me-genre"
                   >
                     {startSessionMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <>🎲 Surprise Me</>}
                   </Button>
 
-                  {/* Start button — always visible on desktop; on mobile only shown when no genres selected (inactive state) */}
+                  {/* Start button — always visible on desktop; on mobile only shown when no genres selected (inactive placeholder) */}
                   <Button
                     size="lg"
                     onClick={() => handleStart(false)}
