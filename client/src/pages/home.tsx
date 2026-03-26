@@ -502,7 +502,7 @@ export default function Home() {
                     </p>
                   )}
 
-                  {/* Start button */}
+                  {/* Start button — always visible on desktop; on mobile only shown when no genres selected (inactive state) */}
                   <Button
                     size="lg"
                     onClick={() => handleStart(false)}
@@ -510,7 +510,7 @@ export default function Home() {
                     className={`min-w-[220px] px-10 h-14 text-base font-bold gap-2 transition-all duration-200 ${
                       selectedMoods.length === 0
                         ? "w-full opacity-60 cursor-not-allowed bg-white/5 border border-white/10 text-white/65"
-                        : "shadow-[0_0_24px_rgba(220,38,38,0.45)] hover:-translate-y-1 active:scale-95"
+                        : "hidden md:flex shadow-[0_0_24px_rgba(220,38,38,0.45)] hover:-translate-y-1 active:scale-95"
                     }`}
                     data-testid="button-start-game"
                   >
@@ -533,6 +533,25 @@ export default function Home() {
                 </p>
               )}
             </div>
+
+            {/* Fixed bottom bar — mobile only, appears when at least one genre is selected */}
+            {selectedMoods.length > 0 && (
+              <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] bg-black/90 backdrop-blur border-t border-white/10">
+                <Button
+                  size="lg"
+                  onClick={() => handleStart(false)}
+                  disabled={startSessionMutation.isPending}
+                  className="w-full h-14 text-base font-bold gap-2 shadow-[0_0_24px_rgba(220,38,38,0.45)] active:scale-95 transition-all duration-200"
+                  data-testid="button-start-game-mobile"
+                >
+                  {startSessionMutation.isPending ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <><Film className="w-4 h-4" /> Start Picking ({selectedMoods.length} selected)</>
+                  )}
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
