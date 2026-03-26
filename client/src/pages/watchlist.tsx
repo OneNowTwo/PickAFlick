@@ -1,17 +1,20 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
-import { Loader2, Trash2, Film, ArrowLeft, Mail, BookmarkX } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Loader2, Trash2, Film, ArrowLeft, Mail, BookmarkX, Tv } from "lucide-react";
 import { Footer } from "@/components/footer";
 import { PosterGridBackground } from "@/components/poster-grid-background";
 import { Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
-import type { UserWatchlistItem } from "@shared/schema";
+import type { UserWatchlistItem, WatchProvidersResponse } from "@shared/schema";
 
 const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w300";
 
 export default function Watchlist() {
   const { user, loading: authLoading, login } = useAuth();
+  const [providersMovie, setProvidersMovie] = useState<{ tmdbId: number; title: string; year: number | null } | null>(null);
 
   const { data: items = [], isLoading } = useQuery<UserWatchlistItem[]>({
     queryKey: ["/api/watchlist"],
@@ -23,6 +26,24 @@ export default function Watchlist() {
     enabled: !!user,
     staleTime: 0,
     refetchOnMount: true,
+  });
+
+  const { data: watchProviders, isLoading: isLoadingProviders } = useQuery<WatchProvidersResponse>({
+    queryKey: [
+      `/api/watch-providers/${providersMovie?.tmdbId}`,
+      providersMovie?.title,
+      providersMovie?.year,
+    ],
+    queryFn: async () => {
+      const { tmdbId, title, year } = providersMovie!;
+      const res = await fetch(
+        `/api/watch-providers/${tmdbId}?title=${encodeURIComponent(title)}&year=${year ?? ""}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) throw new Error("Failed to fetch providers");
+      return res.json();
+    },
+    enabled: !!providersMovie,
   });
 
   const removeMutation = useMutation({
@@ -75,7 +96,6 @@ export default function Watchlist() {
           </div>
 
         ) : !user ? (
-          /* Not signed in */
           <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center">
             <BookmarkX className="w-16 h-16 text-white/20" />
             <div>
@@ -93,7 +113,6 @@ export default function Watchlist() {
           </div>
 
         ) : items.length === 0 ? (
-          /* Empty state */
           <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center">
             <Film className="w-16 h-16 text-white/20" />
             <div>
@@ -106,7 +125,6 @@ export default function Watchlist() {
           </div>
 
         ) : (
-          /* Watchlist grid */
           <div className="space-y-6">
             <div>
               <h2 className="text-3xl font-bold text-white">My Watchlist</h2>
@@ -119,6 +137,7 @@ export default function Watchlist() {
                   key={item.id}
                   item={item}
                   onRemove={() => removeMutation.mutate(item.tmdbId)}
+                  onWhereToWatch={() => setProvidersMovie({ tmdbId: item.tmdbId, title: item.title, year: item.releaseYear ?? null })}
                   isRemoving={removeMutation.isPending}
                 />
               ))}
@@ -127,7 +146,87 @@ export default function Watchlist() {
         )}
       </main>
 
+      {/* Where to Watch dialog */}
+      <Dialog open={!!providersMovie} onOpenChange={(open) => { if (!open) setProvidersMovie(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tv className="w-5 h-5 text-primary" />
+              Where to Watch
+            </DialogTitle>
+            {providersMovie && (
+              <p className="text-sm text-muted-foreground">{providersMovie.title}</p>
+            )}
+          </DialogHeader>
+
+          <div className="py-2">
+            {isLoadingProviders ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              </div>
+            ) : watchProviders && watchProviders.providers.length > 0 ? (
+              <div className="space-y-4">
+                <ProviderGroup label="Stream" providers={watchProviders.providers.filter(p => p.type === "subscription")} movieTitle={providersMovie?.title} />
+                <ProviderGroup label="Rent" providers={watchProviders.providers.filter(p => p.type === "rent")} movieTitle={providersMovie?.title} />
+                <ProviderGroup label="Buy" providers={watchProviders.providers.filter(p => p.type === "buy")} movieTitle={providersMovie?.title} />
+                <p className="text-xs text-muted-foreground text-center pt-1">Providers from TMDb · Opens in a new tab</p>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Tv className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-muted-foreground text-sm">No streaming links found for this title in Australia.</p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Footer />
+    </div>
+  );
+}
+
+function ProviderGroup({
+  label,
+  providers,
+  movieTitle,
+}: {
+  label: string;
+  providers: WatchProvidersResponse["providers"];
+  movieTitle?: string;
+}) {
+  if (providers.length === 0) return null;
+  return (
+    <div>
+      <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">{label}</h4>
+      <div className="grid grid-cols-3 gap-3">
+        {providers.map((provider) => (
+          <a
+            key={provider.id}
+            href={provider.deepLink || "#"}
+            onClick={(e) => {
+              e.preventDefault();
+              if (typeof window !== "undefined" && (window as any).posthog) {
+                (window as any).posthog.capture("provider_click", {
+                  provider: provider.name,
+                  provider_type: provider.type,
+                  movie_title: movieTitle,
+                  source: "watchlist",
+                });
+              }
+              window.open(provider.deepLink || "#", "_blank", "noopener,noreferrer");
+            }}
+            className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-lg hover:border-primary/40 transition-all"
+          >
+            <img
+              src={`https://image.tmdb.org/t/p/original${provider.logoPath}`}
+              alt={provider.name}
+              className="w-12 h-12 rounded-lg object-cover"
+            />
+            <span className="text-xs text-center text-muted-foreground line-clamp-2">{provider.name}</span>
+          </a>
+        ))}
+      </div>
     </div>
   );
 }
@@ -135,10 +234,12 @@ export default function Watchlist() {
 function WatchlistCard({
   item,
   onRemove,
+  onWhereToWatch,
   isRemoving,
 }: {
   item: UserWatchlistItem;
   onRemove: () => void;
+  onWhereToWatch: () => void;
   isRemoving: boolean;
 }) {
   const posterUrl = item.posterPath
@@ -159,20 +260,29 @@ function WatchlistCard({
           </div>
         )}
 
-        {/* Remove button — appears on hover */}
-        <button
-          onClick={onRemove}
-          disabled={isRemoving}
-          className="absolute top-2 right-2 p-1.5 rounded-full bg-black/70 text-white/60 hover:text-red-400 hover:bg-black/90 opacity-0 group-hover:opacity-100 transition-all duration-150"
-          title="Remove from watchlist"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
+        {/* Hover overlay — Where to Watch + Remove */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col justify-end p-2 gap-1.5">
+          <button
+            onClick={onWhereToWatch}
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors"
+          >
+            <Tv className="w-3 h-3" />
+            Where to Watch
+          </button>
+          <button
+            onClick={onRemove}
+            disabled={isRemoving}
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-black/60 text-white/70 text-xs hover:bg-red-900/60 hover:text-red-300 transition-colors"
+          >
+            <Trash2 className="w-3 h-3" />
+            Remove
+          </button>
+        </div>
       </div>
 
-      {/* Info */}
+      {/* Info — title uses h3 to match the display font (Bebas Neue) used on posters */}
       <div className="p-3 flex flex-col gap-1">
-        <h4 className="text-white text-sm font-semibold line-clamp-2 leading-snug">{item.title}</h4>
+        <h3 className="text-white text-sm leading-snug line-clamp-2">{item.title}</h3>
         <div className="flex flex-wrap gap-1 items-center">
           {item.releaseYear && (
             <span className="text-white/40 text-xs">{item.releaseYear}</span>

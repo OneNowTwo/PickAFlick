@@ -545,7 +545,18 @@ export function RoundPicker({
         {renderMovieCard(leftMovie, "left", leftPosterUrl)}
 
         <div className={`flex items-center justify-center transition-opacity duration-300 ${selectedSide ? "opacity-0" : "opacity-100"}`}>
-          <span className="text-3xl md:text-6xl font-black text-primary/90 drop-shadow-lg">VS</span>
+          <span
+            className="text-4xl md:text-7xl font-black select-none"
+            style={{
+              fontFamily: "var(--font-display)",
+              color: "#ff2d55",
+              textShadow:
+                "0 0 8px rgba(255,45,85,0.9), 0 0 20px rgba(255,45,85,0.7), 0 0 40px rgba(255,45,85,0.5), 0 0 80px rgba(255,45,85,0.3)",
+              letterSpacing: "0.05em",
+            }}
+          >
+            VS
+          </span>
         </div>
 
         {renderMovieCard(rightMovie, "right", rightPosterUrl)}
