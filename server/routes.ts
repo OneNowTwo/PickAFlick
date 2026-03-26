@@ -363,6 +363,7 @@ export async function registerRoutes(
       // For logged-in users, re-rank using their full cross-session vote history
       let hasPersonalisation = false;
       let finalRecs = aiResult.recommendations;
+      let genreProfileSize = 0;
 
       if (req.isAuthenticated() && req.user) {
         try {
@@ -370,6 +371,7 @@ export async function registerRoutes(
           if (profile.length > 0) {
             finalRecs = rankRecommendations(aiResult.recommendations, profile);
             hasPersonalisation = true;
+            genreProfileSize = profile.length;
             console.log(
               `[personalisation] User ${req.user.id} — ${profile.length} genre signals, re-ranked ${finalRecs.length} recs`
             );
@@ -381,7 +383,7 @@ export async function registerRoutes(
       }
 
       res.set(NO_CACHE_HEADERS);
-      res.json({ ...aiResult, recommendations: finalRecs, hasPersonalisation });
+      res.json({ ...aiResult, recommendations: finalRecs, hasPersonalisation, genreProfileSize });
     } catch (error) {
       console.error("Error generating recommendations:", error);
       res.status(500).json({ error: "Failed to generate recommendations" });

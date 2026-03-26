@@ -136,7 +136,12 @@ export default function Watchlist() {
                 <WatchlistCard
                   key={item.id}
                   item={item}
-                  onRemove={() => removeMutation.mutate(item.tmdbId)}
+                  onRemove={() => {
+                    if (typeof window !== "undefined" && (window as any).posthog) {
+                      (window as any).posthog.capture("watchlist_removed", { tmdb_id: item.tmdbId, title: item.title });
+                    }
+                    removeMutation.mutate(item.tmdbId);
+                  }}
                   onWhereToWatch={() => setProvidersMovie({ tmdbId: item.tmdbId, title: item.title, year: item.releaseYear ?? null })}
                   isRemoving={removeMutation.isPending}
                 />

@@ -224,6 +224,14 @@ export function RoundPicker({
     onSuccess: (_data, movie) => {
       setAddedToWatchlist(prev => new Set(prev).add(movie.tmdbId));
       queryClient.invalidateQueries({ queryKey: ["/api/watchlist"] });
+      if (typeof window !== "undefined" && (window as any).posthog) {
+        (window as any).posthog.capture("watchlist_saved", {
+          tmdb_id: movie.tmdbId,
+          title: movie.title,
+          genres: movie.genres,
+          source: "round_picker",
+        });
+      }
     },
     onError: (_err, movie) => {
       // Remove optimistic state if save failed
@@ -365,6 +373,9 @@ export function RoundPicker({
     const handleAddToWatchlist = (e: React.MouseEvent) => {
       e.stopPropagation();
       if (!user) {
+        if (typeof window !== "undefined" && (window as any).posthog) {
+          (window as any).posthog.capture("signin_modal_shown", { trigger: "watchlist" });
+        }
         setShowAuthModal(true);
         return;
       }

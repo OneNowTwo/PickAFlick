@@ -187,9 +187,16 @@ export default function Home() {
   const handleStart = useCallback((surpriseMe = false) => {
     if (typeof window !== 'undefined' && window.posthog) {
       window.posthog.capture(surpriseMe ? "surprise_me" : "start_picking");
+      // Fire returning_user_session_started for logged-in users who have a taste profile
+      if (user && tasteSummary?.topGenre) {
+        window.posthog.capture("returning_user_session_started", {
+          top_genre: tasteSummary.topGenre,
+          session_count: tasteSummary.sessionCount,
+        });
+      }
     }
     startSessionMutation.mutate(surpriseMe ? { surpriseMe: true } : undefined);
-  }, [startSessionMutation]);
+  }, [startSessionMutation, user, tasteSummary]);
 
   const handleChoice = useCallback((chosenMovieId: number) => {
     choiceMutation.mutate(chosenMovieId);

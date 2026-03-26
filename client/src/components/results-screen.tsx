@@ -165,6 +165,31 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   const currentRec = displayRecs[currentIndex];
   const currentTmdbId = currentRec?.movie.tmdbId;
 
+  // Track wildcard badge shown when current rec changes
+  useEffect(() => {
+    if (currentRec?.wildcardBadge && typeof window !== "undefined" && window.posthog) {
+      window.posthog.capture("wildcard_pick_shown", {
+        tmdb_id: currentRec.movie.tmdbId,
+        title: currentRec.movie.title,
+      });
+    }
+  }, [currentRec?.movie.tmdbId]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Track personalised results served (fires once when results load)
+  useEffect(() => {
+    if (
+      recommendations &&
+      (recommendations as any).hasPersonalisation &&
+      typeof window !== "undefined" &&
+      window.posthog
+    ) {
+      window.posthog.capture("personalised_results_served", {
+        genre_profile_size: (recommendations as any).genreProfileSize ?? 0,
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!(recommendations as any)?.hasPersonalisation]);
+
   const { data: watchProviders, isLoading: isLoadingProviders } = useQuery<WatchProvidersResponse>({
     queryKey: [`/api/watch-providers/${currentTmdbId}?title=${encodeURIComponent(currentRec?.movie.title || '')}&year=${currentRec?.movie.year || ''}`],
     enabled: (showWatchProviders || !!currentTmdbId) && !!currentRec,
@@ -210,8 +235,16 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
       });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, movie) => {
       queryClient.invalidateQueries({ queryKey: ["/api/watchlist"] });
+      if (typeof window !== "undefined" && window.posthog) {
+        window.posthog.capture("watchlist_saved", {
+          tmdb_id: movie.tmdbId,
+          title: movie.title,
+          genres: movie.genres,
+          source: "results",
+        });
+      }
       toast({
         title: "Saved to watchlist ✓",
         description: "Movie saved to your watchlist!",
@@ -342,6 +375,9 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
 
   const handleLike = () => {
     if (!user) {
+      if (typeof window !== "undefined" && window.posthog) {
+        window.posthog.capture("signin_modal_shown", { trigger: "watchlist" });
+      }
       setAuthModalHeading("Save your picks & build your taste profile");
       return;
     }
@@ -580,6 +616,9 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                 size="lg"
                 onClick={() => {
                   if (!user) {
+                    if (typeof window !== "undefined" && window.posthog) {
+                      window.posthog.capture("signin_modal_shown", { trigger: "where_to_watch" });
+                    }
                     setAuthModalHeading("Sign in to track what you watch and get better picks next time");
                     return;
                   }

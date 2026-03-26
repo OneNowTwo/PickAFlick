@@ -22,6 +22,12 @@ function GoogleIcon() {
   );
 }
 
+function ph(event: string, props?: Record<string, unknown>) {
+  if (typeof window !== "undefined" && (window as any).posthog) {
+    (window as any).posthog.capture(event, props);
+  }
+}
+
 export function AuthPromptModal({ onSkip, heading = "Save your picks & build your taste profile" }: AuthPromptModalProps) {
   const { login } = useAuth();
 
@@ -43,7 +49,7 @@ export function AuthPromptModal({ onSkip, heading = "Save your picks & build you
 
         {/* Google button */}
         <button
-          onClick={login}
+          onClick={() => { ph("signin_modal_converted"); login(); }}
           className="w-full flex items-center justify-center gap-3 bg-primary hover:bg-primary/90 active:scale-[0.98] transition-all duration-150 rounded-xl h-14 text-white font-black text-base uppercase tracking-widest shadow-lg mt-1"
         >
           <GoogleIcon />
@@ -52,7 +58,7 @@ export function AuthPromptModal({ onSkip, heading = "Save your picks & build you
 
         {/* Skip */}
         <button
-          onClick={onSkip}
+          onClick={() => { ph("signin_modal_skipped"); onSkip(); }}
           className="text-xs font-bold uppercase tracking-[0.2em] text-white/30 hover:text-white/60 transition-colors"
         >
           Skip for now
