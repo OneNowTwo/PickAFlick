@@ -701,6 +701,36 @@ export async function registerRoutes(
     }
   });
 
+  // ===== USER PERSONALISATION ENDPOINTS =====
+
+  // Lightweight taste summary for the homepage welcome message
+  app.get("/api/user/taste-summary", async (req: Request, res: Response) => {
+    if (!req.isAuthenticated() || !req.user) {
+      res.status(401).json({ error: "Authentication required" });
+      return;
+    }
+    try {
+      const profile = await buildGenreProfile(req.user.id);
+      if (profile.length === 0) {
+        res.json({ topGenre: null, sessionCount: 0 });
+        return;
+      }
+      // Count distinct sessions in vote history
+      const { db } = await import("./db");
+      const { userVotes } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const votes = await db
+        .select({ sessionId: userVotes.sessionId })
+        .from(userVotes)
+        .where(eq(userVotes.userId, req.user.id));
+      const sessionCount = new Set(votes.map((v) => v.sessionId)).size;
+      res.json({ topGenre: profile[0].genre, sessionCount });
+    } catch (err) {
+      console.error("[taste-summary] Error:", err);
+      res.status(500).json({ error: "Failed to fetch taste summary" });
+    }
+  });
+
   // ===== SHARE ENDPOINTS =====
 
   // Save recommendations for sharing

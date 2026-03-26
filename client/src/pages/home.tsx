@@ -45,6 +45,18 @@ const MOOD_OPTIONS = [
 export default function Home() {
   const { user, loading: authLoading, login, logout } = useAuth();
   const [gameState, setGameState] = useState<GameState>("start");
+
+  // Personalised taste summary — only fetched when logged in
+  const { data: tasteSummary } = useQuery<{ topGenre: string | null; sessionCount: number }>({
+    queryKey: ["/api/user/taste-summary"],
+    queryFn: async () => {
+      const res = await fetch("/api/user/taste-summary", { credentials: "include" });
+      if (!res.ok) return { topGenre: null, sessionCount: 0 };
+      return res.json();
+    },
+    enabled: !!user,
+    staleTime: 60_000,
+  });
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [recommendations, setRecommendations] = useState<RecommendationsResponse | null>(null);
   const [selectedMoods, setSelectedMoods] = useState<string[]>([]);
@@ -308,14 +320,33 @@ export default function Home() {
             <div className="relative z-10 flex flex-col items-center gap-6 text-center w-full max-w-2xl mx-auto">
 
               {/* Headline — separate from interaction area */}
-              <div className="px-5 py-5 rounded-xl w-full" style={{ background: 'rgba(0, 0, 0, 0.72)' }}>
-                <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white drop-shadow-lg leading-tight">
-                  Stop searching. Start watching.
-                </h2>
-                <p className="text-sm sm:text-base text-white/80 font-medium mt-3 leading-snug">
-                  Because choosing your movie shouldn&apos;t take longer than watching it.
-                </p>
-              </div>
+              {(() => {
+                const isReturning = !!user && !!tasteSummary?.topGenre;
+                const firstName = user?.displayName?.split(" ")[0] ?? "";
+                return (
+                  <div className="px-5 py-5 rounded-xl w-full" style={{ background: 'rgba(0, 0, 0, 0.72)' }}>
+                    {isReturning ? (
+                      <>
+                        <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white drop-shadow-lg leading-tight">
+                          Welcome back {firstName} — ready to find tonight&apos;s movie?
+                        </h2>
+                        <p className="text-sm text-white/50 font-medium mt-2 leading-snug">
+                          Your top genre: {tasteSummary!.topGenre}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white drop-shadow-lg leading-tight">
+                          Stop searching. Start watching.
+                        </h2>
+                        <p className="text-sm sm:text-base text-white/80 font-medium mt-3 leading-snug">
+                          Because choosing your movie shouldn&apos;t take longer than watching it.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Interaction card — visually distinct, breathing animation */}
               <div
