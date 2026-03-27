@@ -3,7 +3,7 @@ import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
 
 /** Bump when adding new IMDb/editorial lists - invalidates old cache so catalogue rebuilds on deploy */
-const CATALOGUE_CACHE_KEY = "catalogue_v7";
+const CATALOGUE_CACHE_KEY = "catalogue_v8";
 
 export interface IStorage {
   getWatchlist(sessionId: string): Promise<WatchlistItem[]>;

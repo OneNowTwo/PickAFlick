@@ -111,167 +111,77 @@ export async function generateRecommendations(
     };
   });
 
-  const randomSeed = Math.floor(Math.random() * 100000);
-  const sessionTime = new Date().toISOString();
-
-  // Build exclusion list from cross-session memory only (no permanent blacklist)
+  // Build exclusion list from cross-session memory
   const chosenTitles = chosenMovies.map(m => `"${m.title}"`).join(", ");
-  const recentExclusions = recentlyRecommendedTitles.slice(-40);
+  const recentExclusions = recentlyRecommendedTitles.slice(-50);
 
   const currentYear = new Date().getFullYear();
   const recentThreshold = currentYear - 3;
 
   const filterContext = initialGenreFilters.length > 0
-    ? `\n🎯 **USER'S INITIAL MOOD/GENRE FILTERS**: They specifically chose to explore ${initialGenreFilters.join(", ")} films. This tells you their starting intent — honour it but don't be constrained by it.\n`
+    ? `\nThe user selected these genres as their starting mood: ${initialGenreFilters.join(", ")}. Use this as supporting context — it confirms direction but the A/B data below is the primary signal.\n`
     : "";
 
-  const prompt = `You are a world-class film critic and cinema historian with deep knowledge of GLOBAL cinema spanning 100+ years. You're like a Criterion Collection curator meets film school professor meets that friend who's seen 10,000 movies and can match anyone's taste with uncanny precision.
+  const prompt = `You are a precise film recommendation engine. A user completed a head-to-head movie picker — 7 choices, 7 rejections. Your job is to recommend films that match the specific taste signals revealed by their A/B choices. Not "good films in general" — films that uniquely fit THIS user's demonstrated preferences.${filterContext}
 
-A user played a head-to-head picker game where they chose 7 movies (and rejected 7 others). This A/B test gives you BOTH positive AND negative signals about their exact taste. Your job is to use these signals to make the most perfectly matched recommendations possible.${filterContext}
-
-${recentExclusions.length > 0 ? `=== ❌ RECENTLY RECOMMENDED — DO NOT REPEAT ===
-
-These films have been recommended in recent sessions. Avoid them to ensure fresh discoveries:
+${recentExclusions.length > 0 ? `DO NOT RECOMMEND THESE — already suggested in recent sessions:
 ${recentExclusions.map(t => `• ${t}`).join("\n")}
 
-` : ""}The user themselves chose: ${chosenTitles} — exclude these too.
+` : ""}Already in their picks (exclude): ${chosenTitles}
 
-=== 🎯 A/B TEST RESULTS — THIS IS THE CORE DATA ===
+=== THE A/B DATA ===
 
-**THE POSITIVE SIGNAL — What they CHOSE:**
+CHOSEN (positive signals — later rounds marked 🔥 carry more weight):
+${movieDescriptions.map((m) => `Round ${m.round}${m.weight > 1 ? " 🔥" : ""}: "${m.title}" (${m.year}) | ${m.primaryGenre} | Dir: ${m.director} | Cast: ${m.cast.slice(0,3).join(", ") || "N/A"} | Themes: ${m.keywords.join(", ") || "N/A"}
+  Synopsis: ${m.overview || "N/A"}`).join("\n\n")}
 
-${movieDescriptions.map((m) => `Round ${m.round}${m.weight > 1 ? " 🔥 (STRONGER SIGNAL — later choice)" : ""}
-  "${m.title}" (${m.year}, ${m.era}) — Rating: ${m.rating || "N/A"}/10
-  Director: ${m.director}
-  Cast: ${m.cast.length > 0 ? m.cast.join(", ") : "Unknown"}
-  PRIMARY Genre: ${m.primaryGenre}
-  All Genres: ${m.allGenres.join(", ")}
-  Keywords/Themes: ${m.keywords.length > 0 ? m.keywords.join(", ") : "N/A"}
-  Synopsis: ${m.overview || "No synopsis available"}`).join("\n\n")}
+REJECTED (negative signals — equally important):
+${rejectionContext.length > 0 ? rejectionContext.map((m) => `Round ${m.round}: PASSED on "${m.title}" (${m.year}, ${m.primaryGenre}, dir. ${m.director}) — CHOSE ${m.lostTo} instead
+  Their rejection of this film eliminates: ${m.primaryGenre} films with ${m.director}'s sensibility`).join("\n") : "No rejection data"}
 
-**THE NEGATIVE SIGNAL — What they REJECTED (and what beat it):**
+=== YOUR PROCESS (follow in order) ===
 
-${rejectionContext.length > 0 ? rejectionContext.map((m) => `Round ${m.round}: REJECTED "${m.title}" (${m.year})
-  Genre: ${m.primaryGenre} | Director: ${m.director}
-  Cast: ${m.cast.length > 0 ? m.cast.join(", ") : "Unknown"}
-  Keywords: ${m.keywords.length > 0 ? m.keywords.join(", ") : "N/A"}
-  Synopsis: ${m.overview || "N/A"}
-  ↳ CHOSE INSTEAD: ${m.lostTo}
-  ↳ WHAT THIS TELLS YOU: They actively passed on ${m.primaryGenre}/${m.director}'s style in favour of something else. This is a precise taste signal.`).join("\n\n") : "No rejection data available"}
+STEP 1 — READ THE CONTRAST, NOT JUST THE CHOICES.
+For each round, identify the specific quality the chosen film had that the rejected film lacked.
+Then find the PATTERN across all 7 rounds. Derive 4-5 precise taste signals.
+Good signals are specific: "prefers psychological tension over physical action", "drawn to 90s/2000s era over modern", "rejects broad comedic tone", "values restrained character study over plot spectacle".
 
-=== 🎬 MULTI-DIMENSIONAL TASTE ANALYSIS — DO ALL OF THESE ===
+STEP 2 — RECOMMEND FROM THOSE SIGNALS ONLY.
+For each recommendation ask: "Does this film match the specific signals I derived?"
+Then apply the critical test: Could this same film reasonably be recommended to someone who made the OPPOSITE choices in every round? If yes — it is the wrong film. The recommendation must be uniquely appropriate to THIS user's contrast pattern.
 
-The A/B test tells you FAR more than genre. Analyse every dimension:
+STEP 3 — QUALITY GATE (apply before finalising each pick).
+Every recommendation must pass all of:
+• Weighted quality floor ≥ 6.5/10: IMDb score (40%) + Rotten Tomatoes audience score (40%) + Metacritic score (20%) — use your knowledge of these ratings
+• Recognisable to a mainstream Australian audience — findable on streaming or widely available to rent/buy
+• No direct-to-streaming cheaply-made content
+• No films with fewer than 10,000 IMDb votes unless a widely known festival film
+• English language OR an international film well-known outside its home country
 
-1. **Genre Signals**: Not just "they like Action" — what TYPE? Gritty realism vs CGI spectacle? Character-driven vs set pieces? What did the rejections eliminate?
-
-2. **Era & Period**: Are they drawn to 70s grit, 80s neon, 90s indie, 2000s prestige, modern aesthetics? Every pick and rejection narrows this.
-
-3. **Director & Actor Sensibility**: Did they pick Villeneuve over Bay? Phoenix over Cruise? These choices reveal taste in craft, not just entertainment.
-
-4. **Cinematographic Style**: Handheld rawness vs. carefully composed frames? Naturalistic lighting vs. heightened/stylised? Desaturated grit vs. rich colour? This is often MORE important than genre.
-
-5. **Pacing & Rhythm**: Slow-burn and meditative vs. kinetic and propulsive? Did they pick the 2-hour slow drama over the 90-minute thriller? Pace preference is diagnostic.
-
-6. **Script & Dialogue Style**: Sharp/witty vs. sparse/naturalistic vs. poetic vs. functional? Did they choose the dialogue-heavy film or the more visual one?
-
-7. **Tone & Emotional Register**: Cold/detached, warm/intimate, oppressive/tense, playful/ironic, melancholic/beautiful. Two films can share a genre but feel COMPLETELY different tonally.
-
-8. **Themes & Substance**: Existential questions, social commentary, psychological depth, pure entertainment? The keywords tell you what content they connect with.
-
-9. **Cinematic Texture & Feel** — THIS IS CRITICAL AND OFTEN MISSED:
-   - Production texture: gritty/grimy realism, polished studio sheen, lo-fi indie rawness, dream-like surrealism
-   - Score character: electronic/synthetic, orchestral/sweeping, minimal/diegetic, silence as sound design
-   - Color palette: desaturated/grey, warm/golden hour, neon/heightened, cold/clinical, nostalgic/faded
-   - Emotional texture: the FEELING you leave the cinema with — gutted, exhilarated, unsettled, comforted, provoked
-   - A Fincher thriller and a Dardennes thriller are NOT interchangeable. A Villeneuve sci-fi and a Luc Besson sci-fi are NOT interchangeable. Match the TEXTURE, not just the label.
-
-10. **USE THE REJECTIONS AS NEGATIVE FILTERS**: 
-    - If they rejected a loud action film for a quiet drama — they want substance over spectacle
-    - If they rejected a warm romantic film for a cold thriller — they want tension over comfort
-    - If they rejected a director's famous work — they may not connect with that filmmaker's sensibility
-    - Every rejection eliminates a category of films from your recommendations
-
-⚠️ **RECENCY WEIGHTING**: Rounds 5-7 (marked 🔥) are MORE IMPORTANT — their taste crystallised as they went. Weight these choices 1.5x more heavily in your analysis.
-
-=== 🎲 DIVERSITY REQUIREMENT ===
-
-Diversity Seed: ${randomSeed}. Use this to deterministically vary your exploration:
-- Seed ending 0-1: Prioritise 1970s–1980s cinema and neo-noir
-- Seed ending 2-3: Prioritise underseen European / Latin American / African cinema
-- Seed ending 4-5: Prioritise 1990s–2000s indie and cult films
-- Seed ending 6-7: Prioritise recent (last 5 years) lesser-known releases
-- Seed ending 8-9: Prioritise 2010s arthouse and prestige dramas
-
-**MANDATORY ANTI-REPETITION:**
-1. For every film you first think of — go one level deeper. The obvious choice is rarely the best match.
-2. If a film appears in the top 20 Google results for its genre — too obvious, skip it
-3. Recommend directors' lesser-known works, NOT their most famous films
-4. At least 2 of your 7 must be from outside the US/UK
-5. No two recommendations from the same director or franchise
-6. **BRAINSTORM 4 OPTIONS PER SLOT, then choose the most precisely matched one** — not the first that came to mind
-
-=== 🎯 RECOMMENDATION QUALITY STANDARD ===
-
-Each recommendation must:
-- Address the user as "you" and "your"
-- Reference SPECIFIC films from their picks to explain the connection
-- Include at least ONE intangible quality (pacing, visual texture, tonal feel, script approach, emotional register, score) that directly links to something they chose or rejected
-- Go beyond genre — explain the FEEL, not just the category
-- Be genuinely surprising yet perfectly matched — "I didn't expect to love this but I couldn't stop watching"
-
-=== VARIETY REQUIREMENTS ===
-
-Your 10 recommendations MUST include:
-1. **ONE RECENT (${recentThreshold}-${currentYear})**: Something from the last 3 years that matches their taste
-2. **ONE UNDERSEEN GEM**: Critically acclaimed but lesser-known — a discovery
-3. **ONE CLASSIC (pre-2010)**: A foundational film that connects to their preferences
-4. **SEVEN FLEXIBLE**: Mix of eras, but each with a SPECIFIC multi-dimensional reason
-
-=== QUALITY STANDARDS ===
-
-**INCLUDE:**
-- Critically acclaimed (RT 70%+, Metacritic 65+, or IMDb 7.0+)
-- English-language OR prestigious international films with wide recognition
-- Award winners/nominees (Oscar, BAFTA, Cannes, etc.) or cult classics
-
-**NEVER RECOMMEND:**
-- Direct-to-streaming cheaply-made content
-- Low-budget horror with <6.0 ratings
-- Obscure films with <10,000 IMDb ratings unless festival darlings
+=== VARIETY ===
+Across your 7 recommendations: include at least one from the last 3 years (${recentThreshold}–${currentYear}), at least one pre-2010 classic. No two from the same director or franchise. Natural mix of eras — not all from the same decade.
 
 === OUTPUT FORMAT ===
-
-Respond in this exact JSON format:
 {
   "topGenres": ["genre1", "genre2", "genre3"],
   "themes": ["theme1", "theme2", "theme3"],
   "preferredEras": ["era1", "era2"],
-  "visualStyle": "One punchy sentence (15-25 words) about their visual/cinematic taste, referencing 1-2 specific films they chose.",
-  "mood": "One punchy sentence (15-25 words) about their emotional/tonal preferences, referencing 1-2 specific picks.",
+  "visualStyle": "One sentence about their visual/cinematic taste, citing 1-2 specific films they chose.",
+  "mood": "One sentence about their emotional/tonal preference, citing 1-2 specific picks.",
   "recommendations": [
-    {"title": "Recent Film Title", "year": ${currentYear}, "reason": "Personalised reason referencing their specific picks and at least one intangible quality", "category": "recent"},
-    {"title": "Underseen Gem Title", "year": 2015, "reason": "Why this hidden gem fits — reference texture/feel/pacing", "category": "underseen"},
-    {"title": "Classic Title", "year": 1995, "reason": "Why this older film connects — reference specific quality from their picks", "category": "classic"},
-    {"title": "Flexible Pick 1", "year": 2019, "reason": "Personalised, multi-dimensional reason", "category": "flexible"},
-    {"title": "Flexible Pick 2", "year": 2021, "reason": "Personalised, multi-dimensional reason", "category": "flexible"},
-    {"title": "Flexible Pick 3", "year": 2017, "reason": "Personalised, multi-dimensional reason", "category": "flexible"},
-    {"title": "Flexible Pick 4", "year": 2016, "reason": "Personalised, multi-dimensional reason", "category": "flexible"},
-    {"title": "Backup Pick 1", "year": 2018, "reason": "Alternative — different angle on their taste", "category": "backup"},
-    {"title": "Backup Pick 2", "year": 2020, "reason": "Alternative — different angle on their taste", "category": "backup"},
-    {"title": "Backup Pick 3", "year": 2014, "reason": "Alternative — different angle on their taste", "category": "backup"}
+    {"title": "Film Title", "year": 2019, "reason": "1-2 sentences using 'you'/'your', referencing their specific A/B choices and explaining why this matches their demonstrated contrast — not generic praise", "category": "flexible"}
   ]
 }
 
-CRITICAL: Exactly 10 recommendations. First must be recent (${recentThreshold}-${currentYear}). One underseen gem. One pre-2010 classic. All reasons must reference their actual picks and include intangible qualities.`;
+CRITICAL: Exactly 7 recommendations. Every reason must cite their specific choices. A reason that could apply to any user is the wrong reason.`;
 
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
-      max_tokens: 2000,
-      temperature: 0.92,
+      max_tokens: 1600,
+      temperature: 0.88,
     });
 
     const content = response.choices[0]?.message?.content || "{}";
@@ -324,7 +234,15 @@ CRITICAL: Exactly 10 recommendations. First must be recent (${recentThreshold}-$
     });
 
     const resolvedRecs = (await Promise.all(recPromises)).filter((r): r is Recommendation => r !== null);
-    const mainRecs = resolvedRecs.slice(0, 6);
+
+    // Code-level repetition guard — filter out any title already in cross-session memory.
+    // This makes repetition impossible regardless of LLM behaviour.
+    const recentTitlesSet = new Set(recentlyRecommendedTitles.map(t => t.toLowerCase().trim()));
+    const freshRecs = resolvedRecs.filter(r =>
+      !recentTitlesSet.has(r.movie.title.toLowerCase().trim())
+    );
+
+    const mainRecs = freshRecs.slice(0, 6);
     const recommendations: Recommendation[] = [...mainRecs];
 
     // Record what resolved so future sessions explore different films

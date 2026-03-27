@@ -167,13 +167,17 @@ async function buildCatalogue(): Promise<void> {
     }
 
     // Supplement any genre with fewer than MIN_GENRE_MOVIES using TMDb discover.
-    // Curated sources are preferred; TMDb fills gaps. 4 pages ≈ 80 movies per genre.
+    // Curated sources are preferred; TMDb fills gaps. Default 4 pages ≈ 80 movies per genre.
+    // Family and Fantasy are capped at 2 pages (~40 movies) to avoid over-representation
+    // in A/B pair selection — they contain many animated/superhero films that already
+    // appear via Action and Sci-Fi lists.
     const MIN_GENRE_MOVIES = 10;
-    const SUPPLEMENT_PAGES = 4;
+    const DEFAULT_SUPPLEMENT_PAGES = 4;
 
     // Each genre maps to a TMDb config. genreIds are joined with | (OR logic in TMDb).
     // Special value genreIds: [] means use getTopRatedMovies (no genre filter).
-    const TMDB_GENRE_MAP: Record<string, { genreIds: number[]; minRating?: number }> = {
+    // Optional `pages` overrides DEFAULT_SUPPLEMENT_PAGES for that genre.
+    const TMDB_GENRE_MAP: Record<string, { genreIds: number[]; minRating?: number; pages?: number }> = {
       "Action":               { genreIds: [28] },
       "Comedy":               { genreIds: [35] },
       "Classic Movies":       { genreIds: [18, 80, 53, 37] }, // Drama|Crime|Thriller|Western
@@ -183,9 +187,9 @@ async function buildCatalogue(): Promise<void> {
       "Thriller":             { genreIds: [53] },
       "War":                  { genreIds: [10752] },
       "Documentary":          { genreIds: [99] },
-      "Family":               { genreIds: [10751] },
+      "Family":               { genreIds: [10751], pages: 2 }, // capped — many animated films overlap with Animation
       "Top 250 Movies":       { genreIds: [], minRating: 7.8 }, // Top-rated, no genre filter
-      "Fantasy":              { genreIds: [14] },
+      "Fantasy":              { genreIds: [14], pages: 2 },     // capped — overlaps with Sci-Fi/superhero
       "Horror":               { genreIds: [27] },
       "Romance":              { genreIds: [10749] },
       "Sci-Fi":               { genreIds: [878] },
@@ -196,8 +200,9 @@ async function buildCatalogue(): Promise<void> {
       if (existing < MIN_GENRE_MOVIES) {
         console.log(`${listName} has only ${existing} movies — supplementing with TMDb...`);
         const supplementMovies: Movie[] = [];
+        const pages = genreCfg.pages ?? DEFAULT_SUPPLEMENT_PAGES;
 
-        for (let page = 1; page <= SUPPLEMENT_PAGES; page++) {
+        for (let page = 1; page <= pages; page++) {
           let pageMovies: Movie[];
           if (genreCfg.genreIds.length === 0) {
             // Use top-rated endpoint (no genre filter) — for Top 250 / Critically Acclaimed
