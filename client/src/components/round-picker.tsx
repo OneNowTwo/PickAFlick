@@ -229,6 +229,8 @@ export function RoundPicker({
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [selectedSide, setSelectedSide] = useState<"left" | "right" | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
+  /** Only apply winner/loser transforms for the pair that was actually clicked */
+  const [selectionPair, setSelectionPair] = useState<{ left: number; right: number } | null>(null);
   const [showSynopsis, setShowSynopsis] = useState<"left" | "right" | null>(null);
   const [insight, setInsight] = useState("");
   const [addedToWatchlist, setAddedToWatchlist] = useState<Set<number>>(new Set());
@@ -280,7 +282,8 @@ export function RoundPicker({
     
     setSelectedSide(side);
     setIsAnimating(true);
-    
+    setSelectionPair({ left: leftMovie.id, right: rightMovie.id });
+
     setTimeout(() => {
       onChoice(movieId);
     }, 600);
@@ -351,16 +354,19 @@ export function RoundPicker({
     setShowSynopsis(side);
   };
 
-  // Generate new insight when round changes - CRITICAL: Reset all animation state
+  // Reset pick animation only when the actual pair changes (not when choiceHistory updates alone)
   useEffect(() => {
-    // Force immediate reset without transition
     setSelectedSide(null);
     setIsAnimating(false);
+    setSelectionPair(null);
     setShowSynopsis(null);
     didShowSynopsisRef.current = false;
+    setSwipeOffset(0);
+  }, [round, leftMovie.id, rightMovie.id]);
+
+  useEffect(() => {
     setInsight(generateInsight(choiceHistory, round));
-    setSwipeOffset(0); // Reset swipe offset too
-  }, [round, leftMovie.id, rightMovie.id, choiceHistory]);
+  }, [choiceHistory, round]);
 
   useEffect(() => {
     return () => {
@@ -398,8 +404,10 @@ export function RoundPicker({
     const leadActors = getLeadActors(movie);
     const highlyRated = isHighlyRated(movie);
     const isAdded = addedToWatchlist.has(movie.tmdbId);
-    const isWinner = selectedSide === side;
-    const isLoser = selectedSide !== null && selectedSide !== side;
+    const isSamePair =
+      selectionPair?.left === leftMovie.id && selectionPair?.right === rightMovie.id;
+    const isWinner = selectedSide === side && isSamePair;
+    const isLoser = selectedSide !== null && selectedSide !== side && isSamePair;
 
     const handleAddToWatchlist = (e: React.MouseEvent) => {
       e.stopPropagation();
