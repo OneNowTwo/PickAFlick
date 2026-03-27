@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import type { Movie, ChoiceHistory } from "@shared/schema";
 import { Loader2, Star, Shuffle, X, Brain, Bookmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -398,6 +398,8 @@ export function RoundPicker({
     const leadActors = getLeadActors(movie);
     const highlyRated = isHighlyRated(movie);
     const isAdded = addedToWatchlist.has(movie.tmdbId);
+    const isWinner = selectedSide === side;
+    const isLoser = selectedSide !== null && selectedSide !== side;
 
     const handleAddToWatchlist = (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -411,95 +413,105 @@ export function RoundPicker({
     };
 
     return (
-      <button
-        key={`${movie.id}-${round}`}
-        onClick={() => handleSelect(side, movie.id)}
-        disabled={isSubmitting || isAnimating || isSkipping}
-        style={{
-          transform: selectedSide === side 
-            ? `scale(1.05) ${side === "left" ? "translateX(0)" : "translateX(0)"}` 
-            : selectedSide !== null 
-              ? "scale(0.9)" 
-              : "scale(1) translateX(0) translateY(0)"
-        }}
-        className={`
-          relative w-full md:w-full max-w-[180px] md:max-w-[300px] aspect-[2/3] rounded-lg md:rounded-xl overflow-hidden 
-          transition-all duration-500 ease-out cursor-pointer
-          hover:-translate-y-2 hover:shadow-xl
-          ${selectedSide === side 
-            ? `z-20 md:translate-x-[60%] shadow-2xl shadow-primary/30` 
-            : selectedSide !== null 
-              ? "z-10 opacity-40" 
-              : ""
-          }
-        `}
-        data-testid={`movie-choice-${side}`}
-      >
-        {posterUrl ? (
-          <img
-            src={posterUrl}
-            alt={movie.title}
-            className="w-full h-full object-cover"
-            loading="eager"
-          />
-        ) : (
-          <div className="w-full h-full bg-muted flex items-center justify-center">
-            <span className="text-muted-foreground text-sm md:text-lg">No Poster</span>
+      <div key={`${movie.id}-${round}`} className="relative flex flex-col items-center gap-2">
+        {/* Main poster button */}
+        <button
+          onClick={() => handleSelect(side, movie.id)}
+          disabled={isSubmitting || isAnimating || isSkipping}
+          style={{
+            transform: isWinner
+              ? "scale(1.08) translateY(-12px)"
+              : isLoser
+                ? "scale(0.88) translateY(4px)"
+                : "scale(1)",
+          }}
+          className={`
+            relative w-full max-w-[180px] md:max-w-[300px] aspect-[2/3] rounded-lg md:rounded-xl overflow-hidden
+            transition-all duration-500 ease-out cursor-pointer
+            hover:-translate-y-3 hover:scale-[1.03] hover:shadow-2xl hover:shadow-black/60
+            ${isWinner ? "z-20 shadow-2xl shadow-primary/40 ring-2 ring-primary/60" : ""}
+            ${isLoser ? "z-10 opacity-40" : ""}
+          `}
+          data-testid={`movie-choice-${side}`}
+        >
+          {posterUrl ? (
+            <img src={posterUrl} alt={movie.title} className="w-full h-full object-cover" loading="eager" />
+          ) : (
+            <div className="w-full h-full bg-muted flex items-center justify-center">
+              <span className="text-muted-foreground text-sm md:text-lg">No Poster</span>
+            </div>
+          )}
+
+          {/* Gradient overlay */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+
+          {/* Acclaimed badge */}
+          {highlyRated && (
+            <div className="absolute top-2 left-2 md:top-3 md:left-3 flex items-center gap-1 bg-yellow-500/90 text-black px-1.5 py-0.5 md:px-2 md:py-1 rounded text-[10px] md:text-xs font-semibold">
+              <Star className="w-3 h-3 fill-current" />
+              <span>Acclaimed</span>
+            </div>
+          )}
+
+          {/* Movie info bottom */}
+          <div className="absolute bottom-0 left-0 right-0 p-2 md:p-4 text-left">
+            <h3
+              onClick={(e) => handleTitleTap(side, e)}
+              className="text-white font-bold text-sm md:text-xl line-clamp-2 cursor-pointer hover:text-primary transition-colors"
+            >
+              {movie.title}
+            </h3>
+            <p className="text-white/70 text-xs md:text-sm pointer-events-none">
+              {movie.year} {movie.rating ? `• ${movie.rating.toFixed(1)}★` : ""}
+            </p>
+            {leadActors && (
+              <p className="text-white/60 text-[10px] md:text-xs mt-0.5 line-clamp-1 pointer-events-none">
+                {leadActors}
+              </p>
+            )}
+            <p className="text-white/50 text-[10px] md:text-xs mt-0.5 line-clamp-1 hidden md:block pointer-events-none">
+              {movie.genres.slice(0, 3).join(" • ")}
+            </p>
           </div>
-        )}
-        
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
-        
-        {highlyRated && (
-          <div className="absolute top-2 left-2 md:top-3 md:left-3 flex items-center gap-1 bg-yellow-500/90 text-black px-1.5 py-0.5 md:px-2 md:py-1 rounded text-[10px] md:text-xs font-semibold">
-            <Star className="w-3 h-3 fill-current" />
-            <span>Acclaimed</span>
-          </div>
-        )}
-        
-        {/* Add to Watchlist button */}
+
+          {/* Winner thumbs up — centre of card */}
+          {isWinner && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="bg-primary/90 backdrop-blur-sm rounded-full w-14 h-14 md:w-20 md:h-20 flex items-center justify-center shadow-2xl animate-bounce">
+                <span className="text-2xl md:text-4xl">👍</span>
+              </div>
+            </div>
+          )}
+
+          {/* Loser overlay — "Save for later?" clickable nudge */}
+          {isLoser && !isAdded && (
+            <button
+              onClick={handleAddToWatchlist}
+              className="absolute inset-0 flex items-center justify-center pointer-events-auto"
+            >
+              <div className="bg-black/75 backdrop-blur-sm border border-white/30 rounded-full px-4 py-2 flex items-center gap-2">
+                <Bookmark className="w-3.5 h-3.5 text-white" />
+                <span className="text-white text-[11px] md:text-xs font-bold">Save for later?</span>
+              </div>
+            </button>
+          )}
+        </button>
+
+        {/* Add to Watchlist button — sits below poster, never covers titles */}
         <button
           onClick={handleAddToWatchlist}
           disabled={isAdded}
-          className={`absolute top-2 right-2 md:top-3 md:right-3 flex items-center gap-1 px-2 py-1 rounded text-[10px] md:text-xs font-semibold transition-all ${
-            isAdded 
-              ? "bg-green-600 text-white" 
-              : "bg-black/60 text-white/90 hover:bg-black/80 hover:text-white"
-          }`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] md:text-xs font-semibold transition-all duration-200 backdrop-blur-md border
+            ${isAdded
+              ? "bg-green-600/90 border-green-500/60 text-white scale-105"
+              : "bg-black/50 border-white/20 text-white/70 hover:bg-black/80 hover:border-white/50 hover:text-white hover:scale-105 active:scale-95"
+            }`}
           data-testid={`button-add-watchlist-${side}`}
         >
-          <Bookmark className={`w-3 h-3 ${isAdded ? "fill-current" : ""}`} />
-          <span>{isAdded ? "Added!" : "Save"}</span>
+          <Bookmark className={`w-3 h-3 shrink-0 ${isAdded ? "fill-current" : ""}`} />
+          <span>{isAdded ? "Added ✓" : "Add to Watchlist"}</span>
         </button>
-        
-        <div className="absolute bottom-0 left-0 right-0 p-2 md:p-4 text-left">
-          <h3 
-            onClick={(e) => handleTitleTap(side, e)}
-            className="text-white font-bold text-sm md:text-xl line-clamp-2 cursor-pointer hover:text-primary transition-colors"
-          >
-            {movie.title}
-          </h3>
-          <p className="text-white/70 text-xs md:text-sm pointer-events-none">
-            {movie.year} {movie.rating ? `• ${movie.rating.toFixed(1)}★` : ""}
-          </p>
-          {leadActors && (
-            <p className="text-white/60 text-[10px] md:text-xs mt-0.5 line-clamp-1 pointer-events-none">
-              {leadActors}
-            </p>
-          )}
-          <p className="text-white/50 text-[10px] md:text-xs mt-0.5 line-clamp-1 hidden md:block pointer-events-none">
-            {movie.genres.slice(0, 3).join(" • ")}
-          </p>
-        </div>
-        
-        {selectedSide === side && (
-          <div className="absolute top-2 right-2 md:top-4 md:right-4 w-7 h-7 md:w-10 md:h-10 rounded-full bg-primary flex items-center justify-center animate-pulse">
-            <svg className="w-4 h-4 md:w-6 md:h-6 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-        )}
-      </button>
+      </div>
     );
   };
 
@@ -570,7 +582,7 @@ export function RoundPicker({
 
       {/* Side-by-side movie cards with swipe support */}
       <div 
-        className="relative flex flex-row gap-1 md:gap-8 w-full items-center justify-center perspective-1000 touch-pan-y"
+        className="relative flex flex-row gap-1 md:gap-8 w-full items-end justify-center perspective-1000 touch-pan-y"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -579,7 +591,9 @@ export function RoundPicker({
           transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none'
         }}
       >
-        {renderMovieCard(leftMovie, "left", leftPosterUrl)}
+        <Fragment key={`left-${leftMovie.id}-${round}`}>
+          {renderMovieCard(leftMovie, "left", leftPosterUrl)}
+        </Fragment>
 
         <div className={`flex items-center justify-center transition-opacity duration-300 ${selectedSide ? "opacity-0" : "opacity-100"}`}>
           <span
@@ -597,7 +611,9 @@ export function RoundPicker({
           </span>
         </div>
 
-        {renderMovieCard(rightMovie, "right", rightPosterUrl)}
+        <Fragment key={`right-${rightMovie.id}-${round}`}>
+          {renderMovieCard(rightMovie, "right", rightPosterUrl)}
+        </Fragment>
       </div>
 
       {/* Skip button - bold and prominent */}
