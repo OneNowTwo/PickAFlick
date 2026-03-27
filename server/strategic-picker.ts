@@ -15,6 +15,19 @@
 
 import type { Movie } from "@shared/schema";
 
+// Rolling cross-session memory — prevents the same movies appearing in back-to-back sessions
+const recentlyShownInAB: number[] = []; // stores tmdbIds
+const MAX_RECENT_AB = 300;
+
+function recordShown(tmdbIds: number[]): void {
+  for (const id of tmdbIds) {
+    if (!recentlyShownInAB.includes(id)) {
+      recentlyShownInAB.push(id);
+      if (recentlyShownInAB.length > MAX_RECENT_AB) recentlyShownInAB.shift();
+    }
+  }
+}
+
 // ─── Heuristic scoring ─────────────────────────────────────────────────────
 
 /** 1 = lightest/most fun, 10 = darkest/heaviest */
@@ -187,12 +200,15 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
+/**
+ * Pick from the top qualifying candidates with significant randomness so the
+ * same films don't dominate every session. We take the top 40% by the prefer
+ * score, then shuffle that pool and return the first `count` entries.
+ */
 function pickBest(pool: ScoredMovie[], prefer: (s: ScoredMovie) => number, count = 8): Movie[] {
-  return pool
-    .map(s => ({ s, score: prefer(s) + Math.random() * 0.5 })) // small jitter for variety
-    .sort((a, b) => b.score - a.score)
-    .slice(0, count)
-    .map(x => x.s.movie);
+  const sorted = [...pool].sort((a, b) => prefer(b) - prefer(a));
+  const topSlice = sorted.slice(0, Math.max(count * 4, Math.ceil(sorted.length * 0.4)));
+  return shuffle(topSlice).slice(0, count).map(s => s.movie);
 }
 
 // ─── Main export ─────────────────────────────────────────────────────────────
@@ -212,17 +228,20 @@ export function selectStrategicPair(
   usedIds: Set<number>
 ): [Movie, Movie] | null {
 
-  // Build pool: post-1980, has poster, decent rating, not already shown
+  // Build pool: English-language, post-1980, recognisable (rating ≥ 7.0), not already shown
   const alreadyShown = new Set([
     ...Array.from(usedIds),
     ...history.flatMap(h => [h.chosenMovie.tmdbId, h.rejectedMovie.tmdbId]),
+    ...recentlyShownInAB,
   ]);
 
   const pool = allMovies.filter(m =>
     !alreadyShown.has(m.tmdbId) &&
     m.posterPath && m.posterPath.trim() &&
     m.year && m.year >= 1980 &&
-    m.rating && m.rating >= 6.5
+    m.rating && m.rating >= 7.0 &&
+    // English-language only — keeps pairs recognisable to the average user
+    (!m.original_language || m.original_language === "en")
   );
 
   if (pool.length < 2) return null;
@@ -332,8 +351,13 @@ export function selectStrategicPair(
   // Safety: fallback if algorithm returned identical or null movies
   if (!movieA || !movieB || movieA.id === movieB.id) {
     const fallback = shuffle(pool);
-    return fallback.length >= 2 ? [fallback[0], fallback[1]] : null;
+    if (fallback.length < 2) return null;
+    recordShown([fallback[0].tmdbId, fallback[1].tmdbId]);
+    return [fallback[0], fallback[1]];
   }
+
+  // Record so these movies are excluded from the next few sessions
+  recordShown([movieA.tmdbId, movieB.tmdbId]);
 
   return [movieA, movieB];
 }
