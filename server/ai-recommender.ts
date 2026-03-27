@@ -249,7 +249,7 @@ CRITICAL: Exactly 7 recommendations. First must be recent (${recentThreshold}-${
       model: "gpt-4o",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
-      max_tokens: 3000,
+      max_tokens: 1500,
       temperature: 0.92,
     });
 
@@ -491,7 +491,7 @@ Respond in JSON:
       model: "gpt-4o",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
-      max_tokens: 300,
+      max_tokens: 250,
       temperature: 0.92,
     });
 
