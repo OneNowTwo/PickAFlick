@@ -43,7 +43,7 @@ export function AuthPromptModal({
   }, []);
 
   const handleContinue = () => {
-    ph("signup_cta_clicked", { trigger_source: triggerSource });
+    ph("signin_modal_converted", { trigger_source: triggerSource });
     sessionStorage.setItem("auth_trigger_source", triggerSource);
     login();
   };

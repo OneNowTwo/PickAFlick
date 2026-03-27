@@ -66,7 +66,10 @@ export function SignUpNudge({ movieTitle }: SignUpNudgeProps) {
   if (!show) return null;
 
   const handleContinue = () => {
-    ph("signup_cta_clicked", { trigger_source: "post_recommendation" });
+    ph("signin_modal_converted", {
+      trigger_source: "post_recommendation",
+      show_number: ss(KEY_COUNT),
+    });
     sessionStorage.setItem("auth_trigger_source", "post_recommendation");
     login();
   };

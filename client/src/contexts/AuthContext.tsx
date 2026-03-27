@@ -1,5 +1,8 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 
+/** Prevents duplicate user_signed_in from React Strict Mode / overlapping effects (cleared on logout). */
+const PH_AUTH_SIGNIN_CAPTURED_KEY = "ph_auth_signin_captured";
+
 interface AuthUser {
   id: number;
   googleId: string;
@@ -45,6 +48,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const triggerSource = sessionStorage.getItem("auth_trigger_source") || "unknown";
             sessionStorage.removeItem("auth_trigger_source");
 
+            let shouldCaptureSignin = true;
+            try {
+              if (sessionStorage.getItem(PH_AUTH_SIGNIN_CAPTURED_KEY) === "1") {
+                shouldCaptureSignin = false;
+              } else {
+                sessionStorage.setItem(PH_AUTH_SIGNIN_CAPTURED_KEY, "1");
+              }
+            } catch {
+              shouldCaptureSignin = true;
+            }
+
             const identifyProps: Record<string, string> = {
               email: resolvedUser.email,
               name: resolvedUser.displayName,
@@ -57,10 +71,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             ph.identify(String(resolvedUser.id), identifyProps);
 
-            if (isNewUser) {
-              ph.capture("user_signed_up", { method: "google", trigger_source: triggerSource });
-            } else {
-              ph.capture("user_signed_in", { method: "google", trigger_source: triggerSource });
+            if (shouldCaptureSignin) {
+              ph.capture("user_signed_in", {
+                method: "google",
+                trigger_source: triggerSource,
+                is_new_user: isNewUser,
+              });
             }
           }
           // Clean the query params without a page reload
@@ -81,6 +97,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     if (typeof window !== "undefined" && (window as any).posthog) {
       (window as any).posthog.capture("user_signed_out");
+    }
+    try {
+      sessionStorage.removeItem(PH_AUTH_SIGNIN_CAPTURED_KEY);
+    } catch {
+      /* ignore */
     }
     await fetch("/auth/logout", { method: "POST" });
     setUser(null);
