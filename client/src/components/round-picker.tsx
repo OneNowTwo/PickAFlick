@@ -229,6 +229,8 @@ export function RoundPicker({
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [selectedSide, setSelectedSide] = useState<"left" | "right" | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
+  // Track which movie pair the selection belongs to — prevents new posters inheriting animation
+  const [selectionPair, setSelectionPair] = useState<{ left: number; right: number } | null>(null);
   const [showSynopsis, setShowSynopsis] = useState<"left" | "right" | null>(null);
   const [insight, setInsight] = useState("");
   const [addedToWatchlist, setAddedToWatchlist] = useState<Set<number>>(new Set());
@@ -280,7 +282,8 @@ export function RoundPicker({
     
     setSelectedSide(side);
     setIsAnimating(true);
-    
+    setSelectionPair({ left: leftMovie.id, right: rightMovie.id });
+
     setTimeout(() => {
       onChoice(movieId);
     }, 600);
@@ -351,20 +354,15 @@ export function RoundPicker({
     setShowSynopsis(side);
   };
 
-  const [suppressTransition, setSuppressTransition] = useState(false);
-
-  // Generate new insight when round changes - CRITICAL: Reset all animation state
+  // Reset animation state when round/movies change
   useEffect(() => {
-    // Suppress CSS transition for one frame so new posters snap to position
-    setSuppressTransition(true);
     setSelectedSide(null);
     setIsAnimating(false);
     setShowSynopsis(null);
+    setSelectionPair(null);
     didShowSynopsisRef.current = false;
     setInsight(generateInsight(choiceHistory, round));
     setSwipeOffset(0);
-    // Re-enable transition after a single frame
-    requestAnimationFrame(() => setSuppressTransition(false));
   }, [round, leftMovie.id, rightMovie.id, choiceHistory]);
 
   useEffect(() => {
@@ -403,8 +401,9 @@ export function RoundPicker({
     const leadActors = getLeadActors(movie);
     const highlyRated = isHighlyRated(movie);
     const isAdded = addedToWatchlist.has(movie.tmdbId);
-    const isWinner = selectedSide === side;
-    const isLoser = selectedSide !== null && selectedSide !== side;
+    const isSamePair = selectionPair?.left === leftMovie.id && selectionPair?.right === rightMovie.id;
+    const isWinner = selectedSide === side && isSamePair;
+    const isLoser = selectedSide !== null && selectedSide !== side && isSamePair;
 
     const handleAddToWatchlist = (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -432,8 +431,7 @@ export function RoundPicker({
           }}
           className={`
             relative w-full max-w-[180px] md:max-w-[300px] aspect-[2/3] rounded-lg md:rounded-xl overflow-hidden
-            ${suppressTransition ? "" : "transition-all duration-500 ease-out"}
-            cursor-pointer
+            transition-all duration-500 ease-out cursor-pointer
             hover:-translate-y-3 hover:scale-[1.03] hover:shadow-2xl hover:shadow-black/60
             ${isWinner ? "z-20 shadow-2xl shadow-primary/40 ring-2 ring-primary/60" : ""}
             ${isLoser ? "z-10 opacity-40" : ""}
