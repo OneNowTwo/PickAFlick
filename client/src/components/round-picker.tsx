@@ -530,7 +530,7 @@ export function RoundPicker({
       <div className="flex flex-col items-center gap-3">
         <ProgressRing progress={progress} round={round} size={80} />
 
-        <p className="text-muted-foreground text-xs md:text-sm max-w-xs text-center">
+        <p className="text-white text-sm md:text-base font-medium max-w-xs text-center tracking-wide">
           {insight}
         </p>
       </div>
