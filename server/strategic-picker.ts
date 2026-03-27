@@ -273,14 +273,26 @@ export function selectStrategicPair(
     ...recentlyShownInAB,
   ]);
 
-  const pool = allMovies.filter(m =>
+  const rawPool = allMovies.filter(m =>
     !alreadyShown.has(m.tmdbId) &&
     m.posterPath && m.posterPath.trim() &&
     m.year && m.year >= 1980 &&
-    m.rating && m.rating >= 7.0 &&
-    // English-language only — keeps pairs recognisable to the average user
+    m.rating && m.rating >= 6.5 &&
     (!m.original_language || m.original_language === "en")
   );
+
+  // Hard cap on Animation — prevents Pixar/DreamWorks from flooding the pool
+  // since animated films rate very highly and dominate quality-ranked selections.
+  const ANIMATION_CAP = 6;
+  let animationCount = 0;
+  const pool = rawPool.filter(m => {
+    const isAnimation = m.genres[0] === "Animation" || (m.genres.includes("Animation") && !["Action","Thriller","Horror","Drama","Comedy","Romance","Sci-Fi","Fantasy"].includes(m.genres[0]));
+    if (isAnimation) {
+      if (animationCount >= ANIMATION_CAP) return false;
+      animationCount++;
+    }
+    return true;
+  });
 
   if (pool.length < 2) return null;
 

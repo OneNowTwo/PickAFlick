@@ -164,8 +164,8 @@ Key dimensions to analyse:
   "topGenres": ["genre1", "genre2", "genre3"],
   "themes": ["theme1", "theme2", "theme3"],
   "preferredEras": ["era1", "era2"],
-  "visualStyle": "One sentence describing their cinematic taste, referencing 1-2 specific films they chose.",
-  "mood": "One sentence about their emotional/tonal preferences, referencing 1-2 specific picks.",
+  "visualStyle": "One sentence addressed to the user using 'you'/'your' about their cinematic taste, referencing 1-2 specific films they chose. Example: 'You gravitate toward...'",
+  "mood": "One sentence addressed to the user using 'you'/'your' about their emotional/tonal preferences, referencing 1-2 specific picks. Example: 'You're in the mood for...'",
   "recommendations": [
     {"title": "Film Title 1", "year": 2022, "reason": "Explain why this matches their specific A/B choices — reference their actual picks by name, explain the tonal/stylistic connection", "category": "recent"},
     {"title": "Film Title 2", "year": 1999, "reason": "Explain why this matches their specific A/B choices — reference their actual picks by name, explain the tonal/stylistic connection", "category": "classic"},
