@@ -1,15 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Bookmark, X } from "lucide-react";
-
-const KEY_COUNT = "signup_nudge_count";       // how many times nudge has shown this session
-const KEY_FLOWS = "signup_nudge_flows_since"; // flows completed since last nudge
-const MAX_SHOWS = 3;
-const FLOWS_BETWEEN = 2;
-
-function ss(key: string): number {
-  return parseInt(sessionStorage.getItem(key) ?? "0", 10);
-}
 
 function ph(event: string, props?: Record<string, unknown>) {
   if (typeof window !== "undefined" && (window as any).posthog) {
@@ -30,102 +21,57 @@ function GoogleIcon() {
 
 interface SignUpNudgeProps {
   movieTitle?: string;
-  delayMs?: number;
 }
 
-export function SignUpNudge({ movieTitle, delayMs = 2000 }: SignUpNudgeProps) {
-  const { user, login } = useAuth();
-  const [visible, setVisible] = useState(false);
-  const [animateIn, setAnimateIn] = useState(false);
-  // Guard so the timer only fires once per mount even if parent re-renders
-  const scheduled = useRef(false);
+export function SignUpNudge({ movieTitle }: SignUpNudgeProps) {
+  const { login } = useAuth();
+  const [show, setShow] = useState(false);
 
   useEffect(() => {
-    if (user) return;
-    if (scheduled.current) return;
-
-    const shownCount = ss(KEY_COUNT);
-    const flowsSince = ss(KEY_FLOWS);
-    const isFirstEver = shownCount === 0;
-    const enoughFlowsSince = flowsSince >= FLOWS_BETWEEN;
-
-    if (shownCount >= MAX_SHOWS) return;
-    if (!isFirstEver && !enoughFlowsSince) return;
-
-    scheduled.current = true;
-    const timer = setTimeout(() => {
-      sessionStorage.setItem(KEY_COUNT, String(shownCount + 1));
-      sessionStorage.setItem(KEY_FLOWS, "0");
-      ph("signup_modal_shown", { trigger_source: "post_recommendation", show_number: shownCount + 1 });
-      setVisible(true);
-      setTimeout(() => setAnimateIn(true), 30);
-    }, delayMs);
-
-    return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    ph("signup_modal_shown", { trigger_source: "post_recommendation" });
+    const t = setTimeout(() => setShow(true), 2000);
+    return () => clearTimeout(t);
   }, []);
 
-  if (!visible) return null;
-
-  const handleContinue = () => {
-    ph("signup_cta_clicked", { trigger_source: "post_recommendation" });
-    sessionStorage.setItem("auth_trigger_source", "post_recommendation");
-    login();
-  };
-
-  const handleDismiss = () => {
-    ph("signup_modal_dismissed", { trigger_source: "post_recommendation" });
-    setAnimateIn(false);
-    setTimeout(() => setVisible(false), 300);
-    // Reset flows_since to 0 so the gap is counted from this dismissal
-    sessionStorage.setItem(KEY_FLOWS, "0");
-  };
+  if (!show) return null;
 
   return (
-    <div
-      className={`fixed bottom-0 left-0 right-0 z-40 transition-transform duration-300 ease-out ${
-        animateIn ? "translate-y-0" : "translate-y-full"
-      }`}
-    >
-      {/* Safe area background */}
-      <div className="bg-[#111] border-t border-white/10 shadow-2xl">
-        <div className="max-w-lg mx-auto px-4 pt-4 pb-6">
-          <div className="flex items-start justify-between gap-3 mb-3">
-            <div className="flex items-center gap-2">
-              <Bookmark className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-              <div>
-                <p className="text-white font-bold text-sm leading-tight">
-                  {movieTitle ? `Save "${movieTitle}"?` : "Keep your picks?"}
-                </p>
-                <p className="text-white/50 text-xs mt-0.5">
-                  Sign in free — get better recommendations every time.
-                </p>
-              </div>
+    <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#111] border-t border-white/10 shadow-2xl">
+      <div className="max-w-lg mx-auto px-4 pt-4 pb-6">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2">
+            <Bookmark className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+            <div>
+              <p className="text-white font-bold text-sm leading-tight">
+                {movieTitle ? `Save "${movieTitle}"?` : "Keep your picks?"}
+              </p>
+              <p className="text-white/50 text-xs mt-0.5">
+                Sign in free — get better recommendations every time.
+              </p>
             </div>
-            <button
-              onClick={handleDismiss}
-              className="text-white/30 hover:text-white/60 transition-colors mt-0.5 shrink-0"
-              aria-label="Dismiss"
-            >
-              <X className="w-4 h-4" />
-            </button>
           </div>
-
-          <div className="flex gap-2">
-            <button
-              onClick={handleContinue}
-              className="flex-1 flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 active:scale-[0.98] transition-all rounded-xl h-11 text-white font-bold text-sm"
-            >
-              <GoogleIcon />
-              Continue with Google
-            </button>
-            <button
-              onClick={handleDismiss}
-              className="px-4 h-11 rounded-xl border border-white/10 text-white/40 hover:text-white/70 text-sm font-medium transition-colors"
-            >
-              Later
-            </button>
-          </div>
+          <button
+            onClick={() => { ph("signup_modal_dismissed", { trigger_source: "post_recommendation" }); setShow(false); }}
+            className="text-white/30 hover:text-white/60 transition-colors shrink-0"
+            aria-label="Dismiss"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { ph("signup_cta_clicked", { trigger_source: "post_recommendation" }); sessionStorage.setItem("auth_trigger_source", "post_recommendation"); login(); }}
+            className="flex-1 flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 active:scale-[0.98] transition-all rounded-xl h-11 text-white font-bold text-sm"
+          >
+            <GoogleIcon />
+            Continue with Google
+          </button>
+          <button
+            onClick={() => { ph("signup_modal_dismissed", { trigger_source: "post_recommendation" }); setShow(false); }}
+            className="px-4 h-11 rounded-xl border border-white/10 text-white/40 hover:text-white/70 text-sm font-medium transition-colors"
+          >
+            Later
+          </button>
         </div>
       </div>
     </div>

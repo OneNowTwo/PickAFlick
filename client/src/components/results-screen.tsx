@@ -76,7 +76,6 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingStage, setLoadingStage] = useState("Analyzing your choices…");
   const [hasInteracted, setHasInteracted] = useState(false); // Track if user has clicked anything
-  const [nudgeKey, setNudgeKey] = useState(0); // bump to remount SignUpNudge on each new flow
   const { toast } = useToast();
 
   // Track when results screen loads with recommendations
@@ -85,15 +84,8 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
       if (typeof window !== 'undefined' && window.posthog) {
         window.posthog.capture("completed_flow");
       }
-      if (!user) {
-        // Increment flows-since-last-nudge so the nudge can re-evaluate on next flow
-        const since = parseInt(sessionStorage.getItem("signup_nudge_flows_since") ?? "0", 10) + 1;
-        sessionStorage.setItem("signup_nudge_flows_since", String(since));
-        // Force SignUpNudge to remount and re-evaluate conditions
-        setNudgeKey(k => k + 1);
-      }
     }
-  }, [isLoading, recommendations, user]);
+  }, [isLoading, recommendations]);
 
   // Reset trailer state when changing movies
   useEffect(() => {
@@ -943,7 +935,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
 
       {/* Post-recommendation sign-up nudge — soft bottom sheet, shown after 2s for logged-out users */}
       {!user && !isLoading && recommendations && (
-        <SignUpNudge key={nudgeKey} movieTitle={currentRec?.movie.title} />
+        <SignUpNudge movieTitle={currentRec?.movie.title} />
       )}
     </div>
   );
