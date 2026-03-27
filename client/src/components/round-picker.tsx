@@ -400,14 +400,19 @@ export function RoundPicker({
   const leftPosterUrl = getPosterUrl(leftMovie);
   const rightPosterUrl = getPosterUrl(rightMovie);
 
+  // Synchronous: never treat stale selectedSide as active after pair changes (fixes 1-frame glitch)
+  const pairMatchesSelection =
+    selectionPair !== null &&
+    selectionPair.left === leftMovie.id &&
+    selectionPair.right === rightMovie.id;
+  const activeSelection = pairMatchesSelection ? selectedSide : null;
+
   const renderMovieCard = (movie: Movie, side: "left" | "right", posterUrl: string | null) => {
     const leadActors = getLeadActors(movie);
     const highlyRated = isHighlyRated(movie);
     const isAdded = addedToWatchlist.has(movie.tmdbId);
-    const isSamePair =
-      selectionPair?.left === leftMovie.id && selectionPair?.right === rightMovie.id;
-    const isWinner = selectedSide === side && isSamePair;
-    const isLoser = selectedSide !== null && selectedSide !== side && isSamePair;
+    const isWinner = activeSelection === side;
+    const isLoser = activeSelection !== null && activeSelection !== side;
 
     const handleAddToWatchlist = (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -603,7 +608,7 @@ export function RoundPicker({
           {renderMovieCard(leftMovie, "left", leftPosterUrl)}
         </Fragment>
 
-        <div className={`flex items-center justify-center transition-opacity duration-300 ${selectedSide ? "opacity-0" : "opacity-100"}`}>
+        <div className={`flex items-center justify-center transition-opacity duration-300 ${activeSelection ? "opacity-0" : "opacity-100"}`}>
           <span
             className="text-4xl md:text-7xl font-black select-none"
             style={{
@@ -625,7 +630,7 @@ export function RoundPicker({
       </div>
 
       {/* Skip button - bold and prominent */}
-      {onSkip && !selectedSide && (
+      {onSkip && !activeSelection && (
         <Button
           variant="secondary"
           size="default"
