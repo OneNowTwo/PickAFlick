@@ -440,7 +440,10 @@ export function RoundPicker({
           }}
           className={`
             relative w-full max-w-[180px] md:max-w-[300px] aspect-[2/3] rounded-lg md:rounded-xl overflow-hidden
-            transition-all duration-500 ease-out cursor-pointer
+            cursor-pointer
+            ${activeSelection !== null
+              ? "transition-[transform,opacity,box-shadow] duration-500 ease-out"
+              : "transition-none hover:transition-[transform,box-shadow] hover:duration-200 hover:ease-out"}
             hover:-translate-y-3 hover:scale-[1.03] hover:shadow-2xl hover:shadow-black/60
             ${isWinner ? "z-20 shadow-2xl shadow-primary/40 ring-2 ring-primary/60" : ""}
             ${isLoser ? "z-10 opacity-40" : ""}
@@ -601,14 +604,15 @@ export function RoundPicker({
         onTouchEnd={handleTouchEnd}
         style={{
           transform: swipeOffset !== 0 ? `translateX(${swipeOffset * 0.3}px)` : 'none',
-          transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none'
+          // No transition when offset snaps to 0 — a 0.2s ease-out on the whole row read as posters "snapping together"
+          transition: 'none',
         }}
       >
         <Fragment key={`left-${leftMovie.id}-${round}`}>
           {renderMovieCard(leftMovie, "left", leftPosterUrl)}
         </Fragment>
 
-        <div className={`flex items-center justify-center transition-opacity duration-300 ${activeSelection ? "opacity-0" : "opacity-100"}`}>
+        <div className={`flex items-center justify-center ${activeSelection ? "opacity-0" : "opacity-100"}`}>
           <span
             className="text-4xl md:text-7xl font-black select-none"
             style={{
