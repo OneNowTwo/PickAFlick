@@ -169,18 +169,24 @@ Across your 7 recommendations: include at least one from the last 3 years (${rec
   "visualStyle": "One sentence about their visual/cinematic taste, citing 1-2 specific films they chose.",
   "mood": "One sentence about their emotional/tonal preference, citing 1-2 specific picks.",
   "recommendations": [
-    {"title": "Film Title", "year": 2019, "reason": "1-2 sentences using 'you'/'your', referencing their specific A/B choices and explaining why this matches their demonstrated contrast — not generic praise", "category": "flexible"}
+    {"title": "Film A", "year": 2022, "reason": "Cites their specific picks by name and explains the match.", "category": "recent"},
+    {"title": "Film B", "year": 1998, "reason": "Cites their specific picks by name and explains the match.", "category": "classic"},
+    {"title": "Film C", "year": 2015, "reason": "Cites their specific picks by name and explains the match.", "category": "flexible"},
+    {"title": "Film D", "year": 2011, "reason": "Cites their specific picks by name and explains the match.", "category": "flexible"},
+    {"title": "Film E", "year": 2018, "reason": "Cites their specific picks by name and explains the match.", "category": "flexible"},
+    {"title": "Film F", "year": 2009, "reason": "Cites their specific picks by name and explains the match.", "category": "flexible"},
+    {"title": "Film G", "year": 2020, "reason": "Cites their specific picks by name and explains the match.", "category": "flexible"}
   ]
 }
 
-CRITICAL: Exactly 7 recommendations. Every reason must cite their specific choices. A reason that could apply to any user is the wrong reason.`;
+CRITICAL: Exactly 7 recommendations. Every reason must name their specific A/B picks. A reason that could apply to any user is the wrong reason.`;
 
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
-      max_tokens: 1600,
+      max_tokens: 2000,
       temperature: 0.88,
     });
 
@@ -301,7 +307,12 @@ CRITICAL: Exactly 7 recommendations. Every reason must cite their specific choic
     // Fallback: return random catalogue movies
     const allMovies = getAllMovies();
     const fallbackMovies = shuffleArray([...allMovies])
-      .filter((m) => !chosenMovies.some((c) => c.tmdbId === m.tmdbId))
+      .filter((m) =>
+        !chosenMovies.some((c) => c.tmdbId === m.tmdbId) &&
+        m.posterPath && m.posterPath.trim() &&
+        m.year && m.year >= 1980 &&
+        m.rating && m.rating >= 7.0
+      )
       .slice(0, 5);
 
     const fallbackRecs: Recommendation[] = [];

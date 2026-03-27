@@ -123,16 +123,17 @@ function genreBucket(movie: Movie): string {
  * Count how many times each genre bucket has already appeared in this
  * session's A/B pairs. Both the chosen AND rejected movie count — both
  * were shown to the user.
+ *
+ * NOTE: history movies are excluded from the current pool scoreMap, so we
+ * compute bucket directly from the movie's genre data instead of looking
+ * up in the pool scoreMap (which would always miss them).
  */
-function countShownBuckets(
-  history: ChoiceEntry[],
-  scoreMap: Map<number, ScoredMovie>
-): Map<string, number> {
+function countShownBuckets(history: ChoiceEntry[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const h of history) {
     for (const movie of [h.chosenMovie, h.rejectedMovie]) {
-      const s = scoreMap.get(movie.tmdbId);
-      if (s) counts.set(s.bucket, (counts.get(s.bucket) ?? 0) + 1);
+      const bucket = genreBucket(movie);
+      counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
     }
   }
   return counts;
@@ -288,7 +289,7 @@ export function selectStrategicPair(
   const profile = deriveProfile(history, scoreMap);
   // Track which genre buckets have already appeared this session so pickBest
   // can penalise over-represented genres without hard-banning them.
-  const shownBuckets = countShownBuckets(history, scoreMap);
+  const shownBuckets = countShownBuckets(history);
 
   let movieA: Movie | undefined;
   let movieB: Movie | undefined;
