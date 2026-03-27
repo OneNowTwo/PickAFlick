@@ -351,7 +351,7 @@ export default function Home() {
                       {isReturning && tasteSummary?.topGenre ? (
                         <p className="text-sm text-white/50 mt-3">Your top genre: {tasteSummary.topGenre}</p>
                       ) : (
-                        <p className="text-lg sm:text-xl text-white/70 mt-3">Pick a movie in under 2 minutes.</p>
+                        <p className="text-lg sm:text-xl text-white/70 mt-3">Find something worth watching in seconds.</p>
                       )}
                     </div>
 
@@ -367,7 +367,10 @@ export default function Home() {
                       Start Picking →
                     </Button>
 
-                    <p className="text-xs text-white/35">No sign up needed. Takes 30 seconds.</p>
+                    {/* Scroll hint arrow */}
+                    <div className="flex flex-col items-center gap-1 mt-2 animate-bounce">
+                      <ChevronDown className="w-5 h-5 text-white/20" />
+                    </div>
                   </div>
                 );
               })()}
@@ -375,25 +378,6 @@ export default function Home() {
 
             {/* ── BELOW THE FOLD ── */}
             <div className="flex flex-col items-center gap-10 w-full max-w-2xl mx-auto pb-12 pt-4 px-4">
-
-              {/* Surprise Me */}
-              <div className="flex flex-col items-center gap-3 w-full">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/50">Feeling lucky?</p>
-                <Button
-                  size="lg"
-                  onClick={() => handleStart(true)}
-                  disabled={startSessionMutation.isPending}
-                  className="surprise-pulse-btn min-w-[220px] px-10 h-14 text-base font-extrabold gap-2 border border-white/25 hover:-translate-y-1.5 hover:brightness-115 active:scale-95 transition-all duration-200"
-                  data-testid="button-surprise-me"
-                >
-                  {startSessionMutation.isPending ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <>🎲 Surprise Me</>
-                  )}
-                </Button>
-                <p className="text-xs text-white/35">Skip genre selection — we&apos;ll pick for you</p>
-              </div>
 
               {startSessionMutation.isError && (
                 <p className="text-destructive bg-black/50 px-4 py-2 rounded text-sm text-center">

@@ -25,92 +25,120 @@ interface RoundPickerProps {
 // Generate personalized insight based on choices made
 function generateInsight(choiceHistory: ChoiceHistory[], round: number): string {
   if (!choiceHistory || choiceHistory.length === 0) {
-    return "Pick the poster that calls to you...";
+    return "Pick the one that feels right for tonight...";
   }
 
+  const last = choiceHistory[choiceHistory.length - 1];
   const chosenMovies = choiceHistory.map(c => c.chosenMovie);
-  
-  // Analyze patterns
+
+  // Derive patterns from choices
   const genreCounts: Record<string, number> = {};
   const eraCounts: Record<string, number> = {};
   let highRatingCount = 0;
-  let actorNames: string[] = [];
-  
+
   chosenMovies.forEach(movie => {
-    movie.genres.forEach(g => {
+    (movie.genres || []).forEach(g => {
       genreCounts[g] = (genreCounts[g] || 0) + 1;
     });
-    
     if (movie.year) {
       if (movie.year >= 2015) eraCounts["recent"] = (eraCounts["recent"] || 0) + 1;
       else if (movie.year >= 2000) eraCounts["2000s"] = (eraCounts["2000s"] || 0) + 1;
       else eraCounts["classic"] = (eraCounts["classic"] || 0) + 1;
     }
-    
     if (movie.rating && movie.rating >= 7.5) highRatingCount++;
-    
-    if (movie.cast && movie.cast[0]) {
-      actorNames.push(movie.cast[0]);
-    }
   });
 
   const topGenres = Object.entries(genreCounts)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 2)
     .map(([g]) => g);
-  
+
   const topEra = Object.entries(eraCounts)
     .sort((a, b) => b[1] - a[1])[0]?.[0];
 
-  // Generate varied insights based on round and patterns
+  const chosenTitle = last?.chosenMovie?.title;
+  const rejectedTitle = last?.rejectedMovie?.title;
+  const chosenGenre = last?.chosenMovie?.genres?.[0];
+  const rejectedGenre = last?.rejectedMovie?.genres?.[0];
+  const chosenYear = last?.chosenMovie?.year;
+
   const insights: string[] = [];
-  
-  if (round === 2 && topGenres.length > 0) {
-    insights.push(`Interesting... ${topGenres[0]} vibes detected!`);
-    insights.push(`I sense some ${topGenres[0]} energy tonight...`);
-  }
-  
-  if (round === 3 && topGenres.length >= 2) {
-    insights.push(`${topGenres[0]} meets ${topGenres[1]} — intriguing taste!`);
-    insights.push(`You like ${topGenres[0]} with a ${topGenres[1]} twist...`);
-  }
-  
-  if (round === 4 && highRatingCount >= 2) {
-    insights.push("You've got an eye for the critically acclaimed!");
-    insights.push("Quality over quantity — I like it!");
-  } else if (round === 4) {
-    insights.push("Building your taste profile...");
-    insights.push("Keep going, almost there!");
-  }
-  
-  if (round === 5 && topEra === "recent") {
-    insights.push("Fresh films are your thing — got it!");
-    insights.push("Modern cinema lover detected!");
-  } else if (round === 5 && topEra === "classic") {
-    insights.push("A classic film buff — respect!");
-    insights.push("Old school vibes coming through!");
-  } else if (round === 5) {
-    insights.push("Your preferences are coming together...");
-  }
-  
-  if (round >= 6 && actorNames.length > 0) {
-    const uniqueActors = Array.from(new Set(actorNames));
-    if (uniqueActors.length > 0) {
-      insights.push(`Maybe a ${uniqueActors[0]} fan? Almost there!`);
-      insights.push("Final stretch — I think I know what you want!");
+
+  // Round 2 — first real signal
+  if (round === 2) {
+    if (chosenTitle && rejectedTitle) {
+      insights.push(`You picked "${chosenTitle}" over "${rejectedTitle}" — noted.`);
+      insights.push(`"${chosenTitle}" it is. I'm already building a picture...`);
+    }
+    if (chosenGenre) {
+      insights.push(`${chosenGenre} energy in round one — let's see if that holds...`);
     }
   }
-  
-  if (round >= 6) {
-    insights.push("Just a bit more and I'll have your picks ready!");
-    insights.push("The picture is almost complete...");
+
+  // Round 3 — pattern starting to form
+  if (round === 3) {
+    if (chosenTitle && rejectedGenre && chosenGenre && chosenGenre !== rejectedGenre) {
+      insights.push(`You're leaning ${chosenGenre} over ${rejectedGenre} — that's useful.`);
+    } else if (topGenres.length >= 2) {
+      insights.push(`${topGenres[0]} with a side of ${topGenres[1]}? Interesting combo.`);
+    } else if (chosenTitle) {
+      insights.push(`"${chosenTitle}" again confirms the direction — good signal.`);
+    }
   }
 
-  // Pick a random insight from available ones, or use a default
+  // Round 4 — tone and quality signals
+  if (round === 4) {
+    if (highRatingCount >= 2) {
+      insights.push("You keep picking the better-rated film. Good taste — makes my job easier.");
+      insights.push("You've got a strong sense of quality. I'm matching that.");
+    } else if (chosenTitle && rejectedTitle) {
+      insights.push(`"${chosenTitle}" over "${rejectedTitle}" — the tone is coming through.`);
+    } else if (topGenres[0]) {
+      insights.push(`Consistent ${topGenres[0]} lean across 3 rounds. I'm locking that in.`);
+    }
+  }
+
+  // Round 5 — era and style solidifying
+  if (round === 5) {
+    if (topEra === "recent" && chosenYear && chosenYear >= 2015) {
+      insights.push("You like it fresh — modern releases are clearly your thing.");
+      insights.push(`${chosenYear}? You're drawn to recent cinema. Got it.`);
+    } else if (topEra === "classic") {
+      insights.push("A pattern: you keep picking older films. Classic taste — I respect it.");
+      insights.push("You're not chasing new releases. Noted — the classics are on the table.");
+    } else if (chosenTitle) {
+      insights.push(`"${chosenTitle}" keeps fitting the profile I'm building. Almost there.`);
+    } else {
+      insights.push("Halfway through — your taste profile is taking real shape now.");
+    }
+  }
+
+  // Round 6 — near the end, specific
+  if (round === 6) {
+    if (chosenTitle && rejectedTitle) {
+      insights.push(`Last two choices to go. "${chosenTitle}" just narrowed it down further.`);
+      insights.push(`You chose "${chosenTitle}" — that's the clearest signal yet.`);
+    } else if (topGenres[0]) {
+      insights.push(`One more after this. ${topGenres[0]} is dominant — I know what I'm doing with that.`);
+    } else {
+      insights.push("Almost there. One more choice and I'll have everything I need.");
+    }
+  }
+
+  // Round 7 — final round
+  if (round >= 7) {
+    if (chosenTitle) {
+      insights.push(`"${chosenTitle}" — that's your final signal. Recommendations incoming.`);
+      insights.push(`Last one done. "${chosenTitle}" just sealed it.`);
+    } else {
+      insights.push("Last round done. Pulling your recommendations now...");
+    }
+  }
+
   if (insights.length > 0) {
     return insights[Math.floor(Math.random() * insights.length)];
   }
-  
+
   const defaults = [
     "Learning your taste...",
     "Keep picking!",
