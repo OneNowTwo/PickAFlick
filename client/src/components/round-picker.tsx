@@ -113,25 +113,26 @@ function generateInsight(choiceHistory: ChoiceHistory[], round: number): string 
     }
   }
 
-  // Round 6 — near the end, specific
+  // Round 6 — penultimate, specific
   if (round === 6) {
     if (chosenTitle && rejectedTitle) {
-      insights.push(`Last two choices to go. "${chosenTitle}" just narrowed it down further.`);
-      insights.push(`You chose "${chosenTitle}" — that's the clearest signal yet.`);
+      insights.push(`"${chosenTitle}" over "${rejectedTitle}" — picture's getting clearer.`);
+      insights.push(`You chose "${chosenTitle}" — that's the strongest signal yet.`);
     } else if (topGenres[0]) {
-      insights.push(`One more after this. ${topGenres[0]} is dominant — I know what I'm doing with that.`);
+      insights.push(`${topGenres[0]} is dominant across your choices. One more to confirm.`);
     } else {
-      insights.push("Almost there. One more choice and I'll have everything I need.");
+      insights.push("Second-to-last round. The profile is almost locked in.");
     }
   }
 
-  // Round 7 — final round
+  // Round 7 — final round, user hasn't chosen yet
   if (round >= 7) {
-    if (chosenTitle) {
-      insights.push(`"${chosenTitle}" — that's your final signal. Recommendations incoming.`);
-      insights.push(`Last one done. "${chosenTitle}" just sealed it.`);
+    if (topGenres[0] && chosenTitle) {
+      insights.push(`Last one. "${chosenTitle}" summed up the ${topGenres[0]} lean — now seal it.`);
+      insights.push(`Final round. I've got plenty to work with — this just sharpens it.`);
     } else {
-      insights.push("Last round done. Pulling your recommendations now...");
+      insights.push("Last round. Pick what feels right and I'll do the rest.");
+      insights.push("Final pick. I think I already know — just confirm it.");
     }
   }
 
