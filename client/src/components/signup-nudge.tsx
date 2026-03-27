@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Bookmark, X } from "lucide-react";
 
-const KEY_COUNT = "signup_nudge_count";       // how many times nudge has shown
+const KEY_COUNT = "signup_nudge_count";       // how many times nudge has shown this session
 const KEY_FLOWS = "signup_nudge_flows_since"; // flows completed since last nudge
 const MAX_SHOWS = 3;
-const FLOWS_BETWEEN = 2; // flows required between nudge appearances
+const FLOWS_BETWEEN = 2;
 
 function ss(key: string): number {
   return parseInt(sessionStorage.getItem(key) ?? "0", 10);
@@ -31,30 +31,28 @@ function GoogleIcon() {
 interface SignUpNudgeProps {
   movieTitle?: string;
   delayMs?: number;
-  /** Incremented by results-screen each time a new flow completes */
-  flowNumber?: number;
 }
 
-export function SignUpNudge({ movieTitle, delayMs = 2000, flowNumber = 1 }: SignUpNudgeProps) {
+export function SignUpNudge({ movieTitle, delayMs = 2000 }: SignUpNudgeProps) {
   const { user, login } = useAuth();
   const [visible, setVisible] = useState(false);
   const [animateIn, setAnimateIn] = useState(false);
+  // Guard so the timer only fires once per mount even if parent re-renders
+  const scheduled = useRef(false);
 
   useEffect(() => {
     if (user) return;
+    if (scheduled.current) return;
 
     const shownCount = ss(KEY_COUNT);
     const flowsSince = ss(KEY_FLOWS);
-
-    // Cap at MAX_SHOWS total; require FLOWS_BETWEEN flows between appearances
-    // (first appearance: flowsSince starts at 0, which satisfies >= 0 for flow 1)
     const isFirstEver = shownCount === 0;
     const enoughFlowsSince = flowsSince >= FLOWS_BETWEEN;
-    const underCap = shownCount < MAX_SHOWS;
 
-    if (!underCap) return;
+    if (shownCount >= MAX_SHOWS) return;
     if (!isFirstEver && !enoughFlowsSince) return;
 
+    scheduled.current = true;
     const timer = setTimeout(() => {
       setVisible(true);
       sessionStorage.setItem(KEY_COUNT, String(shownCount + 1));
@@ -64,8 +62,8 @@ export function SignUpNudge({ movieTitle, delayMs = 2000, flowNumber = 1 }: Sign
     }, delayMs);
 
     return () => clearTimeout(timer);
-  // Re-evaluate whenever flowNumber changes (new flow completed)
-  }, [user, delayMs, flowNumber]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!visible) return null;
 

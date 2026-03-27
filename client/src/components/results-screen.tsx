@@ -76,10 +76,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingStage, setLoadingStage] = useState("Analyzing your choices…");
   const [hasInteracted, setHasInteracted] = useState(false); // Track if user has clicked anything
-  const [nudgeFlowNumber, setNudgeFlowNumber] = useState<number>(() => {
-    // Read current completed-flow count from sessionStorage on mount
-    return parseInt(sessionStorage.getItem("signup_nudge_total_flows") ?? "0", 10);
-  });
+  const [nudgeKey, setNudgeKey] = useState(0); // bump to remount SignUpNudge on each new flow
   const { toast } = useToast();
 
   // Track when results screen loads with recommendations
@@ -89,12 +86,11 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         window.posthog.capture("completed_flow");
       }
       if (!user) {
-        // Increment both the total flow counter and the flows-since-last-nudge counter
-        const total = parseInt(sessionStorage.getItem("signup_nudge_total_flows") ?? "0", 10) + 1;
-        sessionStorage.setItem("signup_nudge_total_flows", String(total));
+        // Increment flows-since-last-nudge so the nudge can re-evaluate on next flow
         const since = parseInt(sessionStorage.getItem("signup_nudge_flows_since") ?? "0", 10) + 1;
         sessionStorage.setItem("signup_nudge_flows_since", String(since));
-        setNudgeFlowNumber(total);
+        // Force SignUpNudge to remount and re-evaluate conditions
+        setNudgeKey(k => k + 1);
       }
     }
   }, [isLoading, recommendations, user]);
@@ -947,7 +943,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
 
       {/* Post-recommendation sign-up nudge — soft bottom sheet, shown after 2s for logged-out users */}
       {!user && !isLoading && recommendations && (
-        <SignUpNudge movieTitle={currentRec?.movie.title} flowNumber={nudgeFlowNumber} />
+        <SignUpNudge key={nudgeKey} movieTitle={currentRec?.movie.title} />
       )}
     </div>
   );
