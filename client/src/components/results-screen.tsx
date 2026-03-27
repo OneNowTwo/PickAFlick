@@ -112,11 +112,11 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         setLoadingStage(stages[currentStage]);
         currentStage++;
       }
-    }, 5000);
+    }, 1500);
 
-    // Smooth continuous progress bar (0→100 over ~15s, no stalls)
+    // Smooth continuous progress bar (0→100 over ~5s)
     const start = Date.now();
-    const durationMs = 15000;
+    const durationMs = 5000;
     const progressInterval = setInterval(() => {
       const elapsed = Date.now() - start;
       const p = Math.min(100, (elapsed / durationMs) * 100);
@@ -331,7 +331,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                 style={{ width: `${loadingProgress}%` }}
               />
             </div>
-            <p className="text-white/60 text-xs mt-3">This usually takes ~15 seconds</p>
+            <p className="text-white/60 text-xs mt-3">This usually takes a few seconds</p>
           </div>
         </div>
       </div>
