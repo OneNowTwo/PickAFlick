@@ -457,19 +457,19 @@ export function RoundPicker({
           </div>
         )}
         
-        {/* Add to Watchlist button */}
+        {/* Add to Watchlist button — bottom-right floating pill */}
         <button
           onClick={handleAddToWatchlist}
           disabled={isAdded}
-          className={`absolute top-2 right-2 md:top-3 md:right-3 flex items-center gap-1 px-2 py-1 rounded text-[10px] md:text-xs font-semibold transition-all ${
-            isAdded 
-              ? "bg-green-600 text-white" 
-              : "bg-black/60 text-white/90 hover:bg-black/80 hover:text-white"
-          }`}
+          className={`absolute bottom-[72px] md:bottom-[88px] right-2 md:right-3 group flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] md:text-xs font-semibold transition-all duration-200 backdrop-blur-md border z-10
+            ${isAdded
+              ? "bg-green-600/90 border-green-500/60 text-white scale-105"
+              : "bg-black/60 border-white/20 text-white/80 hover:bg-black/80 hover:border-white/40 hover:text-white hover:scale-105"
+            }`}
           data-testid={`button-add-watchlist-${side}`}
         >
-          <Bookmark className={`w-3 h-3 ${isAdded ? "fill-current" : ""}`} />
-          <span>{isAdded ? "Added!" : "Save"}</span>
+          <Bookmark className={`w-3 h-3 shrink-0 transition-transform group-hover:scale-110 ${isAdded ? "fill-current" : ""}`} />
+          <span>{isAdded ? "Saved ✓" : "Watchlist"}</span>
         </button>
         
         <div className="absolute bottom-0 left-0 right-0 p-2 md:p-4 text-left">
@@ -497,6 +497,16 @@ export function RoundPicker({
             <svg className="w-4 h-4 md:w-6 md:h-6 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
             </svg>
+          </div>
+        )}
+
+        {/* Nudge on the losing card — highlight save */}
+        {selectedSide !== null && selectedSide !== side && !isAdded && (
+          <div className="absolute inset-0 flex items-end justify-center pb-20 md:pb-24 pointer-events-none">
+            <div className="bg-black/70 backdrop-blur-sm border border-white/20 rounded-full px-3 py-1.5 flex items-center gap-1.5 animate-pulse">
+              <Bookmark className="w-3 h-3 text-white/80" />
+              <span className="text-white/80 text-[10px] md:text-xs font-semibold">Save for later?</span>
+            </div>
           </div>
         )}
       </button>
