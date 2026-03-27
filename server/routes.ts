@@ -1,6 +1,8 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
-import { getCatalogue, getRecommendations, getHealth, initCatalogue, isCatalogueReady, getCatalogueStatus, getRandomMoviePair, getRandomMoviePairFiltered } from "./catalogue";
+import { getCatalogue, getRecommendations, getHealth, initCatalogue, isCatalogueReady, getCatalogueStatus, getRandomMoviePair, getRandomMoviePairFiltered, getAllMovies } from "./catalogue";
+import { selectStrategicPair } from "./strategic-picker";
+import type { ChoiceEntry } from "./strategic-picker";
 import { getMovieTrailer, getMovieTrailers, getWatchProviders } from "./tmdb";
 import { sessionStorage } from "./session-storage";
 import { generateRecommendations, generateReplacementRecommendation } from "./ai-recommender";
@@ -51,17 +53,10 @@ export async function registerRoutes(
         return;
       }
 
-      // Parse genre filters from request
-      const genres = Array.isArray(req.body?.genres) ? req.body.genres : [];
-      const includeTopPicks = req.body?.includeTopPicks === true;
-      const includeNewReleases = req.body?.includeNewReleases === true;
-      // Surprise Me = no genres, no special filters — restrict to English-language films only
-      const isSurpriseMe = genres.length === 0 && !includeTopPicks && !includeNewReleases;
+      const session = sessionStorage.createSession([], false, false);
 
-      const session = sessionStorage.createSession(genres, includeTopPicks, includeNewReleases);
-      
-      // Generate first pair using filters
-      const pair = getRandomMoviePairFiltered(genres, includeTopPicks, new Set(), includeNewReleases, isSurpriseMe);
+      // Round 1: strategic pair — genre axis (dark/intense vs light/fun)
+      const pair = selectStrategicPair(1, [], getAllMovies(), new Set());
       if (!pair) {
         res.status(500).json({ error: "Not enough movies available" });
         return;
@@ -116,16 +111,16 @@ export async function registerRoutes(
       let currentPair = sessionPairs.get(sessionId);
       
       if (!currentPair || currentPair.round !== session.currentRound) {
-        // Generate new pair for current round using session filters
         const usedIds = new Set(
           session.choices.flatMap((c) => [c.leftMovie.id, c.rightMovie.id])
         );
-        const filters = sessionStorage.getSessionFilters(sessionId);
-        const filtersIsSurpriseMe = filters ? filters.genres.length === 0 && !filters.includeTopPicks && !filters.includeNewReleases : false;
-        const pair = filters 
-          ? getRandomMoviePairFiltered(filters.genres, filters.includeTopPicks, usedIds, filters.includeNewReleases, filtersIsSurpriseMe)
-          : getRandomMoviePair(usedIds);
-        
+        const choiceHistory: ChoiceEntry[] = session.choices.map(c => ({
+          round: c.round,
+          chosenMovie: c.chosenMovieId === c.leftMovie.id ? c.leftMovie : c.rightMovie,
+          rejectedMovie: c.chosenMovieId === c.leftMovie.id ? c.rightMovie : c.leftMovie,
+        }));
+        const pair = selectStrategicPair(session.currentRound, choiceHistory, getAllMovies(), usedIds);
+
         if (!pair) {
           res.status(500).json({ error: "Not enough movies available" });
           return;
@@ -240,12 +235,13 @@ export async function registerRoutes(
         const usedIds = new Set(
           updatedSession.choices.flatMap((c) => [c.leftMovie.id, c.rightMovie.id])
         );
-        const filters = sessionStorage.getSessionFilters(sessionId);
-        const choiceIsSurpriseMe = filters ? filters.genres.length === 0 && !filters.includeTopPicks && !filters.includeNewReleases : false;
-        const pair = filters 
-          ? getRandomMoviePairFiltered(filters.genres, filters.includeTopPicks, usedIds, filters.includeNewReleases, choiceIsSurpriseMe)
-          : getRandomMoviePair(usedIds);
-        
+        const nextChoiceHistory: ChoiceEntry[] = updatedSession.choices.map(c => ({
+          round: c.round,
+          chosenMovie: c.chosenMovieId === c.leftMovie.id ? c.leftMovie : c.rightMovie,
+          rejectedMovie: c.chosenMovieId === c.leftMovie.id ? c.rightMovie : c.leftMovie,
+        }));
+        const pair = selectStrategicPair(updatedSession.currentRound, nextChoiceHistory, getAllMovies(), usedIds);
+
         if (pair) {
           sessionPairs.set(sessionId, {
             round: updatedSession.currentRound,
@@ -319,11 +315,12 @@ export async function registerRoutes(
         usedIds.add(currentPair.rightMovie.id);
       }
 
-      const filters = sessionStorage.getSessionFilters(sessionId);
-      const skipIsSurpriseMe = filters ? filters.genres.length === 0 && !filters.includeTopPicks && !filters.includeNewReleases : false;
-      const pair = filters 
-        ? getRandomMoviePairFiltered(filters.genres, filters.includeTopPicks, usedIds, filters.includeNewReleases, skipIsSurpriseMe)
-        : getRandomMoviePair(usedIds);
+      const skipChoiceHistory: ChoiceEntry[] = session.choices.map(c => ({
+        round: c.round,
+        chosenMovie: c.chosenMovieId === c.leftMovie.id ? c.leftMovie : c.rightMovie,
+        rejectedMovie: c.chosenMovieId === c.leftMovie.id ? c.rightMovie : c.leftMovie,
+      }));
+      const pair = selectStrategicPair(session.currentRound, skipChoiceHistory, getAllMovies(), usedIds);
 
       if (!pair) {
         res.status(500).json({ error: "Not enough movies to skip" });

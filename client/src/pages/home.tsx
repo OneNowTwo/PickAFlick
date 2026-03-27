@@ -355,19 +355,15 @@ export default function Home() {
                       )}
                     </div>
 
-                    {/* Primary CTA */}
+                    {/* Primary CTA — goes straight into voting, no genre selector */}
                     <Button
                       size="lg"
-                      onClick={() => {
-                        if (typeof window !== "undefined" && window.posthog) {
-                          window.posthog.capture("genre_select_opened");
-                        }
-                        setGameState("genre-select");
-                      }}
+                      onClick={() => handleStart(false)}
+                      disabled={startSessionMutation.isPending}
                       className="min-w-[220px] px-10 h-14 text-lg font-bold gap-2 shadow-[0_0_28px_rgba(220,38,38,0.5)] hover:-translate-y-1 active:scale-95 transition-all duration-200"
                       data-testid="button-start-picking"
                     >
-                      <Film className="w-5 h-5" />
+                      {startSessionMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Film className="w-5 h-5" />}
                       Start Picking →
                     </Button>
 
