@@ -201,9 +201,35 @@ export default function Home() {
     startSessionMutation.mutate(surpriseMe ? { surpriseMe: true } : undefined);
   }, [startSessionMutation, user, tasteSummary]);
 
-  const handleChoice = useCallback((chosenMovieId: number) => {
-    choiceMutation.mutate(chosenMovieId);
-  }, [choiceMutation]);
+  const handleChoice = useCallback(
+    (chosenMovieId: number) => {
+      const pair = roundQuery.data;
+      if (
+        pair &&
+        sessionId &&
+        typeof window !== "undefined" &&
+        window.posthog &&
+        (chosenMovieId === pair.leftMovie.id || chosenMovieId === pair.rightMovie.id)
+      ) {
+        const winner =
+          chosenMovieId === pair.leftMovie.id ? pair.leftMovie : pair.rightMovie;
+        const loser =
+          chosenMovieId === pair.leftMovie.id ? pair.rightMovie : pair.leftMovie;
+        window.posthog.capture("vote_cast", {
+          winner_movie_id: winner.id,
+          winner_title: winner.title,
+          winner_genres: winner.genres ?? [],
+          loser_movie_id: loser.id,
+          loser_title: loser.title,
+          loser_genres: loser.genres ?? [],
+          round_number: pair.round,
+          session_id: sessionId,
+        });
+      }
+      choiceMutation.mutate(chosenMovieId);
+    },
+    [choiceMutation, roundQuery.data, sessionId]
+  );
 
   // Skip round mutation (adds +1 round)
   const skipMutation = useMutation({

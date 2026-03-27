@@ -2,7 +2,7 @@ import type { RecommendationsResponse, WatchProvidersResponse, Recommendation } 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Play, RefreshCw, Film, ChevronLeft, ChevronRight, Bookmark, Tv, Brain, Eye, Share2, Check } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -77,6 +77,8 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   const [loadingStage, setLoadingStage] = useState("Analyzing your choices…");
   const [hasInteracted, setHasInteracted] = useState(false); // Track if user has clicked anything
   const { toast } = useToast();
+  /** Dedupes recommendation_served if this effect runs twice (e.g. React Strict Mode) */
+  const recommendationServedKeyRef = useRef<string | null>(null);
 
   // Track when results screen loads with recommendations
   useEffect(() => {
@@ -194,6 +196,32 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [!!(recommendations as any)?.hasPersonalisation]);
+
+  // Per-movie analytics: one batch per initial recommendations payload (not personalised_results_served)
+  useEffect(() => {
+    if (
+      isLoading ||
+      !recommendations?.recommendations?.length ||
+      !sessionId ||
+      typeof window === "undefined" ||
+      !window.posthog
+    ) {
+      return;
+    }
+    const list = recommendations.recommendations;
+    const dedupeKey = `${sessionId}:${list.map((r) => r.movie.id).join(",")}`;
+    if (recommendationServedKeyRef.current === dedupeKey) return;
+    recommendationServedKeyRef.current = dedupeKey;
+    list.forEach((rec, i) => {
+      window.posthog!.capture("recommendation_served", {
+        movie_id: rec.movie.id,
+        title: rec.movie.title,
+        genres: rec.movie.genres ?? [],
+        position: i + 1,
+        session_id: sessionId,
+      });
+    });
+  }, [isLoading, recommendations, sessionId]);
 
   const { data: watchProviders, isLoading: isLoadingProviders } = useQuery<WatchProvidersResponse>({
     queryKey: [`/api/watch-providers/${currentTmdbId}?title=${encodeURIComponent(currentRec?.movie.title || '')}&year=${currentRec?.movie.year || ''}`],
