@@ -2,15 +2,29 @@ import OpenAI from "openai";
 import type { Movie, Recommendation, RecommendationsResponse } from "@shared/schema";
 import { searchMovieByTitle, getMovieTrailer, getMovieTrailers, getMovieDetails, getWatchProviders } from "./tmdb";
 import { getAllMovies } from "./catalogue";
+import { storage } from "./storage";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
-// Rolling global tracker of recently recommended titles — prevents LLM defaulting to the same films
+// Cross-session memory — persisted to DB so server restarts don't wipe it
 const recentlyRecommendedTitles: string[] = [];
-const MAX_RECENT_TRACKED = 80;
+const MAX_RECENT_TRACKED = 200;
+let recsLoaded = false;
+
+async function ensureRecsLoaded(): Promise<void> {
+  if (recsLoaded) return;
+  recsLoaded = true;
+  try {
+    const saved = await storage.getRecentRecommendations();
+    recentlyRecommendedTitles.push(...saved);
+    console.log(`[recent-recs] Loaded ${saved.length} previously recommended titles from DB`);
+  } catch {
+    // Non-fatal — start with empty list
+  }
+}
 
 function recordRecommendedTitles(titles: string[]): void {
   for (const t of titles) {
@@ -18,10 +32,12 @@ function recordRecommendedTitles(titles: string[]): void {
     if (!recentlyRecommendedTitles.includes(normalised)) {
       recentlyRecommendedTitles.push(normalised);
       if (recentlyRecommendedTitles.length > MAX_RECENT_TRACKED) {
-        recentlyRecommendedTitles.shift(); // drop oldest
+        recentlyRecommendedTitles.shift();
       }
     }
   }
+  storage.saveRecentRecommendations([...recentlyRecommendedTitles])
+    .catch(err => console.error("[recent-recs] Failed to save:", err));
 }
 
 interface AIRecommendationResult {
@@ -57,6 +73,8 @@ export async function generateRecommendations(
   rejectedMovies: Movie[] = [],
   initialGenreFilters: string[] = []
 ): Promise<RecommendationsResponse> {
+  await ensureRecsLoaded();
+
   const movieDescriptions = chosenMovies.map((m, index) => {
     const round = index + 1;
     const weight = round >= 5 ? 1.5 : 1.0;
@@ -186,7 +204,7 @@ Diversity Seed: ${randomSeed}. Use this to deterministically vary your explorati
 - Seed ending 8-9: Prioritise 2010s arthouse and prestige dramas
 
 **MANDATORY ANTI-REPETITION:**
-1. For every film you first think of — reject it and go one level deeper
+1. For every film you first think of — go one level deeper. The obvious choice is rarely the best match.
 2. If a film appears in the top 20 Google results for its genre — too obvious, skip it
 3. Recommend directors' lesser-known works, NOT their most famous films
 4. At least 2 of your 7 must be from outside the US/UK

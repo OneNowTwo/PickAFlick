@@ -18,6 +18,8 @@ export interface IStorage {
   clearCatalogueCache(): Promise<void>;
   saveVote(vote: InsertUserVote): Promise<void>;
   getUserVotes(userId: number): Promise<UserVote[]>;
+  getRecentRecommendations(): Promise<string[]>;
+  saveRecentRecommendations(titles: string[]): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -105,6 +107,37 @@ export class DatabaseStorage implements IStorage {
       .from(userVotes)
       .where(eq(userVotes.userId, userId))
       .orderBy(desc(userVotes.votedAt));
+  }
+
+  async getRecentRecommendations(): Promise<string[]> {
+    try {
+      const [row] = await db.select().from(movieCatalogueCache)
+        .where(eq(movieCatalogueCache.cacheKey, "recent_recs_v1"));
+      if (!row) return [];
+      return JSON.parse(row.movies) as string[];
+    } catch {
+      return [];
+    }
+  }
+
+  async saveRecentRecommendations(titles: string[]): Promise<void> {
+    try {
+      const existing = await db.select().from(movieCatalogueCache)
+        .where(eq(movieCatalogueCache.cacheKey, "recent_recs_v1"));
+      if (existing.length > 0) {
+        await db.update(movieCatalogueCache)
+          .set({ movies: JSON.stringify(titles), updatedAt: new Date() })
+          .where(eq(movieCatalogueCache.cacheKey, "recent_recs_v1"));
+      } else {
+        await db.insert(movieCatalogueCache).values({
+          cacheKey: "recent_recs_v1",
+          movies: JSON.stringify(titles),
+          grouped: "{}",
+        });
+      }
+    } catch (err) {
+      console.error("[recent-recs] Failed to persist recent recommendations:", err);
+    }
   }
 }
 
