@@ -1,7 +1,7 @@
 import type { RecommendationsResponse, WatchProvidersResponse, Recommendation } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Play, RefreshCw, Film, Calendar, ChevronLeft, ChevronRight, Bookmark, Tv, Brain, Eye, Share2, Check, Palette, Sparkles } from "lucide-react";
+import { Loader2, Play, RefreshCw, Film, ChevronLeft, ChevronRight, Bookmark, Tv, Brain, Eye, Share2, Check } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -447,50 +447,20 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
     <div className="flex flex-col items-center gap-1 md:gap-2 w-full max-w-7xl mx-auto px-2 md:px-4 pt-4 md:pt-2 pb-4 md:pb-6">
       {/* Section label */}
       <h2 className="text-lg md:text-xl font-bold text-white w-full text-center">
-        Your top picks for tonight
+        What you chose — and what won — defines this.
       </h2>
+
+      {/* Dynamic taste line — changes per card */}
+      <p className="text-xs md:text-sm text-white/50 text-center -mt-1 max-w-xl px-2" data-testid="taste-profile">
+        {preferenceProfile?.visualStyle || preferenceProfile?.mood || "Matched to your picks."}
+      </p>
 
       {/* Personalisation indicator — only visible for logged-in users with history */}
       {hasPersonalisation && (
-        <p className="text-xs text-white/40 text-center -mt-1" data-testid="personalisation-label">
+        <p className="text-xs text-white/30 text-center" data-testid="personalisation-label">
           Based on your taste profile
         </p>
       )}
-
-      {/* Pagination */}
-      <div className="flex items-center justify-center gap-3 w-full">
-        <span className="text-base md:text-lg font-bold text-white" data-testid="pagination-text">
-          {currentIndex + 1} of {totalRecs}
-        </span>
-      </div>
-
-      {/* Genre/year tags */}
-      <div className="flex flex-wrap items-center justify-center gap-2 text-sm max-w-4xl" data-testid="preference-profile">
-        {currentRec.movie.genres?.length > 0 && (
-          <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
-            <Film className="w-4 h-4 text-primary" />
-            {currentRec.movie.genres.slice(0, 3).join(" · ")}
-          </Badge>
-        )}
-        {currentRec.movie.year && (
-          <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
-            <Calendar className="w-4 h-4 text-primary" />
-            {currentRec.movie.year}
-          </Badge>
-        )}
-      </div>
-
-      {/* Taste profile badges - hidden on mobile, shown on desktop */}
-      <div className="hidden md:flex flex-wrap items-center justify-center gap-2 text-sm max-w-4xl" data-testid="taste-profile">
-        <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
-          <Palette className="w-4 h-4 text-primary shrink-0" />
-          {preferenceProfile?.visualStyle || "Matched to your visual taste"}
-        </Badge>
-        <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
-          <Sparkles className="w-4 h-4 text-primary shrink-0" />
-          {preferenceProfile?.mood || "Matched to your mood"}
-        </Badge>
-      </div>
 
       {/* Trailer card with nav - row on desktop, stacked on mobile */}
       <div className="flex flex-col md:flex-row md:items-stretch gap-2 md:gap-3 w-full max-w-7xl">
@@ -631,7 +601,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
               </Button>
             </div>
             <p className="text-foreground/70 text-sm leading-relaxed mt-2" data-testid="text-movie-reason">
-              <span className="font-medium text-foreground/90">Why you might like this:</span> {currentRec.reason}
+              <span className="font-medium text-foreground/90">Why this made your list:</span> {currentRec.reason}
             </p>
           </div>
         </div>
