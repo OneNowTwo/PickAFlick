@@ -1,7 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { Bookmark, X } from "lucide-react";
+import { X } from "lucide-react";
+
+const KEY_COUNT = "signup_nudge_count";
+const KEY_FLOWS = "signup_nudge_flows_since";
+const MAX_SHOWS = 3;
+const FLOWS_BETWEEN = 2;
+
+function ss(key: string): number {
+  return parseInt(sessionStorage.getItem(key) ?? "0", 10);
+}
 
 function ph(event: string, props?: Record<string, unknown>) {
   if (typeof window !== "undefined" && (window as any).posthog) {
@@ -9,13 +18,14 @@ function ph(event: string, props?: Record<string, unknown>) {
   }
 }
 
-function GoogleIcon() {
+// Official Google "G" icon with brand colours
+function GoogleG() {
   return (
-    <svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg" className="shrink-0">
-      <path fill="white" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-      <path fill="white" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-      <path fill="white" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
-      <path fill="white" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+    <svg width="20" height="20" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
     </svg>
   );
 }
@@ -27,51 +37,86 @@ interface SignUpNudgeProps {
 export function SignUpNudge({ movieTitle }: SignUpNudgeProps) {
   const { login } = useAuth();
   const [show, setShow] = useState(false);
+  const scheduled = useRef(false);
 
   useEffect(() => {
-    ph("signup_modal_shown", { trigger_source: "post_recommendation" });
-    const t = setTimeout(() => setShow(true), 2000);
+    if (scheduled.current) return;
+
+    const shownCount = ss(KEY_COUNT);
+    const flowsSince = ss(KEY_FLOWS);
+    const isFirstEver = shownCount === 0;
+    const enoughFlowsSince = flowsSince >= FLOWS_BETWEEN;
+
+    if (shownCount >= MAX_SHOWS) return;
+    if (!isFirstEver && !enoughFlowsSince) return;
+
+    scheduled.current = true;
+
+    const t = setTimeout(() => {
+      sessionStorage.setItem(KEY_COUNT, String(shownCount + 1));
+      sessionStorage.setItem(KEY_FLOWS, "0");
+      ph("signup_modal_shown", { trigger_source: "post_recommendation", show_number: shownCount + 1 });
+      setShow(true);
+    }, 2000);
+
     return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!show) return null;
 
+  const handleContinue = () => {
+    ph("signup_cta_clicked", { trigger_source: "post_recommendation" });
+    sessionStorage.setItem("auth_trigger_source", "post_recommendation");
+    login();
+  };
+
+  const handleDismiss = () => {
+    ph("signup_modal_dismissed", { trigger_source: "post_recommendation" });
+    sessionStorage.setItem(KEY_FLOWS, "0");
+    setShow(false);
+  };
+
   return createPortal(
-    <div className="fixed bottom-0 left-0 right-0 z-[9999] bg-[#111] border-t border-white/10 shadow-2xl">
-      <div className="max-w-lg mx-auto px-4 pt-4 pb-6">
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <div className="flex items-center gap-2">
-            <Bookmark className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-            <div>
-              <p className="text-white font-bold text-sm leading-tight">
-                {movieTitle ? `Save "${movieTitle}"?` : "Keep your picks?"}
-              </p>
-              <p className="text-white/50 text-xs mt-0.5">
-                Sign in free — get better recommendations every time.
-              </p>
-            </div>
+    <div className="fixed inset-x-0 bottom-8 z-[9999] flex justify-center px-4 pointer-events-none">
+      <div className="pointer-events-auto w-full max-w-sm bg-[#1a1a1a] rounded-2xl shadow-2xl border border-white/10 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-start justify-between px-5 pt-5 pb-3">
+          <div>
+            <p className="text-white font-bold text-base leading-tight">
+              {movieTitle ? `Save "${movieTitle}"?` : "Save this pick?"}
+            </p>
+            <p className="text-white/50 text-sm mt-1 leading-snug">
+              Save this and get better recommendations every time.
+            </p>
           </div>
           <button
-            onClick={() => { ph("signup_modal_dismissed", { trigger_source: "post_recommendation" }); setShow(false); }}
-            className="text-white/30 hover:text-white/60 transition-colors shrink-0"
+            onClick={handleDismiss}
+            className="text-white/25 hover:text-white/60 transition-colors ml-3 mt-0.5 shrink-0"
             aria-label="Dismiss"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="flex gap-2">
+
+        {/* Google button */}
+        <div className="px-5 pb-4">
           <button
-            onClick={() => { ph("signup_cta_clicked", { trigger_source: "post_recommendation" }); sessionStorage.setItem("auth_trigger_source", "post_recommendation"); login(); }}
-            className="flex-1 flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 active:scale-[0.98] transition-all rounded-xl h-11 text-white font-bold text-sm"
+            onClick={handleContinue}
+            className="w-full flex items-center justify-center gap-3 bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors rounded-lg h-11 shadow-sm"
           >
-            <GoogleIcon />
-            Continue with Google
+            <GoogleG />
+            <span className="text-[#3c4043] font-medium text-sm tracking-wide">Continue with Google</span>
           </button>
+        </div>
+
+        {/* Later */}
+        <div className="pb-4 flex justify-center">
           <button
-            onClick={() => { ph("signup_modal_dismissed", { trigger_source: "post_recommendation" }); setShow(false); }}
-            className="px-4 h-11 rounded-xl border border-white/10 text-white/40 hover:text-white/70 text-sm font-medium transition-colors"
+            onClick={handleDismiss}
+            className="text-white/30 hover:text-white/60 text-xs font-medium transition-colors"
           >
-            Later
+            Maybe later
           </button>
         </div>
       </div>

@@ -84,8 +84,12 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
       if (typeof window !== 'undefined' && window.posthog) {
         window.posthog.capture("completed_flow");
       }
+      if (!user) {
+        const since = parseInt(sessionStorage.getItem("signup_nudge_flows_since") ?? "0", 10) + 1;
+        sessionStorage.setItem("signup_nudge_flows_since", String(since));
+      }
     }
-  }, [isLoading, recommendations]);
+  }, [isLoading, recommendations, user]);
 
   // Reset trailer state when changing movies
   useEffect(() => {
