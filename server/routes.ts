@@ -23,7 +23,7 @@ const sessionPairs = new Map<string, { round: number; leftMovie: any; rightMovie
 
 // Pre-fetch cache: starts the AI call after choice 5 so results are ready by the time voting ends
 const prefetchCache = new Map<string, Promise<RecommendationsResponse>>();
-const PREFETCH_AT_CHOICE = 5;
+const PREFETCH_AT_CHOICE = 4;
 
 export async function registerRoutes(
   httpServer: Server,

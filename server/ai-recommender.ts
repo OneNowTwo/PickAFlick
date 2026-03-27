@@ -184,7 +184,7 @@ Return exactly 7 recommendations. Every reason must reference their actual film 
       model: "gpt-4o",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
-      max_tokens: 2500,
+      max_tokens: 1800,
       temperature: 0.88,
     });
 
