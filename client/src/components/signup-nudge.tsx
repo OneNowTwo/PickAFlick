@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Bookmark, X } from "lucide-react";
 
@@ -35,8 +36,8 @@ export function SignUpNudge({ movieTitle }: SignUpNudgeProps) {
 
   if (!show) return null;
 
-  return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#111] border-t border-white/10 shadow-2xl">
+  return createPortal(
+    <div className="fixed bottom-0 left-0 right-0 z-[9999] bg-[#111] border-t border-white/10 shadow-2xl">
       <div className="max-w-lg mx-auto px-4 pt-4 pb-6">
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
@@ -74,6 +75,7 @@ export function SignUpNudge({ movieTitle }: SignUpNudgeProps) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
