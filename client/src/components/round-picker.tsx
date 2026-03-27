@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import type { Movie, ChoiceHistory } from "@shared/schema";
 import { Loader2, Star, Shuffle, X, Brain, Bookmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -601,7 +601,9 @@ export function RoundPicker({
           transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none'
         }}
       >
-        {renderMovieCard(leftMovie, "left", leftPosterUrl)}
+        <Fragment key={`left-${leftMovie.id}-${round}`}>
+          {renderMovieCard(leftMovie, "left", leftPosterUrl)}
+        </Fragment>
 
         <div className={`flex items-center justify-center transition-opacity duration-300 ${selectedSide ? "opacity-0" : "opacity-100"}`}>
           <span
@@ -619,7 +621,9 @@ export function RoundPicker({
           </span>
         </div>
 
-        {renderMovieCard(rightMovie, "right", rightPosterUrl)}
+        <Fragment key={`right-${rightMovie.id}-${round}`}>
+          {renderMovieCard(rightMovie, "right", rightPosterUrl)}
+        </Fragment>
       </div>
 
       {/* Skip button - bold and prominent */}
