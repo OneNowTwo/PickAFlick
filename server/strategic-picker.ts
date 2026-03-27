@@ -113,9 +113,29 @@ function genreBucket(movie: Movie): string {
   if (["Horror", "Thriller", "Crime"].includes(genre)) return "dark-intense";
   if (["Drama", "Mystery", "Documentary", "History"].includes(genre)) return "drama-prestige";
   if (["Action", "Adventure", "War"].includes(genre)) return "action-adventure";
-  if (["Sci-Fi", "Fantasy", "Animation"].includes(genre)) return "scifi-fantasy";
-  if (["Comedy", "Family", "Romance"].includes(genre)) return "light-fun";
+  if (["Sci-Fi", "Fantasy"].includes(genre)) return "scifi-fantasy";
+  // Animation, Comedy, Family, Romance grouped together as "light-fun"
+  if (["Comedy", "Family", "Romance", "Animation"].includes(genre)) return "light-fun";
   return "indie-other";
+}
+
+/**
+ * Cap the number of movies per genre bucket so no single cluster
+ * (e.g. scifi-fantasy, action-adventure) dominates pair selection.
+ * Keeps the highest-rated movies per bucket.
+ */
+function diversifyPool(scored: ScoredMovie[], maxPerBucket = 30): ScoredMovie[] {
+  const counts = new Map<string, number>();
+  const sorted = [...scored].sort((a, b) => (b.movie.rating ?? 0) - (a.movie.rating ?? 0));
+  const result: ScoredMovie[] = [];
+  for (const s of sorted) {
+    const n = counts.get(s.bucket) ?? 0;
+    if (n < maxPerBucket) {
+      result.push(s);
+      counts.set(s.bucket, n + 1);
+    }
+  }
+  return result;
 }
 
 interface ScoredMovie {
@@ -247,7 +267,8 @@ export function selectStrategicPair(
   if (pool.length < 2) return null;
 
   const scoreMap = buildScoreMap(pool);
-  const scored = pool.map(m => scoreMap.get(m.tmdbId)!).filter(Boolean);
+  // Cap per-bucket so no single genre cluster dominates pair selection
+  const scored = diversifyPool(pool.map(m => scoreMap.get(m.tmdbId)!).filter(Boolean));
   const profile = deriveProfile(history, scoreMap);
 
   let movieA: Movie | undefined;
@@ -257,10 +278,14 @@ export function selectStrategicPair(
     // ── Round 1: genre axis ─────────────────────────────────────────────────
     case 1: {
       const dark = scored.filter(s => ["dark-intense", "drama-prestige"].includes(s.bucket));
-      const light = scored.filter(s => ["light-fun", "action-adventure", "scifi-fantasy"].includes(s.bucket));
+      // Prefer Comedy/Romance/Family/Animation as the clearest light-side contrast.
+      // Fall back to action-adventure/scifi-fantasy only if light-fun pool is thin.
+      const lightFun    = scored.filter(s => s.bucket === "light-fun");
+      const lightBroad  = scored.filter(s => ["action-adventure", "scifi-fantasy"].includes(s.bucket));
+      const lightSource = lightFun.length >= 3 ? lightFun : [...lightFun, ...lightBroad];
 
-      const darkPool = pickBest(dark.length >= 3 ? dark : scored, s => s.tone + (s.movie.rating ?? 0) * 0.3);
-      const lightPool = pickBest(light.length >= 3 ? light : scored, s => (10 - s.tone) + (s.movie.rating ?? 0) * 0.3);
+      const darkPool  = pickBest(dark.length >= 3 ? dark : scored, s => s.tone + (s.movie.rating ?? 0) * 0.3);
+      const lightPool = pickBest(lightSource.length >= 3 ? lightSource : scored, s => (10 - s.tone) + (s.movie.rating ?? 0) * 0.3);
 
       movieA = darkPool[0];
       movieB = lightPool.find(m => m.tmdbId !== movieA?.tmdbId) ?? lightPool[1];

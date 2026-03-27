@@ -222,11 +222,11 @@ Each recommendation must:
 
 === VARIETY REQUIREMENTS ===
 
-Your 7 recommendations MUST include:
+Your 10 recommendations MUST include:
 1. **ONE RECENT (${recentThreshold}-${currentYear})**: Something from the last 3 years that matches their taste
 2. **ONE UNDERSEEN GEM**: Critically acclaimed but lesser-known — a discovery
 3. **ONE CLASSIC (pre-2010)**: A foundational film that connects to their preferences
-4. **FOUR FLEXIBLE**: Mix of eras, but each with a SPECIFIC multi-dimensional reason
+4. **SEVEN FLEXIBLE**: Mix of eras, but each with a SPECIFIC multi-dimensional reason
 
 === QUALITY STANDARDS ===
 
@@ -255,19 +255,22 @@ Respond in this exact JSON format:
     {"title": "Classic Title", "year": 1995, "reason": "Why this older film connects — reference specific quality from their picks", "category": "classic"},
     {"title": "Flexible Pick 1", "year": 2019, "reason": "Personalised, multi-dimensional reason", "category": "flexible"},
     {"title": "Flexible Pick 2", "year": 2021, "reason": "Personalised, multi-dimensional reason", "category": "flexible"},
+    {"title": "Flexible Pick 3", "year": 2017, "reason": "Personalised, multi-dimensional reason", "category": "flexible"},
+    {"title": "Flexible Pick 4", "year": 2016, "reason": "Personalised, multi-dimensional reason", "category": "flexible"},
     {"title": "Backup Pick 1", "year": 2018, "reason": "Alternative — different angle on their taste", "category": "backup"},
-    {"title": "Backup Pick 2", "year": 2020, "reason": "Alternative — different angle on their taste", "category": "backup"}
+    {"title": "Backup Pick 2", "year": 2020, "reason": "Alternative — different angle on their taste", "category": "backup"},
+    {"title": "Backup Pick 3", "year": 2014, "reason": "Alternative — different angle on their taste", "category": "backup"}
   ]
 }
 
-CRITICAL: Exactly 7 recommendations. First must be recent (${recentThreshold}-${currentYear}). One underseen gem. One pre-2010 classic. All reasons must reference their actual picks and include intangible qualities.`;
+CRITICAL: Exactly 10 recommendations. First must be recent (${recentThreshold}-${currentYear}). One underseen gem. One pre-2010 classic. All reasons must reference their actual picks and include intangible qualities.`;
 
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
-      max_tokens: 1500,
+      max_tokens: 2000,
       temperature: 0.92,
     });
 
@@ -321,7 +324,7 @@ CRITICAL: Exactly 7 recommendations. First must be recent (${recentThreshold}-${
     });
 
     const resolvedRecs = (await Promise.all(recPromises)).filter((r): r is Recommendation => r !== null);
-    const mainRecs = resolvedRecs.slice(0, 5);
+    const mainRecs = resolvedRecs.slice(0, 6);
     const recommendations: Recommendation[] = [...mainRecs];
 
     // Record what resolved so future sessions explore different films
