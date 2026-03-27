@@ -122,64 +122,62 @@ export async function generateRecommendations(
     ? `\nThe user selected these genres as their starting mood: ${initialGenreFilters.join(", ")}. Use this as supporting context — it confirms direction but the A/B data below is the primary signal.\n`
     : "";
 
-  const prompt = `You are a precise film recommendation engine. A user completed a head-to-head movie picker — 7 choices, 7 rejections. Your job is to recommend films that match the specific taste signals revealed by their A/B choices. Not "good films in general" — films that uniquely fit THIS user's demonstrated preferences.${filterContext}
+  const prompt = `You are an expert film recommender. A user just completed a head-to-head movie picker — 7 choices, 7 rejections. Use the CONTRAST between what they chose vs rejected to identify their exact taste, then recommend films that fit that specific profile.${filterContext}
 
-${recentExclusions.length > 0 ? `DO NOT RECOMMEND THESE — already suggested in recent sessions:
+${recentExclusions.length > 0 ? `=== DO NOT RECOMMEND — already shown in recent sessions ===
 ${recentExclusions.map(t => `• ${t}`).join("\n")}
 
-` : ""}Already in their picks (exclude): ${chosenTitles}
+` : ""}User's own picks (exclude these too): ${chosenTitles}
 
-=== THE A/B DATA ===
-
-CHOSEN (positive signals — later rounds marked 🔥 carry more weight):
-${movieDescriptions.map((m) => `Round ${m.round}${m.weight > 1 ? " 🔥" : ""}: "${m.title}" (${m.year}) | ${m.primaryGenre} | Dir: ${m.director} | Cast: ${m.cast.slice(0,3).join(", ") || "N/A"} | Themes: ${m.keywords.join(", ") || "N/A"}
+=== WHAT THEY CHOSE ===
+${movieDescriptions.map((m) => `Round ${m.round}${m.weight > 1 ? " 🔥 (higher weight)" : ""}: "${m.title}" (${m.year}) — ${m.primaryGenre} | Dir: ${m.director} | Cast: ${m.cast.length > 0 ? m.cast.join(", ") : "Unknown"}
+  Themes: ${m.keywords.length > 0 ? m.keywords.join(", ") : "N/A"}
   Synopsis: ${m.overview || "N/A"}`).join("\n\n")}
 
-REJECTED (negative signals — equally important):
-${rejectionContext.length > 0 ? rejectionContext.map((m) => `Round ${m.round}: PASSED on "${m.title}" (${m.year}, ${m.primaryGenre}, dir. ${m.director}) — CHOSE ${m.lostTo} instead
-  Their rejection of this film eliminates: ${m.primaryGenre} films with ${m.director}'s sensibility`).join("\n") : "No rejection data"}
+=== WHAT THEY REJECTED (equally important signal) ===
+${rejectionContext.length > 0 ? rejectionContext.map((m) => `Round ${m.round}: REJECTED "${m.title}" (${m.year}, ${m.primaryGenre}, dir. ${m.director})
+  → Chose instead: ${m.lostTo}
+  → Signal: they passed on ${m.primaryGenre}/${m.director}'s style`).join("\n\n") : "No rejection data"}
 
-=== YOUR PROCESS (follow in order) ===
+=== TASTE ANALYSIS ===
+Read BOTH lists. For each round the contrast between chosen vs rejected tells you something specific about their preferences — genre, tone, era, pacing, style, director sensibility. Look for the PATTERN across all 7 rounds. Rounds 5-7 (marked 🔥) carry more weight as their taste crystallised.
 
-STEP 1 — READ THE CONTRAST, NOT JUST THE CHOICES.
-For each round, identify the specific quality the chosen film had that the rejected film lacked.
-Then find the PATTERN across all 7 rounds. Derive 4-5 precise taste signals.
-Good signals are specific: "prefers psychological tension over physical action", "drawn to 90s/2000s era over modern", "rejects broad comedic tone", "values restrained character study over plot spectacle".
+Key dimensions to analyse:
+- Genre & subgenre: what TYPE of films did they gravitate toward?
+- Era: are they drawn to a specific decade or aesthetic?  
+- Tone: dark/heavy vs light/fun, or somewhere specific in between?
+- Pacing: slow-burn vs kinetic, dialogue-driven vs visual?
+- Director/craft sensibility: what filmmaking approach did they consistently choose?
+- What did rejections ELIMINATE? Each rejection is a negative filter.
 
-STEP 2 — RECOMMEND FROM THOSE SIGNALS ONLY.
-For each recommendation ask: "Does this film match the specific signals I derived?"
-Then apply the critical test: Could this same film reasonably be recommended to someone who made the OPPOSITE choices in every round? If yes — it is the wrong film. The recommendation must be uniquely appropriate to THIS user's contrast pattern.
+=== RECOMMENDATION RULES ===
+1. Every recommendation must match the taste pattern derived from their specific A/B results
+2. Ask yourself: could this same film be recommended to someone with the OPPOSITE A/B results? If yes, it's not specific enough
+3. Quality floor — every pick must pass: IMDb 6.5+ AND RT audience score 60%+ AND be recognisable/findable in Australia
+4. English language or internationally well-known film only
+5. No direct-to-streaming low-budget content, no films under 10,000 IMDb votes
+6. No two picks from the same director or franchise
+7. Natural variety across eras — at least one from last 3 years (${recentThreshold}–${currentYear}), at least one pre-2010
 
-STEP 3 — QUALITY GATE (apply before finalising each pick).
-Every recommendation must pass all of:
-• Weighted quality floor ≥ 6.5/10: IMDb score (40%) + Rotten Tomatoes audience score (40%) + Metacritic score (20%) — use your knowledge of these ratings
-• Recognisable to a mainstream Australian audience — findable on streaming or widely available to rent/buy
-• No direct-to-streaming cheaply-made content
-• No films with fewer than 10,000 IMDb votes unless a widely known festival film
-• English language OR an international film well-known outside its home country
-
-=== VARIETY ===
-Across your 7 recommendations: include at least one from the last 3 years (${recentThreshold}–${currentYear}), at least one pre-2010 classic. No two from the same director or franchise. Natural mix of eras — not all from the same decade.
-
-=== OUTPUT FORMAT ===
+=== OUTPUT — respond in this exact JSON format ===
 {
   "topGenres": ["genre1", "genre2", "genre3"],
   "themes": ["theme1", "theme2", "theme3"],
   "preferredEras": ["era1", "era2"],
-  "visualStyle": "One sentence about their visual/cinematic taste, citing 1-2 specific films they chose.",
-  "mood": "One sentence about their emotional/tonal preference, citing 1-2 specific picks.",
+  "visualStyle": "One sentence describing their cinematic taste, referencing 1-2 specific films they chose.",
+  "mood": "One sentence about their emotional/tonal preferences, referencing 1-2 specific picks.",
   "recommendations": [
-    {"title": "Film A", "year": 2022, "reason": "Cites their specific picks by name and explains the match.", "category": "recent"},
-    {"title": "Film B", "year": 1998, "reason": "Cites their specific picks by name and explains the match.", "category": "classic"},
-    {"title": "Film C", "year": 2015, "reason": "Cites their specific picks by name and explains the match.", "category": "flexible"},
-    {"title": "Film D", "year": 2011, "reason": "Cites their specific picks by name and explains the match.", "category": "flexible"},
-    {"title": "Film E", "year": 2018, "reason": "Cites their specific picks by name and explains the match.", "category": "flexible"},
-    {"title": "Film F", "year": 2009, "reason": "Cites their specific picks by name and explains the match.", "category": "flexible"},
-    {"title": "Film G", "year": 2020, "reason": "Cites their specific picks by name and explains the match.", "category": "flexible"}
+    {"title": "Film Title 1", "year": 2022, "reason": "Explain why this matches their specific A/B choices — reference their actual picks by name, explain the tonal/stylistic connection", "category": "recent"},
+    {"title": "Film Title 2", "year": 1999, "reason": "Explain why this matches their specific A/B choices — reference their actual picks by name, explain the tonal/stylistic connection", "category": "classic"},
+    {"title": "Film Title 3", "year": 2016, "reason": "Explain why this matches their specific A/B choices — reference their actual picks by name, explain the tonal/stylistic connection", "category": "flexible"},
+    {"title": "Film Title 4", "year": 2014, "reason": "Explain why this matches their specific A/B choices — reference their actual picks by name, explain the tonal/stylistic connection", "category": "flexible"},
+    {"title": "Film Title 5", "year": 2019, "reason": "Explain why this matches their specific A/B choices — reference their actual picks by name, explain the tonal/stylistic connection", "category": "flexible"},
+    {"title": "Film Title 6", "year": 2011, "reason": "Explain why this matches their specific A/B choices — reference their actual picks by name, explain the tonal/stylistic connection", "category": "flexible"},
+    {"title": "Film Title 7", "year": 2008, "reason": "Explain why this matches their specific A/B choices — reference their actual picks by name, explain the tonal/stylistic connection", "category": "flexible"}
   ]
 }
 
-CRITICAL: Exactly 7 recommendations. Every reason must name their specific A/B picks. A reason that could apply to any user is the wrong reason.`;
+Return exactly 7 recommendations. Every reason must reference their actual film picks by name.`;
 
   try {
     const response = await openai.chat.completions.create({
@@ -251,14 +249,16 @@ CRITICAL: Exactly 7 recommendations. Every reason must name their specific A/B p
 
     const resolvedRecs = (await Promise.all(recPromises)).filter((r): r is Recommendation => r !== null);
 
-    // Code-level repetition guard — filter out any title already in cross-session memory.
-    // This makes repetition impossible regardless of LLM behaviour.
+    // Code-level repetition guard — filter out titles already in cross-session memory.
+    // Only apply if it leaves enough results; if the LLM picked mostly fresh films this
+    // is a no-op. If the filter is too aggressive, fall back to full resolved list.
     const recentTitlesSet = new Set(recentlyRecommendedTitles.map(t => t.toLowerCase().trim()));
     const freshRecs = resolvedRecs.filter(r =>
       !recentTitlesSet.has(r.movie.title.toLowerCase().trim())
     );
+    const dedupedRecs = freshRecs.length >= 4 ? freshRecs : resolvedRecs;
 
-    const mainRecs = freshRecs.slice(0, 6);
+    const mainRecs = dedupedRecs.slice(0, 6);
     const recommendations: Recommendation[] = [...mainRecs];
 
     // Record what resolved so future sessions explore different films
