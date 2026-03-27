@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Fragment } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import type { Movie, ChoiceHistory } from "@shared/schema";
 import { Loader2, Star, Shuffle, X, Brain, Bookmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -400,6 +400,31 @@ export function RoundPicker({
   const leftPosterUrl = getPosterUrl(leftMovie);
   const rightPosterUrl = getPosterUrl(rightMovie);
 
+  /** Hide poster row until images decode (or timeout) so layout never flashes empty/wrong frames */
+  const posterLoadsNeeded = useMemo(
+    () => (leftPosterUrl ? 1 : 0) + (rightPosterUrl ? 1 : 0),
+    [leftPosterUrl, rightPosterUrl]
+  );
+  const posterLoadsDone = useRef(0);
+  const [postersVisible, setPostersVisible] = useState(false);
+
+  useLayoutEffect(() => {
+    posterLoadsDone.current = 0;
+    if (posterLoadsNeeded === 0) setPostersVisible(true);
+    else setPostersVisible(false);
+  }, [leftMovie.id, rightMovie.id, round, posterLoadsNeeded]);
+
+  useEffect(() => {
+    if (posterLoadsNeeded === 0) return;
+    const t = window.setTimeout(() => setPostersVisible(true), 550);
+    return () => window.clearTimeout(t);
+  }, [leftMovie.id, rightMovie.id, round, posterLoadsNeeded]);
+
+  const onPosterLoad = useCallback(() => {
+    posterLoadsDone.current += 1;
+    if (posterLoadsDone.current >= posterLoadsNeeded) setPostersVisible(true);
+  }, [posterLoadsNeeded]);
+
   // Synchronous: never treat stale selectedSide as active after pair changes (fixes 1-frame glitch)
   const pairMatchesSelection =
     selectionPair !== null &&
@@ -407,7 +432,12 @@ export function RoundPicker({
     selectionPair.right === rightMovie.id;
   const activeSelection = pairMatchesSelection ? selectedSide : null;
 
-  const renderMovieCard = (movie: Movie, side: "left" | "right", posterUrl: string | null) => {
+  const renderMovieCard = (
+    movie: Movie,
+    side: "left" | "right",
+    posterUrl: string | null,
+    onPosterDecode?: () => void
+  ) => {
     const leadActors = getLeadActors(movie);
     const highlyRated = isHighlyRated(movie);
     const isAdded = addedToWatchlist.has(movie.tmdbId);
@@ -451,7 +481,13 @@ export function RoundPicker({
           data-testid={`movie-choice-${side}`}
         >
           {posterUrl ? (
-            <img src={posterUrl} alt={movie.title} className="w-full h-full object-cover" loading="eager" />
+            <img
+              src={posterUrl}
+              alt={movie.title}
+              className="w-full h-full object-cover"
+              loading="eager"
+              onLoad={onPosterDecode}
+            />
           ) : (
             <div className="w-full h-full bg-muted flex items-center justify-center">
               <span className="text-muted-foreground text-sm md:text-lg">No Poster</span>
@@ -597,44 +633,52 @@ export function RoundPicker({
       )}
 
       {/* Side-by-side movie cards with swipe support */}
-      <div 
-        className="relative flex flex-row gap-1 md:gap-8 w-full items-end justify-center perspective-1000 touch-pan-y"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        style={{
-          transform: swipeOffset !== 0 ? `translateX(${swipeOffset * 0.3}px)` : 'none',
-          // No transition when offset snaps to 0 — a 0.2s ease-out on the whole row read as posters "snapping together"
-          transition: 'none',
-        }}
-      >
-        <Fragment key={`left-${leftMovie.id}-${round}`}>
-          {renderMovieCard(leftMovie, "left", leftPosterUrl)}
-        </Fragment>
+      <div className="relative w-full">
+        {!postersVisible && !isSubmitting && !isSkipping && (
+          <div className="absolute inset-x-0 top-0 z-10 flex min-h-[min(360px,42vh)] items-center justify-center pointer-events-none">
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          </div>
+        )}
+        <div
+          className={`relative flex flex-row gap-1 md:gap-8 w-full items-end justify-center perspective-1000 touch-pan-y transition-opacity duration-200 ease-out ${
+            postersVisible || isSubmitting || isSkipping ? "opacity-100" : "opacity-0 pointer-events-none"
+          }`}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          style={{
+            transform: swipeOffset !== 0 ? `translateX(${swipeOffset * 0.3}px)` : 'none',
+            transition: 'none',
+          }}
+        >
+          <Fragment key={`left-${leftMovie.id}-${round}`}>
+            {renderMovieCard(leftMovie, "left", leftPosterUrl, onPosterLoad)}
+          </Fragment>
 
-        <div className={`flex items-center justify-center ${activeSelection ? "opacity-0" : "opacity-100"}`}>
-          <span
-            className="text-4xl md:text-7xl font-black select-none"
-            style={{
-              fontFamily: "var(--font-display)",
-              color: "#ff2d55",
-              WebkitTextStroke: "2px white",
-              textShadow:
-                "0 0 8px rgba(255,45,85,0.9), 0 0 20px rgba(255,45,85,0.7), 0 0 40px rgba(255,45,85,0.5), 0 0 80px rgba(255,45,85,0.3)",
-              letterSpacing: "0.05em",
-            }}
-          >
-            VS
-          </span>
+          <div className={`flex items-center justify-center ${activeSelection ? "opacity-0" : "opacity-100"}`}>
+            <span
+              className="text-4xl md:text-7xl font-black select-none"
+              style={{
+                fontFamily: "var(--font-display)",
+                color: "#ff2d55",
+                WebkitTextStroke: "2px white",
+                textShadow:
+                  "0 0 8px rgba(255,45,85,0.9), 0 0 20px rgba(255,45,85,0.7), 0 0 40px rgba(255,45,85,0.5), 0 0 80px rgba(255,45,85,0.3)",
+                letterSpacing: "0.05em",
+              }}
+            >
+              VS
+            </span>
+          </div>
+
+          <Fragment key={`right-${rightMovie.id}-${round}`}>
+            {renderMovieCard(rightMovie, "right", rightPosterUrl, onPosterLoad)}
+          </Fragment>
         </div>
-
-        <Fragment key={`right-${rightMovie.id}-${round}`}>
-          {renderMovieCard(rightMovie, "right", rightPosterUrl)}
-        </Fragment>
       </div>
 
       {/* Skip button - bold and prominent */}
-      {onSkip && !activeSelection && (
+      {onSkip && !activeSelection && postersVisible && (
         <Button
           variant="secondary"
           size="default"

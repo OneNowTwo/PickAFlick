@@ -551,27 +551,33 @@ export default function Home() {
           <GameInstructions onStart={handleStartPlaying} />
         )}
 
-        {gameState === "playing" && roundQuery.data && !roundQuery.data.isComplete && (
-          <RoundPicker
-            round={roundQuery.data.round}
-            totalRounds={roundQuery.data.totalRounds}
-            baseTotalRounds={roundQuery.data.baseTotalRounds}
-            choicesMade={roundQuery.data.choicesMade}
-            leftMovie={roundQuery.data.leftMovie}
-            rightMovie={roundQuery.data.rightMovie}
-            onChoice={handleChoice}
-            onSkip={handleSkip}
-            isSubmitting={choiceMutation.isPending}
-            isSkipping={skipMutation.isPending}
-            choiceHistory={roundQuery.data.choiceHistory}
-            selectedGenres={selectedMoods.map(id => MOOD_OPTIONS.find(m => m.id === id)?.label).filter(Boolean) as string[]}
-          />
-        )}
+        {/* While the round query refetches, React Query keeps previous data — hide picker so stale posters never flash */}
+        {gameState === "playing" &&
+          roundQuery.data &&
+          !roundQuery.data.isComplete &&
+          !roundQuery.isFetching && (
+            <RoundPicker
+              round={roundQuery.data.round}
+              totalRounds={roundQuery.data.totalRounds}
+              baseTotalRounds={roundQuery.data.baseTotalRounds}
+              choicesMade={roundQuery.data.choicesMade}
+              leftMovie={roundQuery.data.leftMovie}
+              rightMovie={roundQuery.data.rightMovie}
+              onChoice={handleChoice}
+              onSkip={handleSkip}
+              isSubmitting={choiceMutation.isPending}
+              isSkipping={skipMutation.isPending}
+              choiceHistory={roundQuery.data.choiceHistory}
+              selectedGenres={selectedMoods.map(id => MOOD_OPTIONS.find(m => m.id === id)?.label).filter(Boolean) as string[]}
+            />
+          )}
 
-        {gameState === "playing" && roundQuery.isLoading && (
+        {gameState === "playing" && roundQuery.isFetching && !roundQuery.data?.isComplete && (
           <div className="flex flex-col items-center justify-center gap-4 min-h-[60vh]">
             <Loader2 className="w-10 h-10 animate-spin text-primary" />
-            <p className="text-muted-foreground">Loading next round...</p>
+            <p className="text-muted-foreground">
+              {roundQuery.data ? "Loading next round..." : "Loading round..."}
+            </p>
           </div>
         )}
 
