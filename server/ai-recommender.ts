@@ -186,16 +186,26 @@ CRITICAL: Exactly 7 recommendations. Every reason must name their specific A/B p
       model: "gpt-4o",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
-      max_tokens: 2000,
+      max_tokens: 2500,
       temperature: 0.88,
     });
 
     const content = response.choices[0]?.message?.content || "{}";
+    const finishReason = response.choices[0]?.finish_reason;
+    if (finishReason === "length") {
+      console.error("[ai-recommender] WARNING: response was cut off at max_tokens — JSON may be incomplete");
+    }
+
     const analysis: AIAnalysis = JSON.parse(content);
+
+    if (!analysis.recommendations || !Array.isArray(analysis.recommendations) || analysis.recommendations.length === 0) {
+      console.error("[ai-recommender] LLM returned no recommendations array. Keys:", Object.keys(analysis));
+      throw new Error("LLM returned no recommendations");
+    }
 
     const chosenTmdbIds = new Set(chosenMovies.map((m) => m.tmdbId));
 
-    // Resolve all 7 LLM recommendations in parallel — no streaming filter, poster + trailer only
+    // Resolve all 7 LLM recommendations in parallel — poster + trailer required
     const recPromises = analysis.recommendations.map(async (rec) => {
       try {
         const searchResult = await searchMovieByTitle(rec.title, rec.year);
@@ -311,7 +321,8 @@ CRITICAL: Exactly 7 recommendations. Every reason must name their specific A/B p
         !chosenMovies.some((c) => c.tmdbId === m.tmdbId) &&
         m.posterPath && m.posterPath.trim() &&
         m.year && m.year >= 1980 &&
-        m.rating && m.rating >= 7.0
+        m.rating && m.rating >= 7.0 &&
+        (!m.original_language || m.original_language === "en")
       )
       .slice(0, 5);
 
