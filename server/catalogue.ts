@@ -1,5 +1,4 @@
 import type { Movie } from "@shared/schema";
-import { getAllIMDbMovies, getIMDbLists } from "./imdb-scraper";
 import { getAllEditorialMovies } from "./editorial-scraper";
 import { resolveMovieFromTitle, discoverMovies, getTopRatedMovies, getPopularMovies, getNowPlayingMovies } from "./tmdb";
 import { storage } from "./storage";
@@ -131,24 +130,16 @@ async function buildCatalogue(): Promise<void> {
   cache.buildError = null;
   
   try {
-    // Fetch IMDb lists and editorial lists (RT, Rolling Stone, Empire, IndieWire, Variety) in parallel
-    const [imdbMovies, editorialMovies] = await Promise.all([
-      getAllIMDbMovies(),
-      getAllEditorialMovies(),
-    ]);
-
-    // Merge editorial titles into IMDb results by list name
-    for (const [listName, items] of Array.from(editorialMovies.entries())) {
-      const existing = imdbMovies.get(listName) || [];
-      imdbMovies.set(listName, [...existing, ...items]);
-    }
+    // Fetch editorial lists (Rolling Stone, Empire, IndieWire, Variety, RT) only —
+    // IMDb list scraping is permanently blocked so those calls have been removed.
+    const editorialMovies = await getAllEditorialMovies();
 
     const allMovies: Movie[] = [];
     const grouped: Record<string, Movie[]> = {};
 
-    // Process all curated sources (IMDb + editorial) regardless of count
+    // Process all editorial sources
     const asianLanguages = ['ko', 'ja', 'zh', 'th', 'vi'];
-    for (const [listName, items] of Array.from(imdbMovies.entries())) {
+    for (const [listName, items] of Array.from(editorialMovies.entries())) {
       console.log(`Processing ${listName}: ${items.length} movies`);
       const listMovies: Movie[] = [];
 
