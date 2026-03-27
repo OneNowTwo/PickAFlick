@@ -27,8 +27,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const isFreshLogin = typeof window !== "undefined" &&
-      new URLSearchParams(window.location.search).get("auth_success") === "1";
+    const params = typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search)
+      : new URLSearchParams();
+
+    const isFreshLogin = params.get("auth_success") === "1";
+    const isNewUser = isFreshLogin && params.get("new_user") === "1";
 
     fetch("/auth/me")
       .then((r) => r.json())
@@ -36,17 +40,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const resolvedUser = data.user ?? null;
         setUser(resolvedUser);
         if (isFreshLogin && resolvedUser) {
-          if ((window as any).posthog) {
-            (window as any).posthog.identify(String(resolvedUser.id), {
+          const ph = (window as any).posthog;
+          if (ph) {
+            const triggerSource = sessionStorage.getItem("auth_trigger_source") || "unknown";
+            sessionStorage.removeItem("auth_trigger_source");
+
+            const identifyProps: Record<string, string> = {
               email: resolvedUser.email,
               name: resolvedUser.displayName,
               username: resolvedUser.email,
-            });
-            (window as any).posthog.capture("user_signed_in", { method: "google" });
+            };
+            if (isNewUser) {
+              identifyProps.signup_date = new Date().toISOString();
+              identifyProps.first_trigger_source = triggerSource;
+            }
+
+            ph.identify(String(resolvedUser.id), identifyProps);
+
+            if (isNewUser) {
+              ph.capture("user_signed_up", { method: "google", trigger_source: triggerSource });
+            } else {
+              ph.capture("user_signed_in", { method: "google", trigger_source: triggerSource });
+            }
           }
-          // Clean the query param without a page reload
+          // Clean the query params without a page reload
           const url = new URL(window.location.href);
           url.searchParams.delete("auth_success");
+          url.searchParams.delete("new_user");
           window.history.replaceState({}, "", url.toString());
         }
       })

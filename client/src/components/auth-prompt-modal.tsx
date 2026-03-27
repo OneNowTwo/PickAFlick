@@ -1,8 +1,10 @@
 import { useAuth } from "@/contexts/AuthContext";
+import { useEffect } from "react";
 
 interface AuthPromptModalProps {
   onSkip: () => void;
   heading?: string;
+  triggerSource?: string;
 }
 
 const AVATARS = [
@@ -28,8 +30,28 @@ function ph(event: string, props?: Record<string, unknown>) {
   }
 }
 
-export function AuthPromptModal({ onSkip, heading = "Save your picks & build your taste profile" }: AuthPromptModalProps) {
+export function AuthPromptModal({
+  onSkip,
+  heading = "Save your picks & build your taste profile",
+  triggerSource = "unknown",
+}: AuthPromptModalProps) {
   const { login } = useAuth();
+
+  useEffect(() => {
+    ph("signup_modal_shown", { trigger_source: triggerSource });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleContinue = () => {
+    ph("signup_cta_clicked", { trigger_source: triggerSource });
+    sessionStorage.setItem("auth_trigger_source", triggerSource);
+    login();
+  };
+
+  const handleSkip = () => {
+    ph("signup_modal_dismissed", { trigger_source: triggerSource });
+    onSkip();
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/85 backdrop-blur-sm p-4 gap-6">
@@ -49,7 +71,7 @@ export function AuthPromptModal({ onSkip, heading = "Save your picks & build you
 
         {/* Google button */}
         <button
-          onClick={() => { ph("signin_modal_converted"); login(); }}
+          onClick={handleContinue}
           className="w-full flex items-center justify-center gap-3 bg-primary hover:bg-primary/90 active:scale-[0.98] transition-all duration-150 rounded-xl h-14 text-white font-black text-base uppercase tracking-widest shadow-lg mt-1"
         >
           <GoogleIcon />
@@ -58,7 +80,7 @@ export function AuthPromptModal({ onSkip, heading = "Save your picks & build you
 
         {/* Skip */}
         <button
-          onClick={() => { ph("signin_modal_skipped"); onSkip(); }}
+          onClick={handleSkip}
           className="text-xs font-bold uppercase tracking-[0.2em] text-white/30 hover:text-white/60 transition-colors"
         >
           Skip for now

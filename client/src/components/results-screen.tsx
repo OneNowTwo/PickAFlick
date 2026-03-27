@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { ShareCard } from "./share-card";
 import { AuthPromptModal } from "./auth-prompt-modal";
+import { SignUpNudge } from "./signup-nudge";
 import { useAuth } from "@/contexts/AuthContext";
 
 // Generate personalized reveal message based on preference profile
@@ -59,7 +60,7 @@ interface ResultsScreenProps {
 
 export function ResultsScreen({ recommendations, isLoading, onPlayAgain, sessionId, suppressTrailer = false }: ResultsScreenProps) {
   const { user } = useAuth();
-  const [authModalHeading, setAuthModalHeading] = useState<string | null>(null);
+  const [authModal, setAuthModal] = useState<{ heading: string; triggerSource: string } | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [likedMovies, setLikedMovies] = useState<Set<number>>(new Set());
   const [maybeMovies, setMaybeMovies] = useState<Set<number>>(new Set());
@@ -375,10 +376,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
 
   const handleLike = () => {
     if (!user) {
-      if (typeof window !== "undefined" && window.posthog) {
-        window.posthog.capture("signin_modal_shown", { trigger: "watchlist" });
-      }
-      setAuthModalHeading("Save your picks & build your taste profile");
+      setAuthModal({ heading: "Save your picks & build your taste profile", triggerSource: "watchlist" });
       return;
     }
     const movie = currentRec.movie;
@@ -530,7 +528,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                 }
               };
               
-              if (currentTrailerUrl && autoPlayTrailer && !allTrailersFailed && !suppressTrailer && !authModalHeading) {
+              if (currentTrailerUrl && autoPlayTrailer && !allTrailersFailed && !suppressTrailer && !authModal) {
                 const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
                 const muteParam = (isMobile && !hasInteracted) ? 1 : 0;
                 
@@ -616,10 +614,7 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
                 size="lg"
                 onClick={() => {
                   if (!user) {
-                    if (typeof window !== "undefined" && window.posthog) {
-                      window.posthog.capture("signin_modal_shown", { trigger: "where_to_watch" });
-                    }
-                    setAuthModalHeading("Sign in to track what you watch and get better picks next time");
+                    setAuthModal({ heading: "Sign in to track what you watch and get better picks next time", triggerSource: "where_to_watch" });
                     return;
                   }
                   setShowWatchProviders(true);
@@ -930,11 +925,17 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
         />
       )}
 
-      {authModalHeading && (
+      {authModal && (
         <AuthPromptModal
-          heading={authModalHeading}
-          onSkip={() => setAuthModalHeading(null)}
+          heading={authModal.heading}
+          triggerSource={authModal.triggerSource}
+          onSkip={() => setAuthModal(null)}
         />
+      )}
+
+      {/* Post-recommendation sign-up nudge — soft bottom sheet, shown after 2s for logged-out users */}
+      {!user && !isLoading && recommendations && (
+        <SignUpNudge movieTitle={currentRec?.movie.title} />
       )}
     </div>
   );

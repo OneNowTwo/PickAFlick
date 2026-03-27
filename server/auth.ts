@@ -34,8 +34,8 @@ export function setupAuth(app: Express) {
 
   passport.use(
     new GoogleStrategy(
-      { clientID, clientSecret, callbackURL },
-      async (_accessToken, _refreshToken, profile, done) => {
+      { clientID, clientSecret, callbackURL, passReqToCallback: true } as Parameters<typeof GoogleStrategy>[0],
+      async (req: Request, _accessToken: string, _refreshToken: string, profile: any, done: any) => {
         try {
           const email = profile.emails?.[0]?.value ?? "";
           const avatarUrl = profile.photos?.[0]?.value ?? null;
@@ -43,6 +43,7 @@ export function setupAuth(app: Express) {
           const existing = await db.select().from(users).where(eq(users.googleId, profile.id)).limit(1);
 
           if (existing.length > 0) {
+            (req.session as any)._isNewUser = false;
             return done(null, existing[0]);
           }
 
@@ -51,6 +52,7 @@ export function setupAuth(app: Express) {
             .values({ googleId: profile.id, email, displayName: profile.displayName, avatarUrl })
             .returning();
 
+          (req.session as any)._isNewUser = true;
           return done(null, created);
         } catch (err) {
           return done(err as Error);
@@ -81,7 +83,9 @@ export function setupAuth(app: Express) {
     "/auth/google/callback",
     passport.authenticate("google", { failureRedirect: "/?auth_error=1" }),
     (_req: Request, res: Response) => {
-      res.redirect("/?auth_success=1");
+      const isNew = !!(_req.session as any)._isNewUser;
+      delete (_req.session as any)._isNewUser;
+      res.redirect(`/?auth_success=1${isNew ? "&new_user=1" : ""}`);
     }
   );
 
