@@ -186,7 +186,10 @@ export default function Home() {
 
   const handleStart = useCallback((surpriseMe = false) => {
     if (typeof window !== 'undefined' && window.posthog) {
-      window.posthog.capture(surpriseMe ? "surprise_me" : "start_picking");
+      window.posthog.capture(surpriseMe ? "surprise_me" : "start_picking", {
+        genres: surpriseMe ? [] : selectedMoods,
+        genre_count: surpriseMe ? 0 : selectedMoods.length,
+      });
       // Fire returning_user_session_started for logged-in users who have a taste profile
       if (user && tasteSummary?.topGenre) {
         window.posthog.capture("returning_user_session_started", {
@@ -355,7 +358,12 @@ export default function Home() {
                     {/* Primary CTA */}
                     <Button
                       size="lg"
-                      onClick={() => setGameState("genre-select")}
+                      onClick={() => {
+                        if (typeof window !== "undefined" && window.posthog) {
+                          window.posthog.capture("genre_select_opened");
+                        }
+                        setGameState("genre-select");
+                      }}
                       className="min-w-[220px] px-10 h-14 text-lg font-bold gap-2 shadow-[0_0_28px_rgba(220,38,38,0.5)] hover:-translate-y-1 active:scale-95 transition-all duration-200"
                       data-testid="button-start-picking"
                     >
