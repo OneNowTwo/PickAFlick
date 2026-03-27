@@ -120,22 +120,22 @@ function genreBucket(movie: Movie): string {
 }
 
 /**
- * Cap the number of movies per genre bucket so no single cluster
- * (e.g. scifi-fantasy, action-adventure) dominates pair selection.
- * Keeps the highest-rated movies per bucket.
+ * Count how many times each genre bucket has already appeared in this
+ * session's A/B pairs. Both the chosen AND rejected movie count — both
+ * were shown to the user.
  */
-function diversifyPool(scored: ScoredMovie[], maxPerBucket = 30): ScoredMovie[] {
+function countShownBuckets(
+  history: ChoiceEntry[],
+  scoreMap: Map<number, ScoredMovie>
+): Map<string, number> {
   const counts = new Map<string, number>();
-  const sorted = [...scored].sort((a, b) => (b.movie.rating ?? 0) - (a.movie.rating ?? 0));
-  const result: ScoredMovie[] = [];
-  for (const s of sorted) {
-    const n = counts.get(s.bucket) ?? 0;
-    if (n < maxPerBucket) {
-      result.push(s);
-      counts.set(s.bucket, n + 1);
+  for (const h of history) {
+    for (const movie of [h.chosenMovie, h.rejectedMovie]) {
+      const s = scoreMap.get(movie.tmdbId);
+      if (s) counts.set(s.bucket, (counts.get(s.bucket) ?? 0) + 1);
     }
   }
-  return result;
+  return counts;
 }
 
 interface ScoredMovie {
@@ -221,14 +221,31 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 /**
- * Pick from the top qualifying candidates with significant randomness so the
- * same films don't dominate every session. We take the top 40% by the prefer
- * score, then shuffle that pool and return the first `count` entries.
+ * Pick from the top qualifying candidates, applying a novelty penalty to
+ * genre buckets that have already appeared this session.
+ *
+ * final_score = prefer(s) - (times_bucket_shown_this_session * BUCKET_PENALTY)
+ *
+ * A penalty of 1.5 per appearance is enough to demote a repeated genre past
+ * fresh alternatives, but not enough to disqualify it if it's genuinely the
+ * strongest match. The top 40% slice + shuffle keeps session-to-session
+ * variety even within the same genre.
  */
-function pickBest(pool: ScoredMovie[], prefer: (s: ScoredMovie) => number, count = 8): Movie[] {
-  const sorted = [...pool].sort((a, b) => prefer(b) - prefer(a));
+const BUCKET_PENALTY = 1.5;
+
+function pickBest(
+  pool: ScoredMovie[],
+  prefer: (s: ScoredMovie) => number,
+  count = 8,
+  shownBuckets?: Map<string, number>
+): Movie[] {
+  const penalised = pool.map(s => ({
+    s,
+    score: prefer(s) - (shownBuckets?.get(s.bucket) ?? 0) * BUCKET_PENALTY,
+  }));
+  const sorted = penalised.sort((a, b) => b.score - a.score);
   const topSlice = sorted.slice(0, Math.max(count * 4, Math.ceil(sorted.length * 0.4)));
-  return shuffle(topSlice).slice(0, count).map(s => s.movie);
+  return shuffle(topSlice).slice(0, count).map(item => item.s.movie);
 }
 
 // ─── Main export ─────────────────────────────────────────────────────────────
@@ -267,9 +284,11 @@ export function selectStrategicPair(
   if (pool.length < 2) return null;
 
   const scoreMap = buildScoreMap(pool);
-  // Cap per-bucket so no single genre cluster dominates pair selection
-  const scored = diversifyPool(pool.map(m => scoreMap.get(m.tmdbId)!).filter(Boolean));
+  const scored = pool.map(m => scoreMap.get(m.tmdbId)!).filter(Boolean);
   const profile = deriveProfile(history, scoreMap);
+  // Track which genre buckets have already appeared this session so pickBest
+  // can penalise over-represented genres without hard-banning them.
+  const shownBuckets = countShownBuckets(history, scoreMap);
 
   let movieA: Movie | undefined;
   let movieB: Movie | undefined;
@@ -284,8 +303,8 @@ export function selectStrategicPair(
       const lightBroad  = scored.filter(s => ["action-adventure", "scifi-fantasy"].includes(s.bucket));
       const lightSource = lightFun.length >= 3 ? lightFun : [...lightFun, ...lightBroad];
 
-      const darkPool  = pickBest(dark.length >= 3 ? dark : scored, s => s.tone + (s.movie.rating ?? 0) * 0.3);
-      const lightPool = pickBest(lightSource.length >= 3 ? lightSource : scored, s => (10 - s.tone) + (s.movie.rating ?? 0) * 0.3);
+      const darkPool  = pickBest(dark.length >= 3 ? dark : scored, s => s.tone + (s.movie.rating ?? 0) * 0.3, 8, shownBuckets);
+      const lightPool = pickBest(lightSource.length >= 3 ? lightSource : scored, s => (10 - s.tone) + (s.movie.rating ?? 0) * 0.3, 8, shownBuckets);
 
       movieA = darkPool[0];
       movieB = lightPool.find(m => m.tmdbId !== movieA?.tmdbId) ?? lightPool[1];
@@ -334,8 +353,8 @@ export function selectStrategicPair(
       );
       const usePool = zonePool.length >= 6 ? zonePool : scored;
 
-      const fast = pickBest(usePool, s => s.pacing);
-      const slow = pickBest(usePool, s => 10 - s.pacing);
+      const fast = pickBest(usePool, s => s.pacing, 8, shownBuckets);
+      const slow = pickBest(usePool, s => 10 - s.pacing, 8, shownBuckets);
 
       movieA = fast[0];
       movieB = slow.find(m => m.tmdbId !== movieA?.tmdbId) ?? slow[1];
@@ -347,8 +366,8 @@ export function selectStrategicPair(
       const zonePool = scored.filter(s => Math.abs(s.tone - profile.avgTone) <= 3);
       const usePool = zonePool.length >= 6 ? zonePool : scored;
 
-      const highPrestige = pickBest(usePool, s => s.prestige);
-      const mainstream   = pickBest(usePool, s => 10 - s.prestige);
+      const highPrestige = pickBest(usePool, s => s.prestige, 8, shownBuckets);
+      const mainstream   = pickBest(usePool, s => 10 - s.prestige, 8, shownBuckets);
 
       movieA = highPrestige[0];
       movieB = mainstream.find(m => m.tmdbId !== movieA?.tmdbId) ?? mainstream[1];
@@ -365,7 +384,7 @@ export function selectStrategicPair(
         - Math.abs(s.era      - profile.avgEra)      * 0.20
         - Math.abs(s.prestige - profile.avgPrestige) * 0.20;
 
-      const topMatches = pickBest(scored, fitness, 20);
+      const topMatches = pickBest(scored, fitness, 20, shownBuckets);
       const shuffled = shuffle(topMatches);
       movieA = shuffled[0];
       movieB = shuffled.find(m => m.tmdbId !== movieA?.tmdbId) ?? shuffled[1];
