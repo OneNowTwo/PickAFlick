@@ -37,6 +37,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(resolvedUser);
         if (isFreshLogin && resolvedUser) {
           if ((window as any).posthog) {
+            (window as any).posthog.identify(String(resolvedUser.id), {
+              email: resolvedUser.email,
+              name: resolvedUser.displayName,
+              username: resolvedUser.email,
+            });
             (window as any).posthog.capture("user_signed_in", { method: "google" });
           }
           // Clean the query param without a page reload
