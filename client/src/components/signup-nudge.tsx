@@ -54,11 +54,11 @@ export function SignUpNudge({ movieTitle, delayMs = 2000 }: SignUpNudgeProps) {
 
     scheduled.current = true;
     const timer = setTimeout(() => {
-      setVisible(true);
       sessionStorage.setItem(KEY_COUNT, String(shownCount + 1));
       sessionStorage.setItem(KEY_FLOWS, "0");
       ph("signup_modal_shown", { trigger_source: "post_recommendation", show_number: shownCount + 1 });
-      requestAnimationFrame(() => setAnimateIn(true));
+      setVisible(true);
+      setTimeout(() => setAnimateIn(true), 30);
     }, delayMs);
 
     return () => clearTimeout(timer);
