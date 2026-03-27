@@ -351,15 +351,20 @@ export function RoundPicker({
     setShowSynopsis(side);
   };
 
+  const [suppressTransition, setSuppressTransition] = useState(false);
+
   // Generate new insight when round changes - CRITICAL: Reset all animation state
   useEffect(() => {
-    // Force immediate reset without transition
+    // Suppress CSS transition for one frame so new posters snap to position
+    setSuppressTransition(true);
     setSelectedSide(null);
     setIsAnimating(false);
     setShowSynopsis(null);
     didShowSynopsisRef.current = false;
     setInsight(generateInsight(choiceHistory, round));
-    setSwipeOffset(0); // Reset swipe offset too
+    setSwipeOffset(0);
+    // Re-enable transition after a single frame
+    requestAnimationFrame(() => setSuppressTransition(false));
   }, [round, leftMovie.id, rightMovie.id, choiceHistory]);
 
   useEffect(() => {
@@ -427,7 +432,8 @@ export function RoundPicker({
           }}
           className={`
             relative w-full max-w-[180px] md:max-w-[300px] aspect-[2/3] rounded-lg md:rounded-xl overflow-hidden
-            transition-all duration-500 ease-out cursor-pointer
+            ${suppressTransition ? "" : "transition-all duration-500 ease-out"}
+            cursor-pointer
             hover:-translate-y-3 hover:scale-[1.03] hover:shadow-2xl hover:shadow-black/60
             ${isWinner ? "z-20 shadow-2xl shadow-primary/40 ring-2 ring-primary/60" : ""}
             ${isLoser ? "z-10 opacity-40" : ""}
