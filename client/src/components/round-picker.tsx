@@ -402,9 +402,6 @@ export function RoundPicker({
     const handleAddToWatchlist = (e: React.MouseEvent) => {
       e.stopPropagation();
       if (!user) {
-        if (typeof window !== "undefined" && (window as any).posthog) {
-          (window as any).posthog.capture("signin_modal_shown", { trigger: "watchlist" });
-        }
         setShowAuthModal(true);
         return;
       }
@@ -626,6 +623,7 @@ export function RoundPicker({
       {showAuthModal && (
         <AuthPromptModal
           heading="Save your picks & build your taste profile"
+          triggerSource="watchlist"
           onSkip={() => setShowAuthModal(false)}
         />
       )}
