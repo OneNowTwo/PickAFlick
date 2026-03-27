@@ -2,7 +2,14 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Bookmark, X } from "lucide-react";
 
-const SESSION_KEY = "signup_nudge_shown";
+const KEY_COUNT = "signup_nudge_count";       // how many times nudge has shown
+const KEY_FLOWS = "signup_nudge_flows_since"; // flows completed since last nudge
+const MAX_SHOWS = 3;
+const FLOWS_BETWEEN = 2; // flows required between nudge appearances
+
+function ss(key: string): number {
+  return parseInt(sessionStorage.getItem(key) ?? "0", 10);
+}
 
 function ph(event: string, props?: Record<string, unknown>) {
   if (typeof window !== "undefined" && (window as any).posthog) {
@@ -24,28 +31,41 @@ function GoogleIcon() {
 interface SignUpNudgeProps {
   movieTitle?: string;
   delayMs?: number;
+  /** Incremented by results-screen each time a new flow completes */
+  flowNumber?: number;
 }
 
-export function SignUpNudge({ movieTitle, delayMs = 2000 }: SignUpNudgeProps) {
+export function SignUpNudge({ movieTitle, delayMs = 2000, flowNumber = 1 }: SignUpNudgeProps) {
   const { user, login } = useAuth();
   const [visible, setVisible] = useState(false);
   const [animateIn, setAnimateIn] = useState(false);
 
   useEffect(() => {
-    // Only show for logged-out users, only once per session
     if (user) return;
-    if (typeof window !== "undefined" && sessionStorage.getItem(SESSION_KEY)) return;
+
+    const shownCount = ss(KEY_COUNT);
+    const flowsSince = ss(KEY_FLOWS);
+
+    // Cap at MAX_SHOWS total; require FLOWS_BETWEEN flows between appearances
+    // (first appearance: flowsSince starts at 0, which satisfies >= 0 for flow 1)
+    const isFirstEver = shownCount === 0;
+    const enoughFlowsSince = flowsSince >= FLOWS_BETWEEN;
+    const underCap = shownCount < MAX_SHOWS;
+
+    if (!underCap) return;
+    if (!isFirstEver && !enoughFlowsSince) return;
 
     const timer = setTimeout(() => {
       setVisible(true);
-      sessionStorage.setItem(SESSION_KEY, "1");
-      ph("signup_modal_shown", { trigger_source: "post_recommendation" });
-      // Trigger slide-in animation on next tick
+      sessionStorage.setItem(KEY_COUNT, String(shownCount + 1));
+      sessionStorage.setItem(KEY_FLOWS, "0");
+      ph("signup_modal_shown", { trigger_source: "post_recommendation", show_number: shownCount + 1 });
       requestAnimationFrame(() => setAnimateIn(true));
     }, delayMs);
 
     return () => clearTimeout(timer);
-  }, [user, delayMs]);
+  // Re-evaluate whenever flowNumber changes (new flow completed)
+  }, [user, delayMs, flowNumber]);
 
   if (!visible) return null;
 
@@ -59,6 +79,8 @@ export function SignUpNudge({ movieTitle, delayMs = 2000 }: SignUpNudgeProps) {
     ph("signup_modal_dismissed", { trigger_source: "post_recommendation" });
     setAnimateIn(false);
     setTimeout(() => setVisible(false), 300);
+    // Reset flows_since to 0 so the gap is counted from this dismissal
+    sessionStorage.setItem(KEY_FLOWS, "0");
   };
 
   return (
