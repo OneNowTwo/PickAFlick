@@ -231,6 +231,7 @@ export function RoundPicker({
   const [isAnimating, setIsAnimating] = useState(false);
   // Track which movie pair the selection belongs to — prevents new posters inheriting animation
   const [selectionPair, setSelectionPair] = useState<{ left: number; right: number } | null>(null);
+  const [pairReady, setPairReady] = useState(false);
   const [showSynopsis, setShowSynopsis] = useState<"left" | "right" | null>(null);
   const [insight, setInsight] = useState("");
   const [addedToWatchlist, setAddedToWatchlist] = useState<Set<number>>(new Set());
@@ -356,6 +357,7 @@ export function RoundPicker({
 
   // Reset animation state when round/movies change
   useEffect(() => {
+    setPairReady(false);
     setSelectedSide(null);
     setIsAnimating(false);
     setShowSynopsis(null);
@@ -363,6 +365,9 @@ export function RoundPicker({
     didShowSynopsisRef.current = false;
     setInsight(generateInsight(choiceHistory, round));
     setSwipeOffset(0);
+    // Allow transition only after new posters have painted at scale(1)
+    const t = setTimeout(() => setPairReady(true), 50);
+    return () => clearTimeout(t);
   }, [round, leftMovie.id, rightMovie.id, choiceHistory]);
 
   useEffect(() => {
@@ -431,7 +436,8 @@ export function RoundPicker({
           }}
           className={`
             relative w-full max-w-[180px] md:max-w-[300px] aspect-[2/3] rounded-lg md:rounded-xl overflow-hidden
-            transition-all duration-500 ease-out cursor-pointer
+            ${pairReady ? "transition-all duration-500 ease-out" : ""}
+            cursor-pointer
             hover:-translate-y-3 hover:scale-[1.03] hover:shadow-2xl hover:shadow-black/60
             ${isWinner ? "z-20 shadow-2xl shadow-primary/40 ring-2 ring-primary/60" : ""}
             ${isLoser ? "z-10 opacity-40" : ""}
