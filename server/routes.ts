@@ -5,7 +5,8 @@ import { selectStrategicPair } from "./strategic-picker";
 import type { ChoiceEntry } from "./strategic-picker";
 import { getMovieTrailer, getMovieTrailers, getWatchProviders } from "./tmdb";
 import { sessionStorage } from "./session-storage";
-import { generateRecommendations, generateReplacementRecommendation } from "./ai-recommender";
+import { generateRecommendations, generateRecommendationsFromProfile, generateReplacementRecommendation, buildTasteProfile } from "./ai-recommender";
+import type { TasteProfile } from "./ai-recommender";
 import { buildGenreProfile, rankRecommendations } from "./recommendations";
 import { storage } from "./storage";
 import type { RoundPairResponse, ChoiceResponse, RecommendationsResponse, RecommendationLane } from "@shared/schema";
@@ -21,7 +22,35 @@ const NO_CACHE_HEADERS = {
 // Store movie pairs per session to ensure consistency
 const sessionPairs = new Map<string, { round: number; leftMovie: any; rightMovie: any }>();
 
-// No prefetching — generate on demand when user picks a lane (1 LLM call, not 3).
+// Profile cache — built incrementally while user plays rounds 5-7.
+// By the time they pick a lane, the profile is already done.
+const profileCache = new Map<string, { profile: TasteProfile; choiceCount: number }>();
+const profileBuildingNow = new Map<string, Promise<TasteProfile>>();
+
+function fireProfileBuild(sessionId: string): void {
+  const chosenMovies = sessionStorage.getChosenMovies(sessionId);
+  const rejectedMovies = sessionStorage.getRejectedMovies(sessionId);
+  if (chosenMovies.length === 0) return;
+
+  const existingEntry = profileCache.get(sessionId);
+  if (existingEntry && existingEntry.choiceCount >= chosenMovies.length) return;
+
+  console.log(`[profile-prefetch] Building profile for ${sessionId} with ${chosenMovies.length} choices`);
+  const promise = buildTasteProfile(chosenMovies, rejectedMovies)
+    .then((profile) => {
+      profileCache.set(sessionId, { profile, choiceCount: chosenMovies.length });
+      profileBuildingNow.delete(sessionId);
+      console.log(`[profile-prefetch] Profile ready for ${sessionId} (${chosenMovies.length} choices)`);
+      return profile;
+    })
+    .catch((err) => {
+      console.error(`[profile-prefetch] Failed for ${sessionId}:`, err);
+      profileBuildingNow.delete(sessionId);
+      throw err;
+    });
+
+  profileBuildingNow.set(sessionId, promise);
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -228,7 +257,6 @@ export async function registerRoutes(
         }).catch(err => console.error("[votes] Failed to save vote:", err));
       }
 
-      // Prepare next pair if not complete (recommendations run after user picks a lane)
       if (!updatedSession.isComplete) {
         const usedIds = new Set(
           updatedSession.choices.flatMap((c) => [c.leftMovie.id, c.rightMovie.id])
@@ -247,6 +275,15 @@ export async function registerRoutes(
             rightMovie: pair[1],
           });
         }
+
+        // Start building the taste profile in the background from round 5 onward.
+        // By round 7 the LLM has already built the profile — lane pick is near-instant.
+        if (updatedSession.choices.length >= 5) {
+          fireProfileBuild(sessionId);
+        }
+      } else {
+        // Session complete (all 7 rounds done) — fire final profile build with full data
+        fireProfileBuild(sessionId);
       }
 
       const response: ChoiceResponse = {
@@ -362,7 +399,25 @@ export async function registerRoutes(
       }
       const lane = laneParsed.data;
 
-      const aiResult = await generateRecommendations(chosenMovies, rejectedMovies, initialGenreFilters, lane);
+      // Use pre-built profile if available (built during rounds 5-7).
+      // If still building, await it. If missing, build on demand.
+      let profile: TasteProfile | null = null;
+      const cached = profileCache.get(sessionId);
+      if (cached) {
+        profile = cached.profile;
+        console.log(`[recs] Using cached profile for ${sessionId} (${cached.choiceCount} choices)`);
+      } else if (profileBuildingNow.has(sessionId)) {
+        console.log(`[recs] Awaiting in-flight profile build for ${sessionId}`);
+        try { profile = await profileBuildingNow.get(sessionId)!; } catch { /* fall through */ }
+      }
+
+      let aiResult;
+      if (profile) {
+        aiResult = await generateRecommendationsFromProfile(profile, chosenMovies, lane);
+      } else {
+        console.log(`[recs] No cached profile — building on demand for ${sessionId}`);
+        aiResult = await generateRecommendations(chosenMovies, rejectedMovies, initialGenreFilters, lane);
+      }
 
       // For logged-in users, re-rank using their full cross-session vote history
       let hasPersonalisation = false;
