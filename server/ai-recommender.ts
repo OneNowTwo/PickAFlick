@@ -11,7 +11,10 @@ const openai = new OpenAI({
 
 // Cross-session memory — persisted to DB so server restarts don't wipe it
 const recentlyRecommendedTitles: string[] = [];
-const MAX_RECENT_TRACKED = 200;
+/** Keep a long tail so repeat titles across sessions drop in probability */
+const MAX_RECENT_TRACKED = 400;
+/** How many recent titles to inject into the prompt (must be ≤ MAX_RECENT_TRACKED) */
+const RECENT_EXCLUSIONS_PROMPT_COUNT = 200;
 let recsLoaded = false;
 
 async function ensureRecsLoaded(): Promise<void> {
@@ -19,8 +22,9 @@ async function ensureRecsLoaded(): Promise<void> {
   recsLoaded = true;
   try {
     const saved = await storage.getRecentRecommendations();
-    recentlyRecommendedTitles.push(...saved);
-    console.log(`[recent-recs] Loaded ${saved.length} previously recommended titles from DB`);
+    const merged = [...new Set(saved.map(normalizeTitleKey))];
+    recentlyRecommendedTitles.push(...merged);
+    console.log(`[recent-recs] Loaded ${merged.length} previously recommended titles from DB`);
   } catch {
     // Non-fatal — start with empty list
   }
@@ -28,7 +32,7 @@ async function ensureRecsLoaded(): Promise<void> {
 
 function recordRecommendedTitles(titles: string[]): void {
   for (const t of titles) {
-    const normalised = t.toLowerCase().trim();
+    const normalised = normalizeTitleKey(t);
     if (!recentlyRecommendedTitles.includes(normalised)) {
       recentlyRecommendedTitles.push(normalised);
       if (recentlyRecommendedTitles.length > MAX_RECENT_TRACKED) {
@@ -60,7 +64,8 @@ interface AIAnalysis {
  * Titles models over-recommend on “smart” taste — cap how many may appear per response.
  * Not exhaustive; extend as you spot repeats in PostHog / support tickets.
  */
-const USUAL_SUSPECTS_MAX = 2;
+/** Stricter = fewer "award carousel" titles per response */
+const USUAL_SUSPECTS_MAX = 1;
 const USUAL_SUSPECTS_TITLES_LOWER = new Set(
   [
     "gone girl",
@@ -105,8 +110,74 @@ const USUAL_SUSPECTS_TITLES_LOWER = new Set(
     "dune",
     "oppenheimer",
     "barbie",
+    "the revenant",
+    "the matrix",
+    "edge of tomorrow",
+    "fantastic beasts and where to find them",
+    "march of the penguins",
+    "life of pi",
+    "the hunt for red october",
+    "schindler's list",
+    "schindlers list",
+    "amy",
+    "heat",
+    "birdman",
+    "the sixth sense",
+    "the shape of water",
+    "the curious case of benjamin button",
+    "the witch",
+    "deadpool",
+    "midnight in paris",
+    "ford v ferrari",
+    "green book",
+    "the trial of the chicago 7",
+    "the jungle book",
+    "chef",
+    "10 things i hate about you",
+    "call me by your name",
+    "the fault in our stars",
+    "spider-man: far from home",
+    "spider-man far from home",
+    "easy a",
+    "gladiator",
+    "jojo rabbit",
+    "hugo",
+    "tangled",
   ].map((t) => t.toLowerCase().trim())
 );
+
+function normalizeTitleKey(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/^the\s+/i, "");
+}
+
+function countUsualSuspects(recs: { title: string }[]): number {
+  return recs.filter((r) => USUAL_SUSPECTS_TITLES_LOWER.has(r.title.toLowerCase().trim())).length;
+}
+
+function countRecentCollisions(recs: { title: string }[], recentSet: Set<string>): number {
+  return recs.filter((r) => recentSet.has(normalizeTitleKey(r.title))).length;
+}
+
+async function callRecommendationsLLM(promptText: string): Promise<AIAnalysis> {
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [{ role: "user", content: promptText }],
+    response_format: { type: "json_object" },
+    max_tokens: 2200,
+    temperature: 0.88,
+  });
+
+  const content = response.choices[0]?.message?.content || "{}";
+  const finishReason = response.choices[0]?.finish_reason;
+  if (finishReason === "length") {
+    console.error("[ai-recommender] WARNING: response was cut off at max_tokens — JSON may be incomplete");
+  }
+
+  return JSON.parse(content) as AIAnalysis;
+}
 
 function getEra(year: number | null): string {
   if (!year) return "unknown";
@@ -163,9 +234,10 @@ export async function generateRecommendations(
     };
   });
 
-  // Build exclusion list from cross-session memory
+  // Build exclusion list from cross-session memory (large list → lower repeat rate across sessions)
   const chosenTitles = chosenMovies.map(m => `"${m.title}"`).join(", ");
-  const recentExclusions = recentlyRecommendedTitles.slice(-50);
+  const recentExclusions = recentlyRecommendedTitles.slice(-RECENT_EXCLUSIONS_PROMPT_COUNT);
+  const recentTitlesSet = new Set(recentlyRecommendedTitles.map((t) => normalizeTitleKey(t)));
 
   const filterContext = initialGenreFilters.length > 0
     ? `\nStarting mood (supporting only): the user hinted at these genres before the funnel: ${initialGenreFilters.join(", ")}. The A/B evidence below is the primary signal — use the funnel profile first.\n`
@@ -178,8 +250,8 @@ You are NOT choosing from any app database or catalogue we gave you. Use your fu
 === ANTI–"USUAL SUSPECTS" (critical) ===
 Models default to the same ~50 "Reddit / Letterboxd / film-bro" prestige titles (2000s–2010s psych-thrillers, same A-list directors). **Do not fill the list with those.**
 
-- At most **${USUAL_SUSPECTS_MAX}** of your 7 picks may be from this overused cluster (examples — also avoid obvious equivalents): Gone Girl, The Prestige, Drive, Knives Out, Shutter Island, Prisoners, Nightcrawler, Zodiac, Se7en, No Country for Old Men, Her, Arrival, Interstellar, Inception, The Social Network, Wolf of Wall Street, Grand Budapest Hotel, In Bruges, Get Out, Annihilation, 1917, Mad Max: Fury Road, The Lord of the Rings: The Fellowship of the Ring, Inside Man, La La Land, Catch Me If You Can, Donnie Darko, The Talented Mr. Ripley, The Cabin in the Woods, The Nice Guys.
-- The **other ${7 - USUAL_SUSPECTS_MAX}** must still be **mainstream and recognisable** — but pick **different** famous films (big hits, iconic classics, major awards) that fit their profile, NOT the same shortlist every recommender outputs.
+- At most **${USUAL_SUSPECTS_MAX}** of your 7 picks may be from this overused cluster (examples — also avoid obvious equivalents): Gone Girl, The Prestige, Drive, Knives Out, Parasite, Dune, Arrival, Grand Budapest Hotel, Green Book, 1917, The Revenant, The Matrix, etc.
+- The **other ${7 - USUAL_SUSPECTS_MAX}** must be **recognisable** but **not** the same Oscar-season / "Netflix top 10 for smart people" row. Think: **studio hits, cult favourites, famous international crossovers, iconic older Hollywood** — still household-level, but **different cultural lanes** (not seven Best Picture nominees from the 2010s).
 - If their taste is genuinely that cluster, still obey the **${USUAL_SUSPECTS_MAX}-from-list cap** and use **adjacent** equally famous films.
 
 === ERA SPREAD (unless profile is purely one era) ===
@@ -205,12 +277,20 @@ ${rejectionContext.length > 0 ? rejectionContext.map((m) => `Round ${m.round}: r
 === PROFILE ===
 Summarise what they like and what rejections ruled out. 🔥 rounds pull more weight.
 
-=== HOW TO PICK 7 (important) ===
-- **Breadth inside taste:** The 7 films must NOT all sit in one tiny niche (e.g. only slow prestige psychodramas). Spread across **different subgenres and eras** that still honestly match their profile — e.g. mix of thriller, drama, action, comedy *only if* their choices support that range; otherwise still vary pacing, era, and setting so nothing feels repetitive.
-- **Recognisability:** Household names or famous classics — especially for older picks. Nothing fringe or festival-obscure.
-- **Avoid model default spam:** Don't output the same handful of interchangeable "dark prestige" titles everyone recommends. Rotate — different directors, different franchises, different decades where possible.
-- **Quality:** IMDb ~6.5+ broadly popular; English or internationally famous; findable in Australia.
-- **Hard rules:** No two from the same director or same franchise. Aim for a **visible spread of release years** (include at least one from roughly the last 3–4 years and at least one pre-2010 when it fits — skip only if their profile is hyper-recent or hyper-classic).
+=== A/B MUST DRIVE THE LIST (non-negotiable) ===
+These recommendations exist **because** of this session's picks and rejects — not as a generic "good movies" row. **Every** reason must:
+- Name **at least one film they actually chose** in the funnel, AND
+- Explain **why this recommendation matches the *pattern* of their choices vs rejects** (tone, era, pacing, genre — not vague praise).
+
+If you cannot tie a film to their evidence, pick a different film.
+
+=== CULTURAL BREADTH (recognisable ≠ vanilla) ===
+"Recognisable" includes: **big non-US hits**, **famous non-English crossover** films, **beloved 70s–90s Hollywood**, **crowd-pleasing blockbusters**, **well-known comedy/horror/action** — not only late-capital prestige drama. Spread films across **different "where it lives in culture"** (arthouse crossover vs multiplex vs classic cable-TV famous vs streaming-era hit) while still matching their profile.
+
+=== HOW TO PICK 7 ===
+- **Not one niche:** Avoid seven films that are all the same "award-bait" band even if genres differ on paper.
+- **Quality:** Broadly popular / well-voted; findable in Australia; no micro-budget obscurities.
+- **Hard rules:** No two from the same director or same franchise. **Visible year spread** — include at least one **pre-1990** famous title and at least one **2020+** title when the profile allows.
 
 === OUTPUT — exact JSON only ===
 {
@@ -220,7 +300,7 @@ Summarise what they like and what rejections ruled out. 🔥 rounds pull more we
   "visualStyle": "One sentence, 'you/your', screen feel",
   "mood": "One sentence, 'you/your', emotional register",
   "recommendations": [
-    {"title": "Film Title 1", "year": 2022, "reason": "1-2 sentences: why it fits; name at least one of their chosen picks; say what *different* angle this adds vs a generic pick", "category": "flexible"},
+    {"title": "Film Title 1", "year": 2022, "reason": "1-2 sentences: tie to their A/B evidence; name a film they chose; what cultural lane this fills (not generic praise)", "category": "flexible"},
     {"title": "Film Title 2", "year": 1999, "reason": "same idea", "category": "flexible"},
     {"title": "Film Title 3", "year": 2016, "reason": "same idea", "category": "flexible"},
     {"title": "Film Title 4", "year": 2014, "reason": "same idea", "category": "flexible"},
@@ -233,34 +313,36 @@ Summarise what they like and what rejections ruled out. 🔥 rounds pull more we
 Return exactly 7 recommendations. Each reason must name at least one of their actual chosen films.`;
 
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [{ role: "user", content: prompt }],
-      response_format: { type: "json_object" },
-      max_tokens: 2200,
-      temperature: 0.88,
-    });
-
-    const content = response.choices[0]?.message?.content || "{}";
-    const finishReason = response.choices[0]?.finish_reason;
-    if (finishReason === "length") {
-      console.error("[ai-recommender] WARNING: response was cut off at max_tokens — JSON may be incomplete");
-    }
-
-    const analysis: AIAnalysis = JSON.parse(content);
+    let analysis = await callRecommendationsLLM(prompt);
 
     if (!analysis.recommendations || !Array.isArray(analysis.recommendations) || analysis.recommendations.length === 0) {
       console.error("[ai-recommender] LLM returned no recommendations array. Keys:", Object.keys(analysis));
       throw new Error("LLM returned no recommendations");
     }
 
-    const usualSuspectCount = analysis.recommendations.filter((r) =>
-      USUAL_SUSPECTS_TITLES_LOWER.has(r.title.toLowerCase().trim())
-    ).length;
-    if (usualSuspectCount > USUAL_SUSPECTS_MAX) {
+    const recentHits = countRecentCollisions(analysis.recommendations, recentTitlesSet);
+    const needsRetry =
+      countUsualSuspects(analysis.recommendations) > USUAL_SUSPECTS_MAX ||
+      recentHits >= 2;
+
+    if (needsRetry) {
       console.warn(
-        `[ai-recommender] usual-suspects count ${usualSuspectCount} exceeds cap ${USUAL_SUSPECTS_MAX} — consider tightening prompt or adding retry`
+        `[ai-recommender] Retrying LLM: usual-suspects over cap and/or ${recentHits} recent-title collision(s)`
       );
+      const fixPrompt = `${prompt}
+
+=== REGENERATE (strict) ===
+Your previous answer broke rules: at most ${USUAL_SUSPECTS_MAX} from the usual-suspects cluster; **zero** titles from the DO NOT RECOMMEND list; each reason must tie to their A/B picks. Output valid JSON only with **7 completely NEW titles**.`;
+      analysis = await callRecommendationsLLM(fixPrompt);
+    }
+
+    if (!analysis.recommendations || !Array.isArray(analysis.recommendations) || analysis.recommendations.length === 0) {
+      throw new Error("LLM returned no recommendations after retry");
+    }
+
+    const usualSuspectCount = countUsualSuspects(analysis.recommendations);
+    if (usualSuspectCount > USUAL_SUSPECTS_MAX) {
+      console.warn(`[ai-recommender] usual-suspects count ${usualSuspectCount} still exceeds cap ${USUAL_SUSPECTS_MAX} after retry`);
     }
 
     const chosenTmdbIds = new Set(chosenMovies.map((m) => m.tmdbId));
@@ -314,17 +396,16 @@ Return exactly 7 recommendations. Each reason must name at least one of their ac
     // Code-level repetition guard — filter out titles already in cross-session memory.
     // Only apply if it leaves enough results; if the LLM picked mostly fresh films this
     // is a no-op. If the filter is too aggressive, fall back to full resolved list.
-    const recentTitlesSet = new Set(recentlyRecommendedTitles.map(t => t.toLowerCase().trim()));
-    const freshRecs = resolvedRecs.filter(r =>
-      !recentTitlesSet.has(r.movie.title.toLowerCase().trim())
+    const freshRecs = resolvedRecs.filter(
+      (r) => !recentTitlesSet.has(normalizeTitleKey(r.movie.title))
     );
     const dedupedRecs = freshRecs.length >= 4 ? freshRecs : resolvedRecs;
 
     const mainRecs = dedupedRecs.slice(0, 6);
     const recommendations: Recommendation[] = [...mainRecs];
 
-    // Record what resolved so future sessions explore different films
-    recordRecommendedTitles(mainRecs.map(r => r.movie.title));
+    // Record every AI-resolved title so repeats across sessions drop (not only the 6 shown)
+    recordRecommendedTitles(resolvedRecs.map((r) => r.movie.title));
 
     // Wildcard: try up to 10 candidates from catalogue until one passes poster + trailer
     const allMovies = getAllMovies();
