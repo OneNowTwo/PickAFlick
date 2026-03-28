@@ -56,6 +56,58 @@ interface AIAnalysis {
   recommendations: AIRecommendationResult[];
 }
 
+/**
+ * Titles models over-recommend on “smart” taste — cap how many may appear per response.
+ * Not exhaustive; extend as you spot repeats in PostHog / support tickets.
+ */
+const USUAL_SUSPECTS_MAX = 2;
+const USUAL_SUSPECTS_TITLES_LOWER = new Set(
+  [
+    "gone girl",
+    "the prestige",
+    "arrival",
+    "drive",
+    "mad max: fury road",
+    "the lord of the rings: the fellowship of the ring",
+    "the lord of the rings the fellowship of the ring",
+    "1917",
+    "in bruges",
+    "get out",
+    "the cabin in the woods",
+    "the nice guys",
+    "knives out",
+    "annihilation",
+    "inside man",
+    "la la land",
+    "the wolf of wall street",
+    "the grand budapest hotel",
+    "catch me if you can",
+    "the social network",
+    "shutter island",
+    "the talented mr. ripley",
+    "her",
+    "donnie darko",
+    "no country for old men",
+    "prisoners",
+    "interstellar",
+    "inception",
+    "fight club",
+    "the dark knight",
+    "blade runner 2049",
+    "ex machina",
+    "whiplash",
+    "nightcrawler",
+    "zodiac",
+    "se7en",
+    "the silence of the lambs",
+    "parasite",
+    "everything everywhere all at once",
+    "dune",
+    "oppenheimer",
+    "barbie",
+  ].map((t) => t.toLowerCase().trim())
+);
+
 function getEra(year: number | null): string {
   if (!year) return "unknown";
   if (year >= 2020) return "2020s";
@@ -119,7 +171,23 @@ export async function generateRecommendations(
     ? `\nStarting mood (supporting only): the user hinted at these genres before the funnel: ${initialGenreFilters.join(", ")}. The A/B evidence below is the primary signal — use the funnel profile first.\n`
     : "";
 
+  const usualSuspectsRule = `
+=== SOURCE OF TITLES (read this) ===
+You are NOT choosing from any app database or catalogue we gave you. Use your full knowledge of real released films — any country, any era — the way a human curator would. We only need correct **English title + year** to look films up (same as recommending from memory and film culture at large).
+
+=== ANTI–"USUAL SUSPECTS" (critical) ===
+Models default to the same ~50 "Reddit / Letterboxd / film-bro" prestige titles (2000s–2010s psych-thrillers, same A-list directors). **Do not fill the list with those.**
+
+- At most **${USUAL_SUSPECTS_MAX}** of your 7 picks may be from this overused cluster (examples — also avoid obvious equivalents): Gone Girl, The Prestige, Drive, Knives Out, Shutter Island, Prisoners, Nightcrawler, Zodiac, Se7en, No Country for Old Men, Her, Arrival, Interstellar, Inception, The Social Network, Wolf of Wall Street, Grand Budapest Hotel, In Bruges, Get Out, Annihilation, 1917, Mad Max: Fury Road, The Lord of the Rings: The Fellowship of the Ring, Inside Man, La La Land, Catch Me If You Can, Donnie Darko, The Talented Mr. Ripley, The Cabin in the Woods, The Nice Guys.
+- The **other ${7 - USUAL_SUSPECTS_MAX}** must still be **mainstream and recognisable** — but pick **different** famous films (big hits, iconic classics, major awards) that fit their profile, NOT the same shortlist every recommender outputs.
+- If their taste is genuinely that cluster, still obey the **${USUAL_SUSPECTS_MAX}-from-list cap** and use **adjacent** equally famous films.
+
+=== ERA SPREAD (unless profile is purely one era) ===
+Include **at least one** widely known film **before 1990** and **at least one** from **2020+** (still mainstream: major release / cultural footprint). This breaks the "all 2005–2016" clump.
+`;
+
   const prompt = `You are a sharp film curator. The user finished a 7-step funnel: early rounds explore contrast; later rounds (🔥) matter more. Infer ONE clear taste profile from the whole run — then recommend 7 films that **vary** within that profile (different subgenres, eras, pacing, "vibes") so the list feels like a rich menu, not seven copies of the same film.${filterContext}
+${usualSuspectsRule}
 
 ${recentExclusions.length > 0 ? `=== DO NOT RECOMMEND — already shown in recent sessions ===
 ${recentExclusions.map(t => `• ${t}`).join("\n")}
@@ -184,6 +252,15 @@ Return exactly 7 recommendations. Each reason must name at least one of their ac
     if (!analysis.recommendations || !Array.isArray(analysis.recommendations) || analysis.recommendations.length === 0) {
       console.error("[ai-recommender] LLM returned no recommendations array. Keys:", Object.keys(analysis));
       throw new Error("LLM returned no recommendations");
+    }
+
+    const usualSuspectCount = analysis.recommendations.filter((r) =>
+      USUAL_SUSPECTS_TITLES_LOWER.has(r.title.toLowerCase().trim())
+    ).length;
+    if (usualSuspectCount > USUAL_SUSPECTS_MAX) {
+      console.warn(
+        `[ai-recommender] usual-suspects count ${usualSuspectCount} exceeds cap ${USUAL_SUSPECTS_MAX} — consider tightening prompt or adding retry`
+      );
     }
 
     const chosenTmdbIds = new Set(chosenMovies.map((m) => m.tmdbId));
