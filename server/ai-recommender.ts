@@ -515,16 +515,17 @@ Re-read **PRIMARY TASK** and **STOP — CHECK LANE** for this request — your l
       )
       .slice(0, 5);
 
-    const fallbackRecs: Recommendation[] = [];
-    for (const movie of fallbackMovies) {
-      const trailerUrls = await getMovieTrailers(movie.tmdbId);
-      fallbackRecs.push({
-        movie,
-        trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null,
-        trailerUrls,
-        reason: "A great pick based on your taste!",
-      });
-    }
+    const fallbackRecs = await Promise.all(
+      fallbackMovies.map(async (movie) => {
+        const trailerUrls = await getMovieTrailers(movie.tmdbId);
+        return {
+          movie,
+          trailerUrl: trailerUrls.length > 0 ? trailerUrls[0] : null,
+          trailerUrls,
+          reason: "A great pick based on your taste!",
+        } satisfies Recommendation;
+      })
+    );
 
     const topGenres = extractTopGenres(chosenMovies);
     const sampleTitles = chosenMovies.slice(0, 2).map((m) => m.title).join(" and ");

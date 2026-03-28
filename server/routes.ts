@@ -22,11 +22,10 @@ const NO_CACHE_HEADERS = {
 const sessionPairs = new Map<string, { round: number; leftMovie: any; rightMovie: any }>();
 
 /**
- * Two-tier prefetch: "early" fires after round 5 (5 choices, gets a head
- * start while the user plays rounds 6-7), "full" fires after round 7 (all
- * 7 choices). When the user picks a lane we serve whichever has the best
- * data that's already resolved — full (7 choices) preferred, early (5) as
- * instant fallback, await full as last resort.
+ * After round 7, pre-generate all 3 lanes in parallel (one LLM + TMDB pass per lane).
+ * We intentionally do NOT also prefetch after round 5 — running 6 full pipelines per
+ * session doubled OpenAI load and slowed everyone; the lane picker gives wall-clock
+ * time for these 3 calls while the user chooses.
  */
 interface PrefetchEntry {
   promise: Promise<RecommendationsResponse>;
@@ -34,12 +33,9 @@ interface PrefetchEntry {
 }
 type LanePrefetchSet = Record<RecommendationLane, PrefetchEntry>;
 
-const earlyPrefetchBySession = new Map<string, LanePrefetchSet>();
-const fullPrefetchBySession = new Map<string, LanePrefetchSet>();
+const recommendationPrefetchBySession = new Map<string, LanePrefetchSet>();
 
-const PREFETCH_START_ROUND = 5;
-
-function buildLanePrefetch(sessionId: string, tag: string): LanePrefetchSet {
+function buildLanePrefetch(sessionId: string): LanePrefetchSet {
   const chosenMovies = sessionStorage.getChosenMovies(sessionId);
   const rejectedMovies = sessionStorage.getRejectedMovies(sessionId);
   const filters = sessionStorage.getSessionFilters(sessionId);
@@ -50,28 +46,18 @@ function buildLanePrefetch(sessionId: string, tag: string): LanePrefetchSet {
     entry.promise = generateRecommendations(chosenMovies, rejectedMovies, genreFilters, lane)
       .then((r) => { entry.result = r; return r; })
       .catch((err) => {
-        console.error(`[prefetch ${tag}] ${lane} failed for ${sessionId}:`, err);
+        console.error(`[prefetch] ${lane} failed for ${sessionId}:`, err);
         throw err;
       });
     return entry;
   };
 
-  console.log(`[prefetch ${tag}] Started all 3 lanes for ${sessionId} (${chosenMovies.length} choices)`);
+  console.log(`[prefetch] Started all 3 lanes for ${sessionId} (${chosenMovies.length} choices)`);
   return { mainstream: makeLane("mainstream"), movie_buff: makeLane("movie_buff"), left_field: makeLane("left_field") };
 }
 
-function startEarlyPrefetch(sessionId: string): void {
-  if (earlyPrefetchBySession.has(sessionId)) return;
-  earlyPrefetchBySession.set(sessionId, buildLanePrefetch(sessionId, "early"));
-}
-
-function startFullPrefetch(sessionId: string): void {
-  fullPrefetchBySession.set(sessionId, buildLanePrefetch(sessionId, "full"));
-}
-
-function cleanupPrefetch(sessionId: string): void {
-  earlyPrefetchBySession.delete(sessionId);
-  fullPrefetchBySession.delete(sessionId);
+function startRecommendationPrefetches(sessionId: string): void {
+  recommendationPrefetchBySession.set(sessionId, buildLanePrefetch(sessionId));
 }
 
 export async function registerRoutes(
@@ -298,14 +284,8 @@ export async function registerRoutes(
             rightMovie: pair[1],
           });
         }
-
-        // After round 5, kick off early prefetch (5 choices) so the LLM has a head start
-        if (updatedSession.choices.length >= PREFETCH_START_ROUND) {
-          startEarlyPrefetch(sessionId);
-        }
       } else {
-        // Session complete — fire full prefetch with all 7 choices
-        startFullPrefetch(sessionId);
+        startRecommendationPrefetches(sessionId);
       }
 
       const response: ChoiceResponse = {
@@ -421,38 +401,24 @@ export async function registerRoutes(
       }
       const lane = laneParsed.data;
 
-      const full = fullPrefetchBySession.get(sessionId);
-      const early = earlyPrefetchBySession.get(sessionId);
+      const cached = recommendationPrefetchBySession.get(sessionId);
       let aiResult: RecommendationsResponse;
 
-      if (full?.[lane].result) {
-        // Best case: full 7-choice result already resolved
-        aiResult = full[lane].result;
-        console.log(`[prefetch] Served full-data ${lane} for ${sessionId}`);
-      } else if (early?.[lane].result) {
-        // Early 5-choice result ready (instant) — LLM still working on full set
-        aiResult = early[lane].result;
-        console.log(`[prefetch] Served early-data ${lane} for ${sessionId}`);
-      } else if (full) {
-        // Neither settled yet — await the full-data version
+      if (cached?.[lane].result) {
+        aiResult = cached[lane].result;
+        console.log(`[prefetch] Served resolved ${lane} for ${sessionId}`);
+      } else if (cached) {
         try {
-          aiResult = await full[lane].promise;
-          console.log(`[prefetch] Awaited full-data ${lane} for ${sessionId}`);
+          aiResult = await cached[lane].promise;
+          console.log(`[prefetch] Awaited ${lane} for ${sessionId}`);
         } catch {
-          console.warn(`[prefetch] Full prefetch failed for ${lane}, regenerating`);
-          aiResult = await generateRecommendations(chosenMovies, rejectedMovies, initialGenreFilters, lane);
-        }
-      } else if (early) {
-        try {
-          aiResult = await early[lane].promise;
-          console.log(`[prefetch] Awaited early-data ${lane} for ${sessionId}`);
-        } catch {
+          console.warn(`[prefetch] Prefetch failed for ${lane}, regenerating for ${sessionId}`);
           aiResult = await generateRecommendations(chosenMovies, rejectedMovies, initialGenreFilters, lane);
         }
       } else {
         aiResult = await generateRecommendations(chosenMovies, rejectedMovies, initialGenreFilters, lane);
       }
-      cleanupPrefetch(sessionId);
+      recommendationPrefetchBySession.delete(sessionId);
 
       // For logged-in users, re-rank using their full cross-session vote history
       let hasPersonalisation = false;
