@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { Movie, Recommendation, RecommendationsResponse, RecommendationLane } from "@shared/schema";
-import { searchMovieByTitle, getMovieTrailer, getMovieTrailers, getMovieDetails, getWatchProviders } from "./tmdb";
+import { searchMovieByTitle, getMovieTrailer, getMovieTrailers, getMovieDetails } from "./tmdb";
 import { getAllMovies } from "./catalogue";
 import { storage } from "./storage";
 
@@ -9,8 +9,8 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
-/** Override with e.g. gpt-4o-mini for lower latency (default keeps current behaviour). */
-const RECOMMENDATIONS_MODEL = process.env.OPENAI_RECOMMENDATIONS_MODEL ?? "gpt-4o";
+/** Default is fast; set OPENAI_RECOMMENDATIONS_MODEL=gpt-4o for max quality if needed. */
+const RECOMMENDATIONS_MODEL = process.env.OPENAI_RECOMMENDATIONS_MODEL ?? "gpt-4o-mini";
 
 // Cross-session memory — persisted to DB so server restarts don't wipe it
 const recentlyRecommendedTitles: string[] = [];
@@ -398,10 +398,9 @@ Re-read **PRIMARY TASK** and **STOP — CHECK LANE** for this request — your l
           return null;
         }
 
-        const [movieDetails, tmdbTrailers, watchProviders] = await Promise.all([
+        const [movieDetails, tmdbTrailers] = await Promise.all([
           getMovieDetails(searchResult.id),
           getMovieTrailers(searchResult.id),
-          getWatchProviders(searchResult.id, rec.title, rec.year),
         ]);
 
         if (!movieDetails) return null;
@@ -416,8 +415,6 @@ Re-read **PRIMARY TASK** and **STOP — CHECK LANE** for this request — your l
           return null;
         }
 
-        // Streaming data enriches the result but is NOT a hard filter —
-        // most films are available to rent/buy even if not indexed in TMDb AU providers
         movieDetails.listSource = "ai-recommendation";
 
         return {
@@ -425,7 +422,6 @@ Re-read **PRIMARY TASK** and **STOP — CHECK LANE** for this request — your l
           trailerUrl: tmdbTrailers[0],
           trailerUrls: tmdbTrailers,
           reason: rec.reason,
-          watchProviders,
         } as Recommendation;
       } catch (error) {
         console.error(`Failed to resolve recommendation "${rec.title}":`, error);
@@ -661,10 +657,9 @@ Respond in JSON:
       return await catalogueFallbackReplacement(excludeTmdbIds);
     }
 
-    const [movieDetails, tmdbTrailers, watchProviders] = await Promise.all([
+    const [movieDetails, tmdbTrailers] = await Promise.all([
       getMovieDetails(searchResult.id),
       getMovieTrailers(searchResult.id),
-      getWatchProviders(searchResult.id, result.title, result.year || null),
     ]);
 
     if (!movieDetails) return catalogueFallbackReplacement(excludeTmdbIds);

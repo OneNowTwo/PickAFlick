@@ -198,46 +198,29 @@ export async function getMovieTrailer(tmdbId: number): Promise<string | null> {
 // Returns multiple trailer URLs for fallback when one is region-blocked
 export async function getMovieTrailers(tmdbId: number): Promise<string[]> {
   try {
-    // Collect videos from multiple regions/languages for better coverage
+    // Fetch AU / US / default in parallel — same merge order as before (AU first, then US, then default)
+    const [auRes, usRes, defRes] = await Promise.allSettled([
+      tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`, { language: "en-AU" }),
+      tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`, { language: "en-US" }),
+      tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`),
+    ]);
+
     const allVideos: TMDbVideoResult[] = [];
     const seenKeys = new Set<string>();
-    
-    // Try AU region first
-    try {
-      const auData = await tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`, { 
-        language: "en-AU" 
-      });
-      for (const v of auData.results) {
-        if (!seenKeys.has(v.key)) {
-          seenKeys.add(v.key);
-          allVideos.push(v);
-        }
-      }
-    } catch (e) { /* ignore */ }
 
-    // Try US region
-    try {
-      const usData = await tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`, {
-        language: "en-US"
-      });
-      for (const v of usData.results) {
+    const merge = (data: { results: TMDbVideoResult[] } | undefined) => {
+      if (!data?.results) return;
+      for (const v of data.results) {
         if (!seenKeys.has(v.key)) {
           seenKeys.add(v.key);
           allVideos.push(v);
         }
       }
-    } catch (e) { /* ignore */ }
-    
-    // Try default (no language filter)
-    try {
-      const defaultData = await tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`);
-      for (const v of defaultData.results) {
-        if (!seenKeys.has(v.key)) {
-          seenKeys.add(v.key);
-          allVideos.push(v);
-        }
-      }
-    } catch (e) { /* ignore */ }
+    };
+
+    if (auRes.status === "fulfilled") merge(auRes.value);
+    if (usRes.status === "fulfilled") merge(usRes.value);
+    if (defRes.status === "fulfilled") merge(defRes.value);
 
     const youtubeVideos = allVideos.filter((v) => v.site === "YouTube");
     const trailerUrls: string[] = [];
