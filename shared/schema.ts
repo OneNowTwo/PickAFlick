@@ -213,9 +213,11 @@ export const recommendationsResponseSchema = z.object({
     preferredEras: z.array(z.string()).optional(),
     visualStyle: z.string().optional(),
     mood: z.string().optional(),
-    /** Short LLM headline above results (replaces long stitched genre blurbs) */
+    /** Short LLM headline above results (human mood line) */
     headline: z.string().optional(),
-    /** One short supporting line */
+    /** Two-sentence "You leaned… So these picks…" pattern copy */
+    patternSummary: z.string().optional(),
+    /** @deprecated use patternSummary */
     tagline: z.string().optional(),
   }),
   // True when results have been re-ranked using the user's full vote history
@@ -224,6 +226,17 @@ export const recommendationsResponseSchema = z.object({
 });
 
 export type RecommendationsResponse = z.infer<typeof recommendationsResponseSchema>;
+
+/** GET /api/session/:id/taste-preview — mood line + two-sentence pattern */
+export const tastePreviewSchema = z.object({
+  headline: z.string(),
+  patternSummary: z.string(),
+  topGenres: z.array(z.string()),
+  themes: z.array(z.string()),
+  preferredEras: z.array(z.string()),
+});
+
+export type TastePreview = z.infer<typeof tastePreviewSchema>;
 
 // Legacy types for backwards compatibility
 export const catalogueResponseSchema = z.object({

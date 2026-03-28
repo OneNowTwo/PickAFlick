@@ -182,13 +182,17 @@ export default function SharePage() {
             )}
           </div>
 
-          {(preferenceProfile.headline || preferenceProfile.tagline) && (
+          {(preferenceProfile.headline ||
+            preferenceProfile.patternSummary ||
+            preferenceProfile.tagline) && (
             <div className="text-center max-w-lg px-2">
               {preferenceProfile.headline && (
                 <p className="text-sm md:text-base font-medium text-white">{preferenceProfile.headline}</p>
               )}
-              {preferenceProfile.tagline && (
-                <p className="text-xs text-white/55 mt-1">{preferenceProfile.tagline}</p>
+              {(preferenceProfile.patternSummary || preferenceProfile.tagline) && (
+                <p className="text-xs text-white/55 mt-1 leading-relaxed">
+                  {preferenceProfile.patternSummary || preferenceProfile.tagline}
+                </p>
               )}
             </div>
           )}

@@ -5,7 +5,12 @@ import { selectStrategicPair } from "./strategic-picker";
 import type { ChoiceEntry } from "./strategic-picker";
 import { getMovieTrailer, getMovieTrailers, getWatchProviders } from "./tmdb";
 import { sessionStorage } from "./session-storage";
-import { generateRecommendations, generateReplacementRecommendation } from "./ai-recommender";
+import {
+  beginRecommendationPrefetch,
+  finalizeRecommendationsForTrack,
+  getTastePreviewForSession,
+  generateReplacementRecommendation,
+} from "./ai-recommender";
 import { buildGenreProfile, rankRecommendations } from "./recommendations";
 import { storage } from "./storage";
 import type { RoundPairResponse, ChoiceResponse, RecommendationsResponse } from "@shared/schema";
@@ -244,6 +249,8 @@ export async function registerRoutes(
             rightMovie: pair[1],
           });
         }
+      } else {
+        beginRecommendationPrefetch(sessionId);
       }
 
       const response: ChoiceResponse = {
@@ -324,7 +331,29 @@ export async function registerRoutes(
     }
   });
 
-  // Get AI recommendations after completing all rounds
+  // Taste headline + pattern (for mainstream/indie picker) — uses prefetch taste promise
+  app.get("/api/session/:sessionId/taste-preview", async (req: Request, res: Response) => {
+    try {
+      const { sessionId } = req.params;
+      const session = sessionStorage.getSession(sessionId);
+      if (!session) {
+        res.status(404).json({ error: "Session not found" });
+        return;
+      }
+      if (!session.isComplete) {
+        res.status(400).json({ error: "Complete all rounds first" });
+        return;
+      }
+      const taste = await getTastePreviewForSession(sessionId);
+      res.set(NO_CACHE_HEADERS);
+      res.json(taste);
+    } catch (error) {
+      console.error("Error taste-preview:", error);
+      res.status(500).json({ error: "Failed to load taste preview" });
+    }
+  });
+
+  // Final recommendations for chosen track (prefetch started when A/B completed)
   app.get("/api/session/:sessionId/recommendations", async (req: Request, res: Response) => {
     try {
       const { sessionId } = req.params;
@@ -341,52 +370,47 @@ export async function registerRoutes(
       }
 
       const chosenMovies = sessionStorage.getChosenMovies(sessionId);
-      const rejectedMovies = sessionStorage.getRejectedMovies(sessionId);
-      const filters = sessionStorage.getSessionFilters(sessionId);
-      const initialGenreFilters = filters?.genres || [];
-      
       if (chosenMovies.length === 0) {
         res.status(400).json({ error: "No choices recorded" });
         return;
       }
 
-      const aiResult = await generateRecommendations(chosenMovies, rejectedMovies, initialGenreFilters);
-
-      let mainstream = aiResult.mainstreamRecommendations ?? [];
-      let indie = aiResult.indieRecommendations ?? [];
-      if (mainstream.length === 0 && indie.length === 0) {
-        mainstream = aiResult.recommendations.slice(0, 5);
-        indie = aiResult.recommendations.slice(5, 10);
+      const trackParsed = recommendationTrackSchema.safeParse(req.query.track);
+      if (!trackParsed.success) {
+        res.status(400).json({ error: "Missing or invalid track (mainstream or indie)" });
+        return;
       }
+      const track = trackParsed.data;
+
+      let aiResult = await finalizeRecommendationsForTrack(sessionId, track);
 
       let hasPersonalisation = false;
       let genreProfileSize = 0;
+      let finalRecs = aiResult.recommendations;
 
       if (req.isAuthenticated() && req.user) {
         try {
           const profile = await buildGenreProfile(req.user.id);
           if (profile.length > 0) {
-            mainstream = rankRecommendations(mainstream, profile);
-            indie = rankRecommendations(indie, profile);
+            finalRecs = rankRecommendations(aiResult.recommendations, profile);
             hasPersonalisation = true;
             genreProfileSize = profile.length;
-            console.log(
-              `[personalisation] User ${req.user.id} — ${profile.length} genre signals, re-ranked dual rows`
-            );
+            aiResult = {
+              ...aiResult,
+              recommendations: finalRecs,
+              mainstreamRecommendations: track === "mainstream" ? finalRecs : [],
+              indieRecommendations: track === "indie" ? finalRecs : [],
+            };
           }
         } catch (err) {
           console.error("[personalisation] Failed to build genre profile:", err);
         }
       }
 
-      const finalRecs = [...mainstream, ...indie];
-
       res.set(NO_CACHE_HEADERS);
       res.json({
+        ...aiResult,
         recommendations: finalRecs,
-        mainstreamRecommendations: mainstream,
-        indieRecommendations: indie,
-        preferenceProfile: aiResult.preferenceProfile,
         hasPersonalisation,
         genreProfileSize,
       });

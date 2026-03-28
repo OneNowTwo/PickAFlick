@@ -6,9 +6,12 @@ import type {
   RoundPairResponse,
   ChoiceResponse,
   RecommendationsResponse,
+  RecommendationTrack,
+  TastePreview,
 } from "@shared/schema";
 import { RoundPicker } from "@/components/round-picker";
 import { ResultsScreen } from "@/components/results-screen";
+import { RecommendationTrackPicker } from "@/components/recommendation-track-picker";
 import { PosterGridBackground } from "@/components/poster-grid-background";
 import { GameInstructions } from "@/components/game-instructions";
 import { Button } from "@/components/ui/button";
@@ -25,6 +28,7 @@ type GameState =
   | "genre-select"
   | "instructions"
   | "playing"
+  | "pick-track"
   | "loading-recommendations"
   | "results";
 
@@ -92,7 +96,7 @@ export default function Home() {
       // "instructions" is a transient step tied to a live server session — if the
       // server restarted (Render cold start / idle shutdown) the session is gone and
       // the user would be stuck. Always re-enter from "start" in that case.
-      const restorableStates: GameState[] = ["playing", "loading-recommendations", "results"];
+      const restorableStates: GameState[] = ["playing", "pick-track", "loading-recommendations", "results"];
       if ((parsed.gameState as string) === "pick-lane") {
         setGameState("start");
         return;
@@ -179,24 +183,8 @@ export default function Home() {
       return res.json() as Promise<ChoiceResponse>;
     },
     onSuccess: async (data) => {
-      if (data.isComplete && sessionId) {
-        setGameState("loading-recommendations");
-        try {
-          const res = await fetch(`/api/session/${sessionId}/recommendations`);
-          if (res.ok) {
-            const recs = (await res.json()) as RecommendationsResponse;
-            setRecommendations(recs);
-            setGameState("results");
-          } else {
-            console.error("Failed to get recommendations:", await res.text());
-            setRecommendations(null);
-            setGameState("results");
-          }
-        } catch (e) {
-          console.error("Failed to get recommendations:", e);
-          setRecommendations(null);
-          setGameState("results");
-        }
+      if (data.isComplete) {
+        setGameState("pick-track");
         return;
       }
       roundQuery.refetch();
@@ -265,6 +253,43 @@ export default function Home() {
   const handleSkip = useCallback(() => {
     skipMutation.mutate();
   }, [skipMutation]);
+
+  const tastePreviewQuery = useQuery<TastePreview>({
+    queryKey: ["/api/session", sessionId, "taste-preview"],
+    queryFn: async () => {
+      const res = await fetch(`/api/session/${sessionId}/taste-preview`);
+      if (!res.ok) throw new Error("taste preview failed");
+      return res.json() as Promise<TastePreview>;
+    },
+    enabled: gameState === "pick-track" && !!sessionId,
+    staleTime: 0,
+    retry: 1,
+  });
+
+  const handleTrackChosen = useCallback(
+    async (track: RecommendationTrack) => {
+      if (!sessionId) return;
+      setGameState("loading-recommendations");
+      try {
+        const res = await fetch(
+          `/api/session/${sessionId}/recommendations?track=${encodeURIComponent(track)}`
+        );
+        if (res.ok) {
+          setRecommendations((await res.json()) as RecommendationsResponse);
+          setGameState("results");
+        } else {
+          console.error("Recommendations failed:", await res.text());
+          setRecommendations(null);
+          setGameState("results");
+        }
+      } catch (e) {
+        console.error(e);
+        setRecommendations(null);
+        setGameState("results");
+      }
+    },
+    [sessionId]
+  );
 
   const handlePlayAgain = useCallback(() => {
     sessionStorage.removeItem("homeState");
@@ -637,6 +662,15 @@ export default function Home() {
               Retry
             </Button>
           </div>
+        )}
+
+        {gameState === "pick-track" && sessionId && (
+          <RecommendationTrackPicker
+            sessionId={sessionId}
+            taste={tastePreviewQuery.data}
+            tasteLoading={tastePreviewQuery.isLoading}
+            onSelect={handleTrackChosen}
+          />
         )}
 
         {(gameState === "loading-recommendations" || gameState === "results") && (
