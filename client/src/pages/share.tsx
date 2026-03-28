@@ -3,7 +3,7 @@ import { useParams, Link } from "wouter";
 import type { RecommendationsResponse, Recommendation } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Film, Palette, Calendar, Sparkles, ChevronLeft, ChevronRight, Play, Brain, Home, Bookmark, Mail, Tv } from "lucide-react";
+import { Film, Calendar, ChevronLeft, ChevronRight, Play, Brain, Home, Bookmark, Mail, Tv } from "lucide-react";
 import { Footer } from "@/components/footer";
 import { PosterGridBackground } from "@/components/poster-grid-background";
 import { useState, useEffect } from "react";
@@ -182,21 +182,16 @@ export default function SharePage() {
             )}
           </div>
 
-          {/* Taste profile badges - desktop only */}
-          <div className="hidden md:flex flex-wrap items-center justify-center gap-2 text-sm max-w-4xl">
-            {preferenceProfile.visualStyle && (
-              <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
-                <Palette className="w-4 h-4 text-primary shrink-0" />
-                {preferenceProfile.visualStyle}
-              </Badge>
-            )}
-            {preferenceProfile.mood && (
-              <Badge variant="secondary" className="bg-white/10 text-white/90 border-0 gap-1.5 py-1.5 px-3 text-sm">
-                <Sparkles className="w-4 h-4 text-primary shrink-0" />
-                {preferenceProfile.mood}
-              </Badge>
-            )}
-          </div>
+          {(preferenceProfile.headline || preferenceProfile.tagline) && (
+            <div className="text-center max-w-lg px-2">
+              {preferenceProfile.headline && (
+                <p className="text-sm md:text-base font-medium text-white">{preferenceProfile.headline}</p>
+              )}
+              {preferenceProfile.tagline && (
+                <p className="text-xs text-white/55 mt-1">{preferenceProfile.tagline}</p>
+              )}
+            </div>
+          )}
 
           {/* Trailer card with nav */}
           <div className="flex flex-col md:flex-row md:items-stretch gap-2 md:gap-3 w-full max-w-7xl">

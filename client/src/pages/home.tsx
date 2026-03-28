@@ -6,11 +6,9 @@ import type {
   RoundPairResponse,
   ChoiceResponse,
   RecommendationsResponse,
-  RecommendationLane,
 } from "@shared/schema";
 import { RoundPicker } from "@/components/round-picker";
 import { ResultsScreen } from "@/components/results-screen";
-import { RecommendationLanePicker } from "@/components/recommendation-lane-picker";
 import { PosterGridBackground } from "@/components/poster-grid-background";
 import { GameInstructions } from "@/components/game-instructions";
 import { Button } from "@/components/ui/button";
@@ -27,7 +25,6 @@ type GameState =
   | "genre-select"
   | "instructions"
   | "playing"
-  | "pick-lane"
   | "loading-recommendations"
   | "results";
 
@@ -73,7 +70,6 @@ export default function Home() {
   });
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [recommendations, setRecommendations] = useState<RecommendationsResponse | null>(null);
-  const [recLane, setRecLane] = useState<RecommendationLane | null>(null);
   const [selectedMoods, setSelectedMoods] = useState<string[]>([]);
   const [showMoreGenres, setShowMoreGenres] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -90,20 +86,22 @@ export default function Home() {
         sessionId?: string | null;
         recommendations?: RecommendationsResponse | null;
         selectedMoods?: string[];
-        recLane?: RecommendationLane | null;
       };
 
       // Only restore states where we have meaningful data to show.
       // "instructions" is a transient step tied to a live server session — if the
       // server restarted (Render cold start / idle shutdown) the session is gone and
       // the user would be stuck. Always re-enter from "start" in that case.
-      const restorableStates: GameState[] = ["playing", "pick-lane", "loading-recommendations", "results"];
+      const restorableStates: GameState[] = ["playing", "loading-recommendations", "results"];
+      if ((parsed.gameState as string) === "pick-lane") {
+        setGameState("start");
+        return;
+      }
       if (parsed.gameState && restorableStates.includes(parsed.gameState)) {
         setGameState(parsed.gameState);
         setSessionId(parsed.sessionId ?? null);
         setRecommendations(parsed.recommendations ?? null);
         setSelectedMoods(parsed.selectedMoods ?? []);
-        setRecLane(parsed.recLane ?? null);
       }
     } catch {
       // ignore corrupted state
@@ -113,9 +111,9 @@ export default function Home() {
   useEffect(() => {
     sessionStorage.setItem(
       "homeState",
-      JSON.stringify({ gameState, sessionId, recommendations, selectedMoods, recLane })
+      JSON.stringify({ gameState, sessionId, recommendations, selectedMoods })
     );
-  }, [gameState, sessionId, recommendations, selectedMoods, recLane]);
+  }, [gameState, sessionId, recommendations, selectedMoods]);
 
   const toggleMood = useCallback((moodId: string) => {
     setSelectedMoods(prev => 
@@ -181,12 +179,27 @@ export default function Home() {
       return res.json() as Promise<ChoiceResponse>;
     },
     onSuccess: async (data) => {
-      if (data.isComplete) {
-        setGameState("pick-lane");
-      } else {
-        // Refetch to get next round
-        roundQuery.refetch();
+      if (data.isComplete && sessionId) {
+        setGameState("loading-recommendations");
+        try {
+          const res = await fetch(`/api/session/${sessionId}/recommendations`);
+          if (res.ok) {
+            const recs = (await res.json()) as RecommendationsResponse;
+            setRecommendations(recs);
+            setGameState("results");
+          } else {
+            console.error("Failed to get recommendations:", await res.text());
+            setRecommendations(null);
+            setGameState("results");
+          }
+        } catch (e) {
+          console.error("Failed to get recommendations:", e);
+          setRecommendations(null);
+          setGameState("results");
+        }
+        return;
       }
+      roundQuery.refetch();
     },
   });
 
@@ -253,37 +266,11 @@ export default function Home() {
     skipMutation.mutate();
   }, [skipMutation]);
 
-  const handleLaneChosen = useCallback(
-    async (lane: RecommendationLane) => {
-      if (!sessionId) return;
-      setRecLane(lane);
-      setGameState("loading-recommendations");
-      try {
-        const res = await fetch(
-          `/api/session/${sessionId}/recommendations?lane=${encodeURIComponent(lane)}`
-        );
-        if (res.ok) {
-          const recs = (await res.json()) as RecommendationsResponse;
-          setRecommendations(recs);
-          setGameState("results");
-        } else {
-          console.error("Failed to get recommendations:", await res.text());
-          setGameState("pick-lane");
-        }
-      } catch (error) {
-        console.error("Failed to get recommendations:", error);
-        setGameState("pick-lane");
-      }
-    },
-    [sessionId]
-  );
-
   const handlePlayAgain = useCallback(() => {
     sessionStorage.removeItem("homeState");
     setSessionId(null);
     setRecommendations(null);
     setSelectedMoods([]);
-    setRecLane(null);
     setGameState("start");
   }, []);
 
@@ -652,17 +639,12 @@ export default function Home() {
           </div>
         )}
 
-        {gameState === "pick-lane" && sessionId && (
-          <RecommendationLanePicker sessionId={sessionId} onSelect={handleLaneChosen} />
-        )}
-
         {(gameState === "loading-recommendations" || gameState === "results") && (
           <ResultsScreen
             recommendations={recommendations}
             isLoading={gameState === "loading-recommendations"}
             onPlayAgain={handlePlayAgain}
             sessionId={sessionId}
-            recLane={recLane}
           />
         )}
       </main>

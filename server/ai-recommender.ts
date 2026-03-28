@@ -1,5 +1,10 @@
 import OpenAI from "openai";
-import type { Movie, Recommendation, RecommendationsResponse, RecommendationLane } from "@shared/schema";
+import type {
+  Movie,
+  Recommendation,
+  RecommendationsResponse,
+  RecommendationTrack,
+} from "@shared/schema";
 import { searchMovieByTitle, getMovieTrailers, getMovieDetails } from "./tmdb";
 import { getAllMovies } from "./catalogue";
 import { storage } from "./storage";
@@ -14,8 +19,12 @@ const RECOMMENDATIONS_MODEL = process.env.OPENAI_RECOMMENDATIONS_MODEL ?? "gpt-4
 
 const recentlyRecommendedTitles: string[] = [];
 const MAX_RECENT_TRACKED = 400;
-/** Larger list reduces "same movies every time" without huge prompt bloat */
-const RECENT_EXCLUSIONS_PROMPT_COUNT = 72;
+const RECENT_EXCLUSIONS_PROMPT_COUNT = 56;
+const TARGET_MAINSTREAM = 5;
+const TARGET_INDIE = 5;
+const LLM_MAINSTREAM = 7;
+const LLM_INDIE = 7;
+
 let recsLoaded = false;
 
 async function ensureRecsLoaded(): Promise<void> {
@@ -49,16 +58,19 @@ function recordRecommendedTitles(titles: string[]): void {
 
 interface AIRecommendationResult { title: string; year?: number; reason: string; }
 
-interface AIAnalysis {
+interface DualLLMResponse {
+  headline: string;
+  tagline: string;
   topGenres: string[];
   themes: string[];
   preferredEras: string[];
   visualStyle: string;
   mood: string;
-  recommendations: AIRecommendationResult[];
+  mainstream_picks: AIRecommendationResult[];
+  indie_picks: AIRecommendationResult[];
 }
 
-const MAX_PRE_1970_FILMS = 1;
+const MAX_PRE_1970_TOTAL = 1;
 
 function normalizeTitleKey(title: string): string {
   return title.toLowerCase().trim().replace(/^the\s+/i, "");
@@ -70,44 +82,6 @@ function countPre1970(recs: { year?: number }[]): number {
 
 function countRecentCollisions(recs: { title: string }[], recentSet: Set<string>): number {
   return recs.filter((r) => recentSet.has(normalizeTitleKey(r.title))).length;
-}
-
-function laneInstruction(lane: RecommendationLane): string {
-  switch (lane) {
-    case "mainstream":
-      return `Use the Mainstream lane: lean toward polished, accessible, high-confidence picks that are easy to watch tonight, but avoid obvious blockbuster clones.`;
-    case "movie_buff":
-      return `Use the Movie Buff lane: lean toward more curated, less obvious, film-lover picks (including strong indies), but keep them watchable and not obscure.`;
-    case "left_field":
-      return `Use the Left Field lane: lean toward surprising, adventurous, less predictable choices — bolder genre moves, international where relevant, cult or off-centre — but still anchored in their taste.`;
-  }
-}
-
-function temperatureForLane(lane: RecommendationLane): number {
-  switch (lane) {
-    case "left_field": return 0.9;
-    case "movie_buff": return 0.86;
-    default: return 0.82;
-  }
-}
-
-async function callRecommendationsLLM(
-  promptText: string,
-  temperature: number,
-  maxTokens: number
-): Promise<AIAnalysis> {
-  const response = await openai.chat.completions.create({
-    model: RECOMMENDATIONS_MODEL,
-    messages: [
-      { role: "system", content: "PickAFlick recommender. Respond only with valid JSON matching the schema." },
-      { role: "user", content: promptText },
-    ],
-    response_format: { type: "json_object" },
-    max_tokens: maxTokens,
-    temperature,
-  });
-  const content = response.choices[0]?.message?.content || "{}";
-  return JSON.parse(content) as AIAnalysis;
 }
 
 function formatChoicesBlock(chosenMovies: Movie[]): string {
@@ -127,9 +101,29 @@ function formatRejectsBlock(rejectedMovies: Movie[], chosenMovies: Movie[]): str
   }).join("\n");
 }
 
+async function callDualLLM(promptText: string): Promise<DualLLMResponse> {
+  const response = await openai.chat.completions.create({
+    model: RECOMMENDATIONS_MODEL,
+    messages: [
+      {
+        role: "system",
+        content:
+          "PickAFlick recommender. Respond only with valid JSON. Infer taste from the funnel; never copy titles from the funnel into the recommendation lists.",
+      },
+      { role: "user", content: promptText },
+    ],
+    response_format: { type: "json_object" },
+    max_tokens: 2800,
+    temperature: 0.74,
+  });
+  const content = response.choices[0]?.message?.content || "{}";
+  return JSON.parse(content) as DualLLMResponse;
+}
+
 async function resolveOneRecommendation(
   rec: AIRecommendationResult,
-  chosenTmdbIds: Set<number>
+  chosenTmdbIds: Set<number>,
+  pickedAs: RecommendationTrack
 ): Promise<Recommendation | null> {
   try {
     const searchResult = await searchMovieByTitle(rec.title, rec.year);
@@ -150,18 +144,89 @@ async function resolveOneRecommendation(
       trailerUrl: tmdbTrailers[0],
       trailerUrls: tmdbTrailers,
       reason: rec.reason,
+      pickedAs,
     };
   } catch {
     return null;
   }
 }
 
+async function resolveTrackOrdered(
+  recs: AIRecommendationResult[],
+  chosenTmdbIds: Set<number>,
+  pickedAs: RecommendationTrack,
+  excludeNormalizedTitles: Set<string>,
+  cap: number
+): Promise<Recommendation[]> {
+  const maxSlice = pickedAs === "mainstream" ? LLM_MAINSTREAM : LLM_INDIE;
+  const slice = recs.slice(0, maxSlice);
+  const settled = await Promise.all(
+    slice.map((r) => resolveOneRecommendation(r, chosenTmdbIds, pickedAs))
+  );
+  const out: Recommendation[] = [];
+  for (const r of settled) {
+    if (!r || out.length >= cap) continue;
+    const key = normalizeTitleKey(r.movie.title);
+    if (excludeNormalizedTitles.has(key)) continue;
+    excludeNormalizedTitles.add(key);
+    out.push(r);
+  }
+  return out;
+}
+
+function buildDualPrompt(
+  choicesBlock: string,
+  rejectsBlock: string,
+  chosenTitles: string,
+  recentExclusions: string[],
+  genreFilterLine: string
+): string {
+  const exclusionsLine = recentExclusions.length > 0
+    ? `Do not recommend these titles (shown recently to other users): ${recentExclusions.join("; ")}`
+    : "";
+
+  return `You are building TWO recommendation rows from one A/B movie funnel. Infer a coherent taste profile from the pattern of wins/losses — not by matching posters 1:1 to new films.
+
+CHOSEN:
+${choicesBlock}
+
+PASSED ON:
+${rejectsBlock}
+${genreFilterLine}
+
+Rows (both must reflect the SAME inferred taste, different reach/visibility):
+
+1) mainstream_picks — ${LLM_MAINSTREAM} films: widely known, easy to find, "good tonight" energy. Polished and accessible. Still varied in tone, era, and subgenre — not five near-identical blockbusters.
+
+2) indie_picks — ${LLM_INDIE} films: less famous but still acclaimed or strong word-of-mouth; smart indies, international, or auteur-led picks that fit the same taste. Watchable — not homework, not ultra-obscure micro-budget.
+
+Rules:
+- No title may appear in both rows.
+- No duplicate directors across all ${LLM_MAINSTREAM + LLM_INDIE} suggestions.
+- Across BOTH rows combined: at most ${MAX_PRE_1970_TOTAL} film released before 1970; include at least one 2020+ title somewhere if it fits.
+- Films must be plausibly available in Australia (theatrical/stream/rent).
+- Do not recommend anything the user already chose in the funnel: ${chosenTitles}
+${exclusionsLine ? `${exclusionsLine}\n` : ""}
+
+Taste copy (short, human, specific — not a genre laundry list):
+- headline: max 12 words, second person.
+- tagline: max 16 words, adds one concrete colour (pace, mood, or viewing context).
+- topGenres, themes, preferredEras: short arrays for UI chips.
+
+Reasons — CRITICAL:
+- One short sentence each, max ~22 words.
+- Describe why the film fits their inferred mood/tone/pacing only.
+- Do NOT name, quote, or reference any title from the A/B funnel.
+- Do NOT say "because you chose…", "if you liked…", or compare directly to funnel films.
+
+Return JSON only:
+{"headline":"","tagline":"","topGenres":["","",""],"themes":["",""],"preferredEras":["",""],"visualStyle":"omit or empty","mood":"omit or empty","mainstream_picks":[{"title":"","year":2020,"reason":""}],"indie_picks":[{"title":"","year":2020,"reason":""}]}`;
+}
 
 export async function generateRecommendations(
   chosenMovies: Movie[],
   rejectedMovies: Movie[] = [],
-  initialGenreFilters: string[] = [],
-  lane: RecommendationLane = "mainstream"
+  initialGenreFilters: string[] = []
 ): Promise<RecommendationsResponse> {
   await ensureRecsLoaded();
 
@@ -171,125 +236,135 @@ export async function generateRecommendations(
   const recentExclusions = recentlyRecommendedTitles.slice(-RECENT_EXCLUSIONS_PROMPT_COUNT);
   const recentTitlesSet = new Set(recentlyRecommendedTitles.map(normalizeTitleKey));
 
-  const exclusionsLine = recentExclusions.length > 0
-    ? `\nDo not recommend these titles (recently shown to users): ${recentExclusions.join("; ")}\n`
-    : "";
-
   const genreFilterLine = initialGenreFilters.length > 0
-    ? `\nOptional funnel filters (respect if they still fit the mood): ${initialGenreFilters.join(", ")}.\n`
+    ? `Optional session genre hints (use only if they still fit the inferred mood): ${initialGenreFilters.join(", ")}.`
     : "";
 
-  const diversityBlock = `
-Diversity (critical):
-- No two picks from the same director.
-- No two picks from the same franchise / shared universe (e.g. MCU, Star Wars, Fast).
-- Spread subgenres and tones — do not output five films that feel like the same "type".
-- Avoid the same handful of famous titles that always appear in generic lists; dig for films that still fit the lane and the user's pattern.`;
-
-  const prompt = `These are the results of my A/B testing funnel. Rounds marked * matter more.
-
-CHOSEN:
-${choicesBlock}
-
-PASSED ON:
-${rejectsBlock}
-${genreFilterLine}
-Based on those selections, recommend 8 movies I'm most likely in the mood for right now.
-
-${laneInstruction(lane)}
-
-Keep variety across era and tone. At most ${MAX_PRE_1970_FILMS} film before 1970. Include at least one 2020+ if it fits naturally. Movies must be findable / streamable in Australia. No micro-budget obscurities.
-Do not recommend any film I chose in the funnel: ${chosenTitles}
-${exclusionsLine}
-${diversityBlock}
-
-Give short, specific reasons — name one of my chosen films and explain the connection (tone, pacing, texture, genre), not generic praise.
-
-Return JSON only:
-{"topGenres":["","",""],"themes":["",""],"preferredEras":["",""],"visualStyle":"one sentence using you/your","mood":"one sentence using you/your","recommendations":[
-{"title":"Film Title","year":2000,"reason":"1-2 sentences"},
-{"title":"","year":2000,"reason":""},
-{"title":"","year":2000,"reason":""},
-{"title":"","year":2000,"reason":""},
-{"title":"","year":2000,"reason":""},
-{"title":"","year":2000,"reason":""},
-{"title":"","year":2000,"reason":""},
-{"title":"","year":2000,"reason":""}
-]}`;
-
-  const llmTemp = temperatureForLane(lane);
-  const maxTokens = 2000;
+  const prompt = buildDualPrompt(choicesBlock, rejectsBlock, chosenTitles, recentExclusions, genreFilterLine);
 
   try {
-    let analysis = await callRecommendationsLLM(prompt, llmTemp, maxTokens);
+    let parsed = await callDualLLM(prompt);
 
-    if (!analysis.recommendations?.length) {
-      throw new Error("LLM returned no recommendations");
+    const allPicks = [...(parsed.mainstream_picks || []), ...(parsed.indie_picks || [])];
+    if (allPicks.length < 8) {
+      throw new Error("LLM returned too few picks");
     }
 
-    const pre1970Count = countPre1970(analysis.recommendations);
-    const recentHits = countRecentCollisions(analysis.recommendations, recentTitlesSet);
-    if (pre1970Count > MAX_PRE_1970_FILMS || recentHits >= 3) {
-      console.warn(`[ai-recommender] Retrying: ${recentHits} recent collisions, ${pre1970Count} pre-1970`);
-      const fixPrompt = `${prompt}\n\nRegenerate entirely: max ${MAX_PRE_1970_FILMS} pre-1970; avoid titles in the recent-shown list; 8 new titles; keep diversity rules; JSON only.`;
-      analysis = await callRecommendationsLLM(fixPrompt, llmTemp, maxTokens);
+    const pre1970 = countPre1970(allPicks);
+    const recentHits = countRecentCollisions(allPicks, recentTitlesSet);
+    if (pre1970 > MAX_PRE_1970_TOTAL || recentHits >= 4) {
+      console.warn(`[ai-recommender] Retry dual prompt: ${recentHits} recent hits, ${pre1970} pre-1970`);
+      parsed = await callDualLLM(
+        `${prompt}\n\nRegenerate completely: respect pre-1970 and recent-title rules; fresh titles; no overlap between rows; JSON only.`
+      );
     }
 
-    if (!analysis.recommendations?.length) {
-      throw new Error("LLM returned no recommendations after retry");
-    }
-
+    const excludeTitles = new Set<string>();
     const chosenTmdbIds = new Set(chosenMovies.map((m) => m.tmdbId));
-    const resolvedRecs = (
-      await Promise.all(
-        analysis.recommendations.slice(0, 8).map((r) => resolveOneRecommendation(r, chosenTmdbIds))
-      )
-    ).filter((x): x is Recommendation => x !== null);
 
-    const freshRecs = resolvedRecs.filter((r) => !recentTitlesSet.has(normalizeTitleKey(r.movie.title)));
-    const recommendations = (freshRecs.length >= 5 ? freshRecs : resolvedRecs).slice(0, 5);
+    let mainstream = await resolveTrackOrdered(
+      parsed.mainstream_picks || [],
+      chosenTmdbIds,
+      "mainstream",
+      excludeTitles,
+      TARGET_MAINSTREAM
+    );
+    let indie = await resolveTrackOrdered(
+      parsed.indie_picks || [],
+      chosenTmdbIds,
+      "indie",
+      excludeTitles,
+      TARGET_INDIE
+    );
 
-    recordRecommendedTitles(resolvedRecs.map((r) => r.movie.title));
+    if (mainstream.length < TARGET_MAINSTREAM || indie.length < TARGET_INDIE) {
+      console.warn(
+        `[ai-recommender] Under-filled rows (main ${mainstream.length}, indie ${indie.length}) — one repair pass`
+      );
+      const repair = await callDualLLM(
+        `${prompt}\n\nPrevious output resolved poorly in TMDB. Output NEW films only. mainstream_picks: ${LLM_MAINSTREAM} titles, indie_picks: ${LLM_INDIE} titles. Same JSON schema.`
+      );
+      excludeTitles.clear();
+      mainstream = await resolveTrackOrdered(
+        repair.mainstream_picks || [],
+        chosenTmdbIds,
+        "mainstream",
+        excludeTitles,
+        TARGET_MAINSTREAM
+      );
+      indie = await resolveTrackOrdered(
+        repair.indie_picks || [],
+        chosenTmdbIds,
+        "indie",
+        excludeTitles,
+        TARGET_INDIE
+      );
+    }
+
+    const combined = [...mainstream, ...indie];
+    recordRecommendedTitles(combined.map((r) => r.movie.title));
 
     return {
-      recommendations,
+      recommendations: combined,
+      mainstreamRecommendations: mainstream,
+      indieRecommendations: indie,
       preferenceProfile: {
-        topGenres: analysis.topGenres || [],
-        themes: analysis.themes || [],
-        preferredEras: analysis.preferredEras || [],
-        visualStyle: analysis.visualStyle || "",
-        mood: analysis.mood || "",
+        topGenres: parsed.topGenres || [],
+        themes: parsed.themes || [],
+        preferredEras: parsed.preferredEras || [],
+        visualStyle: "",
+        mood: "",
+        headline: (parsed.headline || "").trim(),
+        tagline: (parsed.tagline || "").trim(),
       },
     };
   } catch (error) {
     console.error("AI recommendation error:", error);
-    return fallbackRecommendations(chosenMovies);
+    return fallbackDualRecommendations(chosenMovies);
   }
 }
 
-async function fallbackRecommendations(chosenMovies: Movie[]): Promise<RecommendationsResponse> {
+async function fallbackDualRecommendations(chosenMovies: Movie[]): Promise<RecommendationsResponse> {
   const allMovies = getAllMovies();
-  const fallbackMovies = shuffleArray([...allMovies])
-    .filter((m) =>
-      !chosenMovies.some((c) => c.tmdbId === m.tmdbId) &&
-      m.posterPath?.trim() && m.year && m.year >= 1980 &&
-      m.rating && m.rating >= 7.0 &&
-      (!m.original_language || m.original_language === "en")
-    ).slice(0, 5);
-
-  const fallbackRecs = await Promise.all(
-    fallbackMovies.map(async (movie) => {
-      const trailerUrls = await getMovieTrailers(movie.tmdbId);
-      return { movie, trailerUrl: trailerUrls[0] || null, trailerUrls, reason: "A great pick based on your taste!" } satisfies Recommendation;
-    })
+  const pool = shuffleArray(
+    allMovies.filter(
+      (m) =>
+        !chosenMovies.some((c) => c.tmdbId === m.tmdbId) &&
+        m.posterPath?.trim() &&
+        m.year &&
+        m.year >= 1990 &&
+        m.rating &&
+        m.rating >= 7.0
+    )
   );
+  const mainstreamPool = pool.filter((m) => (m.rating ?? 0) >= 7.2).slice(0, 5);
+  const indiePool = pool.filter((m) => !mainstreamPool.includes(m)).slice(0, 5);
+
+  async function toRec(m: Movie, pickedAs: RecommendationTrack): Promise<Recommendation> {
+    const trailerUrls = await getMovieTrailers(m.tmdbId);
+    return {
+      movie: { ...m, listSource: "ai-recommendation" },
+      trailerUrl: trailerUrls[0] || null,
+      trailerUrls,
+      reason: "Matches the tone of your picks tonight.",
+      pickedAs,
+    };
+  }
+
+  const mainstream = await Promise.all(mainstreamPool.map((m) => toRec(m, "mainstream")));
+  const indie = await Promise.all(indiePool.map((m) => toRec(m, "indie")));
+  const combined = [...mainstream, ...indie];
 
   return {
-    recommendations: fallbackRecs,
+    recommendations: combined,
+    mainstreamRecommendations: mainstream,
+    indieRecommendations: indie,
     preferenceProfile: {
-      topGenres: extractTopGenres(chosenMovies), themes: [], preferredEras: [],
-      visualStyle: "We've matched films to your taste.",
-      mood: "Based on your choices, you're in the mood for something that hits the same notes.",
+      topGenres: extractTopGenres(chosenMovies),
+      themes: [],
+      preferredEras: [],
+      headline: "Here are two rows tailored to your funnel.",
+      tagline: "Easy watches first, then acclaimed lesser-known picks.",
     },
   };
 }
@@ -308,59 +383,90 @@ function extractTopGenres(movies: Movie[]): string[] {
   for (const movie of movies) {
     for (const genre of movie.genres) genreCounts.set(genre, (genreCounts.get(genre) || 0) + 1);
   }
-  return Array.from(genreCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([g]) => g);
+  return Array.from(genreCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([g]) => g);
 }
 
-function replacementLaneRules(lane: RecommendationLane): string {
-  switch (lane) {
-    case "mainstream": return `LANE — Mainstream: one accessible, polished pick.`;
-    case "movie_buff": return `LANE — Movie Buff: one less obvious, more specific film.`;
-    case "left_field": return `LANE — Left Field: one deep, international/arthouse pick.`;
+function replacementRules(track: RecommendationTrack): string {
+  if (track === "indie") {
+    return `TRACK — Indie row: one less famous, critically strong or film-lover pick; still fits their funnel taste; findable in Australia.`;
   }
+  return `TRACK — Mainstream row: one accessible, well-known pick that fits their funnel taste; findable in Australia.`;
 }
 
 export async function generateReplacementRecommendation(
   chosenMovies: Movie[],
   excludeTmdbIds: number[],
   rejectedMovies: Movie[] = [],
-  lane: RecommendationLane = "mainstream"
+  track: RecommendationTrack = "mainstream"
 ): Promise<Recommendation | null> {
   const picks = chosenMovies.map((m, i) => `R${i + 1}: "${m.title}" (${m.year}) — ${m.director || "?"}`).join("\n");
   const rejHints = rejectedMovies.length > 0
-    ? `\nREJECTED: ${rejectedMovies.slice(0, 3).map(m => `"${m.title}"`).join(", ")}`
+    ? `\nPASSED ON: ${rejectedMovies.slice(0, 3).map(m => `"${m.title}"`).join(", ")}`
     : "";
 
-  const prompt = `Curate ONE replacement. Picks:\n${picks}${rejHints}\nSeen/dismissed: ${excludeTmdbIds.length}.\n${replacementLaneRules(lane)}\nFindable in Australia. Avoid repeating obvious franchise defaults. JSON only:\n{"title":"","year":2000,"reason":"1-2 sentences."}`;
+  const prompt = `One replacement for the ${track} row. Infer taste from the funnel (do not mirror one funnel title to one pick).
+
+${picks}${rejHints}
+
+Exclude TMDB ids already shown: ${excludeTmdbIds.length} titles.
+
+${replacementRules(track)}
+
+Reason: one short sentence, max 20 words. Do NOT reference any funnel film by title.
+
+JSON only: {"title":"","year":2000,"reason":""}`;
 
   try {
     const resp = await openai.chat.completions.create({
       model: RECOMMENDATIONS_MODEL,
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
-      max_tokens: 200,
-      temperature: 0.88,
+      max_tokens: 220,
+      temperature: 0.85,
     });
     const result: AIRecommendationResult = JSON.parse(resp.choices[0]?.message?.content || "{}");
     const search = await searchMovieByTitle(result.title, result.year);
-    if (!search || excludeTmdbIds.includes(search.id)) return await catalogueFallbackReplacement(excludeTmdbIds);
+    if (!search || excludeTmdbIds.includes(search.id)) return await catalogueFallbackReplacement(excludeTmdbIds, track);
 
     const [details, trailers] = await Promise.all([getMovieDetails(search.id), getMovieTrailers(search.id)]);
-    if (!details || !details.posterPath?.trim() || trailers.length === 0) return catalogueFallbackReplacement(excludeTmdbIds);
+    if (!details || !details.posterPath?.trim() || trailers.length === 0) {
+      return catalogueFallbackReplacement(excludeTmdbIds, track);
+    }
 
     details.listSource = "replacement";
-    return { movie: details, trailerUrl: trailers[0], trailerUrls: trailers, reason: result.reason };
+    return {
+      movie: details,
+      trailerUrl: trailers[0],
+      trailerUrls: trailers,
+      reason: result.reason,
+      pickedAs: track,
+    };
   } catch {
-    return catalogueFallbackReplacement(excludeTmdbIds);
+    return catalogueFallbackReplacement(excludeTmdbIds, track);
   }
 }
 
-async function catalogueFallbackReplacement(excludeTmdbIds: number[]): Promise<Recommendation | null> {
-  const eligible = shuffleArray(getAllMovies().filter((m) => !excludeTmdbIds.includes(m.tmdbId) && m.rating && m.rating >= 7.0));
-  for (const movie of eligible.slice(0, 10)) {
+async function catalogueFallbackReplacement(
+  excludeTmdbIds: number[],
+  track: RecommendationTrack
+): Promise<Recommendation | null> {
+  const eligible = shuffleArray(
+    getAllMovies().filter((m) => !excludeTmdbIds.includes(m.tmdbId) && m.rating && m.rating >= 7.0)
+  );
+  for (const movie of eligible.slice(0, 12)) {
     if (!movie.posterPath?.trim()) continue;
     const trailerUrls = await getMovieTrailers(movie.tmdbId);
     if (trailerUrls.length === 0) continue;
-    return { movie: { ...movie, listSource: "replacement" }, trailerUrl: trailerUrls[0], trailerUrls, reason: `A great pick based on your taste in ${movie.genres.slice(0, 2).join(" and ")} films!` };
+    return {
+      movie: { ...movie, listSource: "replacement" },
+      trailerUrl: trailerUrls[0],
+      trailerUrls,
+      reason: "Fits the mood of your picks tonight.",
+      pickedAs: track,
+    };
   }
   return null;
 }

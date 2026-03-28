@@ -8,8 +8,8 @@ import { sessionStorage } from "./session-storage";
 import { generateRecommendations, generateReplacementRecommendation } from "./ai-recommender";
 import { buildGenreProfile, rankRecommendations } from "./recommendations";
 import { storage } from "./storage";
-import type { RoundPairResponse, ChoiceResponse, RecommendationsResponse, RecommendationLane } from "@shared/schema";
-import { insertWatchlistSchema, recommendationLaneSchema } from "@shared/schema";
+import type { RoundPairResponse, ChoiceResponse, RecommendationsResponse } from "@shared/schema";
+import { insertWatchlistSchema, recommendationLaneSchema, recommendationTrackSchema } from "@shared/schema";
 import { z } from "zod";
 
 const NO_CACHE_HEADERS = {
@@ -350,41 +350,46 @@ export async function registerRoutes(
         return;
       }
 
-      const laneParsed = recommendationLaneSchema.safeParse(req.query.lane);
-      if (!laneParsed.success) {
-        res.status(400).json({
-          error: "Missing or invalid lane (mainstream, movie_buff, or left_field)",
-        });
-        return;
+      const aiResult = await generateRecommendations(chosenMovies, rejectedMovies, initialGenreFilters);
+
+      let mainstream = aiResult.mainstreamRecommendations ?? [];
+      let indie = aiResult.indieRecommendations ?? [];
+      if (mainstream.length === 0 && indie.length === 0) {
+        mainstream = aiResult.recommendations.slice(0, 5);
+        indie = aiResult.recommendations.slice(5, 10);
       }
-      const lane = laneParsed.data;
 
-      const aiResult = await generateRecommendations(chosenMovies, rejectedMovies, initialGenreFilters, lane);
-
-      // For logged-in users, re-rank using their full cross-session vote history
       let hasPersonalisation = false;
-      let finalRecs = aiResult.recommendations;
       let genreProfileSize = 0;
 
       if (req.isAuthenticated() && req.user) {
         try {
           const profile = await buildGenreProfile(req.user.id);
           if (profile.length > 0) {
-            finalRecs = rankRecommendations(aiResult.recommendations, profile);
+            mainstream = rankRecommendations(mainstream, profile);
+            indie = rankRecommendations(indie, profile);
             hasPersonalisation = true;
             genreProfileSize = profile.length;
             console.log(
-              `[personalisation] User ${req.user.id} — ${profile.length} genre signals, re-ranked ${finalRecs.length} recs`
+              `[personalisation] User ${req.user.id} — ${profile.length} genre signals, re-ranked dual rows`
             );
           }
         } catch (err) {
-          // Non-fatal — fall back to AI ordering
           console.error("[personalisation] Failed to build genre profile:", err);
         }
       }
 
+      const finalRecs = [...mainstream, ...indie];
+
       res.set(NO_CACHE_HEADERS);
-      res.json({ ...aiResult, recommendations: finalRecs, hasPersonalisation, genreProfileSize });
+      res.json({
+        recommendations: finalRecs,
+        mainstreamRecommendations: mainstream,
+        indieRecommendations: indie,
+        preferenceProfile: aiResult.preferenceProfile,
+        hasPersonalisation,
+        genreProfileSize,
+      });
     } catch (error) {
       console.error("Error generating recommendations:", error);
       res.status(500).json({ error: "Failed to generate recommendations" });
@@ -395,7 +400,7 @@ export async function registerRoutes(
   app.post("/api/session/:sessionId/replacement", async (req: Request, res: Response) => {
     try {
       const { sessionId } = req.params;
-      const { excludeTmdbIds, lane: laneBody } = req.body;
+      const { excludeTmdbIds, track: trackBody, lane: laneBody } = req.body;
 
       if (!Array.isArray(excludeTmdbIds)) {
         res.status(400).json({ error: "excludeTmdbIds must be an array" });
@@ -416,14 +421,22 @@ export async function registerRoutes(
         return;
       }
 
-      const laneParsed = recommendationLaneSchema.safeParse(laneBody);
-      const lane = laneParsed.success ? laneParsed.data : "mainstream";
+      let track: "mainstream" | "indie" = "mainstream";
+      const trackParsed = recommendationTrackSchema.safeParse(trackBody);
+      if (trackParsed.success) {
+        track = trackParsed.data;
+      } else {
+        const laneParsed = recommendationLaneSchema.safeParse(laneBody);
+        if (laneParsed.success && laneParsed.data !== "mainstream") {
+          track = "indie";
+        }
+      }
 
       const replacement = await generateReplacementRecommendation(
         chosenMovies,
         excludeTmdbIds,
         rejectedMovies,
-        lane
+        track
       );
       
       if (!replacement) {

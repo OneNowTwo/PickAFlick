@@ -18,7 +18,7 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
   const [isSharing, setIsSharing] = useState(false);
   const { toast } = useToast();
 
-  const topMovies = recommendations.slice(0, 5);
+  const topMovies = recommendations.slice(0, 10);
 
   const handleCopyLink = async () => {
     if (!shareUrl) return;
@@ -43,7 +43,7 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
     const movieLines = topMovies
       .map((rec, i) => `${i + 1}. ${rec.movie.title} (${rec.movie.year})`)
       .join("\n");
-    return `My top movie picks tonight:\n${movieLines}\n\nSee them all 👆`;
+    return `My picks tonight (easy watches + deeper cuts):\n${movieLines}\n\nSee them all 👆`;
   };
 
   const handleNativeShare = async () => {

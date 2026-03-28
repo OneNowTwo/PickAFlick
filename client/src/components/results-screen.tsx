@@ -2,7 +2,6 @@ import type {
   RecommendationsResponse,
   WatchProvidersResponse,
   Recommendation,
-  RecommendationLane,
 } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,42 +16,13 @@ import { AuthPromptModal } from "./auth-prompt-modal";
 import { SignUpNudge } from "./signup-nudge";
 import { useAuth } from "@/contexts/AuthContext";
 
-// Generate personalized reveal message based on preference profile
-function generateRevealMessage(profile: RecommendationsResponse["preferenceProfile"]): string {
-  const parts: string[] = [];
-  const topGenres = profile?.topGenres ?? [];
-  
-  if (topGenres.length >= 2) {
-    parts.push(`You're in the mood for some ${topGenres[0]} with a ${topGenres[1]} twist`);
-  } else if (topGenres.length === 1) {
-    parts.push(`You're craving some ${topGenres[0]}`);
-  }
-  
-  if (profile?.mood) {
-    const moodLower = profile.mood.toLowerCase();
-    if (moodLower.includes("intense") || moodLower.includes("dark")) {
-      parts.push("something with edge and intensity");
-    } else if (moodLower.includes("light") || moodLower.includes("fun")) {
-      parts.push("something light and enjoyable");
-    } else if (moodLower.includes("thought") || moodLower.includes("deep")) {
-      parts.push("something to really think about");
-    }
-  }
-  
-  if (profile?.preferredEras && profile.preferredEras.length > 0) {
-    const era = profile.preferredEras[0].toLowerCase();
-    if (era.includes("modern") || era.includes("recent") || era.includes("2020") || era.includes("2010")) {
-      parts.push("from the modern era");
-    } else if (era.includes("classic") || era.includes("80s") || era.includes("90s")) {
-      parts.push("with that classic feel");
-    }
-  }
-  
-  if (parts.length === 0) {
-    return "We've figured out exactly what you're in the mood for!";
-  }
-  
-  return parts.join(", ") + ". Here's what we picked for you!";
+function tasteHeadline(profile: RecommendationsResponse["preferenceProfile"] | undefined): string {
+  const h = profile?.headline?.trim();
+  if (h) return h;
+  const g = profile?.topGenres?.filter(Boolean) ?? [];
+  if (g.length >= 2) return `Tonight: ${g[0].toLowerCase()} with a ${g[1].toLowerCase()} edge.`;
+  if (g.length === 1) return `Tonight leans ${g[0].toLowerCase()}.`;
+  return "Here's your double row — easy watches, then deeper cuts.";
 }
 
 interface ResultsScreenProps {
@@ -60,8 +30,6 @@ interface ResultsScreenProps {
   isLoading: boolean;
   onPlayAgain: () => void;
   sessionId?: string | null;
-  /** Same lane as initial recommendations — used for "seen it" replacements */
-  recLane?: RecommendationLane | null;
   suppressTrailer?: boolean; // hide iframe when an overlay modal is open (YouTube z-index fix)
 }
 
@@ -70,7 +38,6 @@ export function ResultsScreen({
   isLoading,
   onPlayAgain,
   sessionId,
-  recLane = null,
   suppressTrailer = false,
 }: ResultsScreenProps) {
   const { user } = useAuth();
@@ -160,11 +127,10 @@ export function ResultsScreen({
 
   // Mutation to get a replacement recommendation
   const replacementMutation = useMutation({
-    mutationFn: async (excludeTmdbIds: number[]) => {
-      const lane = recLane ?? "mainstream";
+    mutationFn: async (vars: { excludeTmdbIds: number[]; track: "mainstream" | "indie" }) => {
       const res = await apiRequest("POST", `/api/session/${sessionId}/replacement`, {
-        excludeTmdbIds,
-        lane,
+        excludeTmdbIds: vars.excludeTmdbIds,
+        track: vars.track,
       });
       return res.json() as Promise<Recommendation>;
     },
@@ -263,8 +229,10 @@ export function ResultsScreen({
       ...localRecs.map(r => r.movie.tmdbId),
     ];
     
-    // Request a replacement
-    replacementMutation.mutate(allExcludedIds);
+    replacementMutation.mutate({
+      excludeTmdbIds: allExcludedIds,
+      track: currentRec.pickedAs ?? "mainstream",
+    });
     
     // Adjust index if we were at the end
     const newDisplayRecs = displayRecs.filter(r => r.movie.tmdbId !== tmdbId);
@@ -406,7 +374,11 @@ export function ResultsScreen({
 
   const { preferenceProfile, hasPersonalisation } = recommendations;
   const totalRecs = displayRecs.length;
-  const revealMessage = generateRevealMessage(preferenceProfile);
+  const headline = tasteHeadline(preferenceProfile);
+  const tagline = preferenceProfile?.tagline?.trim();
+
+  const mainstreamThumbs = displayRecs.filter((r) => r.pickedAs !== "indie");
+  const indieThumbs = displayRecs.filter((r) => r.pickedAs === "indie");
 
   const handleNext = () => {
     if (currentIndex < totalRecs - 1) {
@@ -472,18 +444,6 @@ export function ResultsScreen({
       : `https://image.tmdb.org/t/p/w500${currentRec.movie.posterPath}`
     : null;
 
-  // Generate a condensed taste summary for mobile that combines visual style and mood
-  const mobileTasteSummary = (() => {
-    const parts: string[] = [];
-    const pf = preferenceProfile ?? {};
-    if (pf.visualStyle) parts.push(pf.visualStyle);
-    if (pf.mood && pf.mood !== pf.visualStyle) parts.push(pf.mood);
-    if (parts.length === 0 && (pf.topGenres?.length ?? 0) > 0) {
-      return `You're drawn to ${(pf.topGenres ?? []).slice(0, 2).join(" and ")} films.`;
-    }
-    return parts.join(" ");
-  })();
-
   const primaryProvider = watchProviders?.providers?.find(p => p.type === "subscription") ?? watchProviders?.providers?.[0];
   const watchNowLabel = primaryProvider
     ? `Watch now on ${primaryProvider.name}`
@@ -491,14 +451,14 @@ export function ResultsScreen({
 
   return (
     <div className="flex flex-col items-center gap-1 md:gap-2 w-full max-w-7xl mx-auto px-2 md:px-4 pt-4 md:pt-2 pb-4 md:pb-6">
-      {/* Taste reveal blurb */}
-      <div className="text-center max-w-2xl px-3">
-        <h2 className="text-lg md:text-xl font-bold text-white">
-          {revealMessage}
+      {/* Taste reveal — short LLM headline + optional tagline */}
+      <div className="text-center max-w-xl px-3">
+        <h2 className="text-base md:text-lg font-semibold text-white leading-snug">
+          {headline}
         </h2>
-        {preferenceProfile?.visualStyle && (
-          <p className="text-xs md:text-sm text-white/50 mt-1" data-testid="taste-profile">
-            {preferenceProfile.visualStyle}
+        {tagline && (
+          <p className="text-xs md:text-sm text-white/55 mt-1.5" data-testid="taste-profile">
+            {tagline}
           </p>
         )}
       </div>
@@ -648,8 +608,8 @@ export function ResultsScreen({
                 {watchNowLabel}
               </Button>
             </div>
-            <p className="text-foreground/70 text-sm leading-relaxed mt-2" data-testid="text-movie-reason">
-              <span className="font-medium text-foreground/90">Why this made your list:</span> {currentRec.reason}
+            <p className="text-foreground/75 text-sm leading-snug mt-2 max-w-prose" data-testid="text-movie-reason">
+              {currentRec.reason}
             </p>
           </div>
         </div>
@@ -743,40 +703,61 @@ export function ResultsScreen({
         </Button>
       </div>
 
-      {/* 6 posters - below Save/Seen/Share */}
-      <div className="flex gap-2 w-full overflow-x-auto pb-2 justify-center flex-wrap">
-        {displayRecs.map((rec, i) => {
-          const thumbUrl = rec.movie.posterPath
-            ? rec.movie.posterPath.startsWith("http")
-              ? rec.movie.posterPath
-              : `https://image.tmdb.org/t/p/w154${rec.movie.posterPath}`
-            : null;
-          const isActive = i === currentIndex;
-          return (
-            <div key={rec.movie.tmdbId} className="flex flex-col items-center gap-1 shrink-0">
-              <span className={`text-base font-bold min-w-[1.5rem] text-center ${isActive ? "text-primary" : "text-foreground/80"}`}>
-                {i + 1}
-              </span>
-              <button
-                onClick={() => { setCurrentIndex(i); setAutoPlayTrailer(true); }}
-                className={`w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg overflow-hidden border-2 transition-all ${
-                  isActive
-                    ? "border-primary ring-2 ring-primary/30 scale-105"
-                    : "border-transparent opacity-70 hover:opacity-100"
-                }`}
-                data-testid={`thumbnail-${i}`}
-              >
-                {thumbUrl ? (
-                  <img src={thumbUrl} alt={rec.movie.title} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full bg-muted flex items-center justify-center">
-                    <Film className="w-5 h-5 text-muted-foreground" />
-                  </div>
-                )}
-              </button>
+      {/* Two rows: mainstream then indie */}
+      <div className="flex flex-col gap-4 w-full max-w-4xl mx-auto pb-2">
+        {[
+          { label: "Well-known picks", recs: mainstreamThumbs.length ? mainstreamThumbs : displayRecs.slice(0, 5) },
+          { label: "Acclaimed / under-the-radar", recs: indieThumbs.length ? indieThumbs : displayRecs.slice(5) },
+        ].map(({ label, recs }) =>
+          recs.length === 0 ? null : (
+            <div key={label}>
+              <p className="text-[11px] md:text-xs uppercase tracking-wider text-white/40 text-center mb-2">{label}</p>
+              <div className="flex gap-2 w-full overflow-x-auto justify-center flex-wrap">
+                {recs.map((rec) => {
+                  const i = displayRecs.indexOf(rec);
+                  const thumbUrl = rec.movie.posterPath
+                    ? rec.movie.posterPath.startsWith("http")
+                      ? rec.movie.posterPath
+                      : `https://image.tmdb.org/t/p/w154${rec.movie.posterPath}`
+                    : null;
+                  const isActive = i === currentIndex;
+                  return (
+                    <div key={rec.movie.tmdbId} className="flex flex-col items-center gap-1 shrink-0">
+                      <span
+                        className={`text-sm font-bold min-w-[1.25rem] text-center ${
+                          isActive ? "text-primary" : "text-foreground/80"
+                        }`}
+                      >
+                        {i + 1}
+                      </span>
+                      <button
+                        onClick={() => {
+                          setCurrentIndex(i);
+                          setAutoPlayTrailer(true);
+                        }}
+                        className={`w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg overflow-hidden border-2 transition-all ${
+                          isActive
+                            ? "border-primary ring-2 ring-primary/30 scale-105"
+                            : "border-transparent opacity-70 hover:opacity-100"
+                        }`}
+                        data-testid={`thumbnail-${i}`}
+                        type="button"
+                      >
+                        {thumbUrl ? (
+                          <img src={thumbUrl} alt={rec.movie.title} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full bg-muted flex items-center justify-center">
+                            <Film className="w-5 h-5 text-muted-foreground" />
+                          </div>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          );
-        })}
+          )
+        )}
       </div>
 
       {/* Watch Providers Dialog */}

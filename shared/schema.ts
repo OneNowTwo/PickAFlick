@@ -93,9 +93,13 @@ export const insertWatchlistSchema = createInsertSchema(watchlist).omit({ id: tr
 export type InsertWatchlistItem = z.infer<typeof insertWatchlistSchema>;
 export type WatchlistItem = typeof watchlist.$inferSelect;
 
-/** Post–A/B recommendation path — controls LLM + ranking */
+/** Legacy lane enum (older clients / migrations) */
 export const recommendationLaneSchema = z.enum(["mainstream", "movie_buff", "left_field"]);
 export type RecommendationLane = z.infer<typeof recommendationLaneSchema>;
+
+/** Which row a pick belongs to — dual-track recommendations */
+export const recommendationTrackSchema = z.enum(["mainstream", "indie"]);
+export type RecommendationTrack = z.infer<typeof recommendationTrackSchema>;
 
 // Movie schema with extended metadata for preference learning
 export const movieSchema = z.object({
@@ -191,22 +195,32 @@ export const recommendationSchema = z.object({
   trailerUrls: z.array(z.string()).optional(), // Multiple trailer URLs for fallback
   reason: z.string(),
   wildcardBadge: z.string().optional(), // Set on personalised wildcard picks
+  /** Dual-row flow: mainstream vs acclaimed lesser-known row */
+  pickedAs: recommendationTrackSchema.optional(),
 });
 
 export type Recommendation = z.infer<typeof recommendationSchema>;
 
 // API response for final recommendations
 export const recommendationsResponseSchema = z.object({
+  /** Flat list: mainstream row first, then indie row (carousel order) */
   recommendations: z.array(recommendationSchema),
+  mainstreamRecommendations: z.array(recommendationSchema).optional(),
+  indieRecommendations: z.array(recommendationSchema).optional(),
   preferenceProfile: z.object({
     topGenres: z.array(z.string()),
     themes: z.array(z.string()),
     preferredEras: z.array(z.string()).optional(),
     visualStyle: z.string().optional(),
     mood: z.string().optional(),
+    /** Short LLM headline above results (replaces long stitched genre blurbs) */
+    headline: z.string().optional(),
+    /** One short supporting line */
+    tagline: z.string().optional(),
   }),
   // True when results have been re-ranked using the user's full vote history
   hasPersonalisation: z.boolean().optional(),
+  genreProfileSize: z.number().optional(),
 });
 
 export type RecommendationsResponse = z.infer<typeof recommendationsResponseSchema>;
