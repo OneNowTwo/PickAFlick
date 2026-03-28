@@ -212,8 +212,8 @@ REJECTED (what I passed on):
 ${rejectsBlock}
 
 Return JSON only:
-{"topGenres":["",""],"themes":[""],"preferredEras":[""],"visualStyle":"short","mood":"short","recommendations":[
-{"title":"Film Title","year":2000,"reason":"Short specific explanation."},
+{"topGenres":["",""],"themes":[""],"preferredEras":[""],"visualStyle":"one sentence about their visual/screen taste using you/your","mood":"one sentence about their emotional register using you/your","recommendations":[
+{"title":"Film Title","year":2000,"reason":"1-2 sentences: name one of their chosen films, explain what connects this pick to their taste (tone, pacing, texture, genre) — not generic praise."},
 {"title":"Film Title","year":2000,"reason":""},
 {"title":"Film Title","year":2000,"reason":""},
 {"title":"Film Title","year":2000,"reason":""},

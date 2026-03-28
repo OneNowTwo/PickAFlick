@@ -491,15 +491,17 @@ export function ResultsScreen({
 
   return (
     <div className="flex flex-col items-center gap-1 md:gap-2 w-full max-w-7xl mx-auto px-2 md:px-4 pt-4 md:pt-2 pb-4 md:pb-6">
-      {/* Section label */}
-      <h2 className="text-lg md:text-xl font-bold text-white w-full text-center">
-        What you chose — and what won — defines this.
-      </h2>
-
-      {/* Dynamic taste line — changes per card */}
-      <p className="text-xs md:text-sm text-white/50 text-center -mt-1 max-w-xl px-2" data-testid="taste-profile">
-        {preferenceProfile?.visualStyle || preferenceProfile?.mood || "Matched to your picks."}
-      </p>
+      {/* Taste reveal blurb */}
+      <div className="text-center max-w-2xl px-3">
+        <h2 className="text-lg md:text-xl font-bold text-white">
+          {revealMessage}
+        </h2>
+        {preferenceProfile?.visualStyle && (
+          <p className="text-xs md:text-sm text-white/50 mt-1" data-testid="taste-profile">
+            {preferenceProfile.visualStyle}
+          </p>
+        )}
+      </div>
 
       {/* Personalisation indicator — only visible for logged-in users with history */}
       {hasPersonalisation && (
