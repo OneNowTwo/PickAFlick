@@ -119,46 +119,46 @@ export async function generateRecommendations(
     ? `\nStarting mood (supporting only): the user hinted at these genres before the funnel: ${initialGenreFilters.join(", ")}. The A/B evidence below is the primary signal — use the funnel profile first.\n`
     : "";
 
-  const prompt = `You are a sharp film curator. The user finished a 7-step head-to-head funnel — NOT seven unrelated tests. Think of it as ONE narrowing path: early rounds explore contrast; later rounds (marked 🔥) matter more. Your job is to infer ONE unified "tonight" profile, then pick 7 films that feel like a single coherent shortlist from one movie buff who knows their taste — not seven separate answers to seven separate questions.${filterContext}
+  const prompt = `You are a sharp film curator. The user finished a 7-step funnel: early rounds explore contrast; later rounds (🔥) matter more. Infer ONE clear taste profile from the whole run — then recommend 7 films that **vary** within that profile (different subgenres, eras, pacing, "vibes") so the list feels like a rich menu, not seven copies of the same film.${filterContext}
 
 ${recentExclusions.length > 0 ? `=== DO NOT RECOMMEND — already shown in recent sessions ===
 ${recentExclusions.map(t => `• ${t}`).join("\n")}
 
 ` : ""}Never recommend these (their own picks): ${chosenTitles}
 
-=== EVIDENCE — what they chose (rounds 5–7 🔥 weighted more) ===
+=== EVIDENCE — what they chose (🔥 rounds weighted more) ===
 ${movieDescriptions.map((m) => `Round ${m.round}${m.weight > 1 ? " 🔥" : ""}: "${m.title}" (${m.year}) — ${m.primaryGenre} | Dir: ${m.director} | Cast: ${m.cast.length > 0 ? m.cast.join(", ") : "Unknown"}
   Keywords: ${m.keywords.length > 0 ? m.keywords.join(", ") : "N/A"}
   Synopsis: ${m.overview || "N/A"}`).join("\n\n")}
 
-=== EVIDENCE — what they rejected (negative signal; use to sharpen the profile) ===
+=== EVIDENCE — what they rejected ===
 ${rejectionContext.length > 0 ? rejectionContext.map((m) => `Round ${m.round}: rejected "${m.title}" (${m.year}, ${m.primaryGenre}) vs chose ${m.lostTo}`).join("\n\n") : "No rejection data"}
 
-=== STEP 1 — UNIFIED PROFILE (do this mentally before picking) ===
-Synthesize ONE profile for "what they want tonight": tone, pacing, era band, how "prestige" vs mainstream, subgenre lean, and what rejections ruled OUT. Rounds 🔥 pull the profile more than early rounds. Do not treat round 2 as "give them a comedy" unless the whole funnel says comedy is central.
+=== PROFILE ===
+Summarise what they like and what rejections ruled out. 🔥 rounds pull more weight.
 
-=== STEP 2 — PICK 7 FILMS AS ONE SET ===
-- Coherence: every pick should feel like it belongs to the SAME evening and the SAME emotional register as the profile. Avoid "quota filling" (e.g. forcing one comedy, one thriller) unless the profile genuinely spans that.
-- Anti-cluster: do NOT default to the same overused "prestige slow-burn psychological thriller" canon (same few critically famous titles that models repeat). Only lean that way if their choices clearly point there. If their profile is broader, show breadth in subgenre and era while staying tonally unified.
-- Recognisability: titles must be widely known to a general Australian audience — household-name level or obvious classics. If older, pick famous, highly-rated classics — not obscure festival picks.
-- Quality: IMDb ~6.5+ territory, broadly popular; English-language or internationally famous; findable in Australia; no micro-budget or ultra-obscure low-vote titles.
-- Constraints: no two films from the same director or same franchise. Prefer a natural spread of release years when it fits the profile — do NOT force "one recent + one old" if it would feel random vs their funnel.
+=== HOW TO PICK 7 (important) ===
+- **Breadth inside taste:** The 7 films must NOT all sit in one tiny niche (e.g. only slow prestige psychodramas). Spread across **different subgenres and eras** that still honestly match their profile — e.g. mix of thriller, drama, action, comedy *only if* their choices support that range; otherwise still vary pacing, era, and setting so nothing feels repetitive.
+- **Recognisability:** Household names or famous classics — especially for older picks. Nothing fringe or festival-obscure.
+- **Avoid model default spam:** Don't output the same handful of interchangeable "dark prestige" titles everyone recommends. Rotate — different directors, different franchises, different decades where possible.
+- **Quality:** IMDb ~6.5+ broadly popular; English or internationally famous; findable in Australia.
+- **Hard rules:** No two from the same director or same franchise. Aim for a **visible spread of release years** (include at least one from roughly the last 3–4 years and at least one pre-2010 when it fits — skip only if their profile is hyper-recent or hyper-classic).
 
 === OUTPUT — exact JSON only ===
 {
-  "topGenres": ["3 genres that summarise the UNIFIED profile, not one genre per round"],
-  "themes": ["2-4 thematic through-lines for tonight"],
-  "preferredEras": ["decade bands that fit the unified profile"],
-  "visualStyle": "One sentence, 'you/your', how their choices look and feel on screen (texture, pacing, colour/lighting in plain words if keywords support it)",
-  "mood": "One sentence, 'you/your', the emotional register for tonight",
+  "topGenres": ["up to 3 genres spanning their taste, not a single label repeated"],
+  "themes": ["2-4 themes"],
+  "preferredEras": ["decade bands they lean toward"],
+  "visualStyle": "One sentence, 'you/your', screen feel",
+  "mood": "One sentence, 'you/your', emotional register",
   "recommendations": [
-    {"title": "Film Title 1", "year": 2022, "reason": "1-2 sentences: tie to their unified profile; name 1-2 of their actual picks; same register as the set", "category": "flexible"},
-    {"title": "Film Title 2", "year": 1999, "reason": "same", "category": "flexible"},
-    {"title": "Film Title 3", "year": 2016, "reason": "same", "category": "flexible"},
-    {"title": "Film Title 4", "year": 2014, "reason": "same", "category": "flexible"},
-    {"title": "Film Title 5", "year": 2019, "reason": "same", "category": "flexible"},
-    {"title": "Film Title 6", "year": 2011, "reason": "same", "category": "flexible"},
-    {"title": "Film Title 7", "year": 2008, "reason": "same", "category": "flexible"}
+    {"title": "Film Title 1", "year": 2022, "reason": "1-2 sentences: why it fits; name at least one of their chosen picks; say what *different* angle this adds vs a generic pick", "category": "flexible"},
+    {"title": "Film Title 2", "year": 1999, "reason": "same idea", "category": "flexible"},
+    {"title": "Film Title 3", "year": 2016, "reason": "same idea", "category": "flexible"},
+    {"title": "Film Title 4", "year": 2014, "reason": "same idea", "category": "flexible"},
+    {"title": "Film Title 5", "year": 2019, "reason": "same idea", "category": "flexible"},
+    {"title": "Film Title 6", "year": 2011, "reason": "same idea", "category": "flexible"},
+    {"title": "Film Title 7", "year": 2008, "reason": "same idea", "category": "flexible"}
   ]
 }
 
@@ -170,7 +170,7 @@ Return exactly 7 recommendations. Each reason must name at least one of their ac
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
       max_tokens: 2200,
-      temperature: 0.82,
+      temperature: 0.88,
     });
 
     const content = response.choices[0]?.message?.content || "{}";
