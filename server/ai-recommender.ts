@@ -115,77 +115,62 @@ export async function generateRecommendations(
   const chosenTitles = chosenMovies.map(m => `"${m.title}"`).join(", ");
   const recentExclusions = recentlyRecommendedTitles.slice(-50);
 
-  const currentYear = new Date().getFullYear();
-  const recentThreshold = currentYear - 3;
-
   const filterContext = initialGenreFilters.length > 0
-    ? `\nThe user selected these genres as their starting mood: ${initialGenreFilters.join(", ")}. Use this as supporting context — it confirms direction but the A/B data below is the primary signal.\n`
+    ? `\nStarting mood (supporting only): the user hinted at these genres before the funnel: ${initialGenreFilters.join(", ")}. The A/B evidence below is the primary signal — use the funnel profile first.\n`
     : "";
 
-  const prompt = `You are an expert film recommender. A user just completed a head-to-head movie picker — 7 choices, 7 rejections. Use the CONTRAST between what they chose vs rejected to identify their exact taste, then recommend films that fit that specific profile.${filterContext}
+  const prompt = `You are a sharp film curator. The user finished a 7-step head-to-head funnel — NOT seven unrelated tests. Think of it as ONE narrowing path: early rounds explore contrast; later rounds (marked 🔥) matter more. Your job is to infer ONE unified "tonight" profile, then pick 7 films that feel like a single coherent shortlist from one movie buff who knows their taste — not seven separate answers to seven separate questions.${filterContext}
 
 ${recentExclusions.length > 0 ? `=== DO NOT RECOMMEND — already shown in recent sessions ===
 ${recentExclusions.map(t => `• ${t}`).join("\n")}
 
-` : ""}User's own picks (exclude these too): ${chosenTitles}
+` : ""}Never recommend these (their own picks): ${chosenTitles}
 
-=== WHAT THEY CHOSE ===
-${movieDescriptions.map((m) => `Round ${m.round}${m.weight > 1 ? " 🔥 (higher weight)" : ""}: "${m.title}" (${m.year}) — ${m.primaryGenre} | Dir: ${m.director} | Cast: ${m.cast.length > 0 ? m.cast.join(", ") : "Unknown"}
-  Themes: ${m.keywords.length > 0 ? m.keywords.join(", ") : "N/A"}
+=== EVIDENCE — what they chose (rounds 5–7 🔥 weighted more) ===
+${movieDescriptions.map((m) => `Round ${m.round}${m.weight > 1 ? " 🔥" : ""}: "${m.title}" (${m.year}) — ${m.primaryGenre} | Dir: ${m.director} | Cast: ${m.cast.length > 0 ? m.cast.join(", ") : "Unknown"}
+  Keywords: ${m.keywords.length > 0 ? m.keywords.join(", ") : "N/A"}
   Synopsis: ${m.overview || "N/A"}`).join("\n\n")}
 
-=== WHAT THEY REJECTED (equally important signal) ===
-${rejectionContext.length > 0 ? rejectionContext.map((m) => `Round ${m.round}: REJECTED "${m.title}" (${m.year}, ${m.primaryGenre}, dir. ${m.director})
-  → Chose instead: ${m.lostTo}
-  → Signal: they passed on ${m.primaryGenre}/${m.director}'s style`).join("\n\n") : "No rejection data"}
+=== EVIDENCE — what they rejected (negative signal; use to sharpen the profile) ===
+${rejectionContext.length > 0 ? rejectionContext.map((m) => `Round ${m.round}: rejected "${m.title}" (${m.year}, ${m.primaryGenre}) vs chose ${m.lostTo}`).join("\n\n") : "No rejection data"}
 
-=== TASTE ANALYSIS ===
-Read BOTH lists. For each round the contrast between chosen vs rejected tells you something specific about their preferences — genre, tone, era, pacing, style, director sensibility. Look for the PATTERN across all 7 rounds. Rounds 5-7 (marked 🔥) carry more weight as their taste crystallised.
+=== STEP 1 — UNIFIED PROFILE (do this mentally before picking) ===
+Synthesize ONE profile for "what they want tonight": tone, pacing, era band, how "prestige" vs mainstream, subgenre lean, and what rejections ruled OUT. Rounds 🔥 pull the profile more than early rounds. Do not treat round 2 as "give them a comedy" unless the whole funnel says comedy is central.
 
-Key dimensions to analyse:
-- Genre & subgenre: what TYPE of films did they gravitate toward?
-- Era: are they drawn to a specific decade or aesthetic?  
-- Tone: dark/heavy vs light/fun, or somewhere specific in between?
-- Pacing: slow-burn vs kinetic, dialogue-driven vs visual?
-- Director/craft sensibility: what filmmaking approach did they consistently choose?
-- What did rejections ELIMINATE? Each rejection is a negative filter.
+=== STEP 2 — PICK 7 FILMS AS ONE SET ===
+- Coherence: every pick should feel like it belongs to the SAME evening and the SAME emotional register as the profile. Avoid "quota filling" (e.g. forcing one comedy, one thriller) unless the profile genuinely spans that.
+- Anti-cluster: do NOT default to the same overused "prestige slow-burn psychological thriller" canon (same few critically famous titles that models repeat). Only lean that way if their choices clearly point there. If their profile is broader, show breadth in subgenre and era while staying tonally unified.
+- Recognisability: titles must be widely known to a general Australian audience — household-name level or obvious classics. If older, pick famous, highly-rated classics — not obscure festival picks.
+- Quality: IMDb ~6.5+ territory, broadly popular; English-language or internationally famous; findable in Australia; no micro-budget or ultra-obscure low-vote titles.
+- Constraints: no two films from the same director or same franchise. Prefer a natural spread of release years when it fits the profile — do NOT force "one recent + one old" if it would feel random vs their funnel.
 
-=== RECOMMENDATION RULES ===
-1. Every recommendation must match the taste pattern derived from their specific A/B results
-2. Ask yourself: could this same film be recommended to someone with the OPPOSITE A/B results? If yes, it's not specific enough
-3. Quality floor — every pick must pass: IMDb 6.5+ AND RT audience score 60%+ AND be recognisable/findable in Australia
-4. English language or internationally well-known film only
-5. No direct-to-streaming low-budget content, no films under 10,000 IMDb votes
-6. No two picks from the same director or franchise
-7. Natural variety across eras — at least one from last 3 years (${recentThreshold}–${currentYear}), at least one pre-2010
-
-=== OUTPUT — respond in this exact JSON format ===
+=== OUTPUT — exact JSON only ===
 {
-  "topGenres": ["genre1", "genre2", "genre3"],
-  "themes": ["theme1", "theme2", "theme3"],
-  "preferredEras": ["era1", "era2"],
-  "visualStyle": "One sentence addressed to the user using 'you'/'your' about their cinematic taste, referencing 1-2 specific films they chose. Example: 'You gravitate toward...'",
-  "mood": "One sentence addressed to the user using 'you'/'your' about their emotional/tonal preferences, referencing 1-2 specific picks. Example: 'You're in the mood for...'",
+  "topGenres": ["3 genres that summarise the UNIFIED profile, not one genre per round"],
+  "themes": ["2-4 thematic through-lines for tonight"],
+  "preferredEras": ["decade bands that fit the unified profile"],
+  "visualStyle": "One sentence, 'you/your', how their choices look and feel on screen (texture, pacing, colour/lighting in plain words if keywords support it)",
+  "mood": "One sentence, 'you/your', the emotional register for tonight",
   "recommendations": [
-    {"title": "Film Title 1", "year": 2022, "reason": "Explain why this matches their specific A/B choices — reference their actual picks by name, explain the tonal/stylistic connection", "category": "recent"},
-    {"title": "Film Title 2", "year": 1999, "reason": "Explain why this matches their specific A/B choices — reference their actual picks by name, explain the tonal/stylistic connection", "category": "classic"},
-    {"title": "Film Title 3", "year": 2016, "reason": "Explain why this matches their specific A/B choices — reference their actual picks by name, explain the tonal/stylistic connection", "category": "flexible"},
-    {"title": "Film Title 4", "year": 2014, "reason": "Explain why this matches their specific A/B choices — reference their actual picks by name, explain the tonal/stylistic connection", "category": "flexible"},
-    {"title": "Film Title 5", "year": 2019, "reason": "Explain why this matches their specific A/B choices — reference their actual picks by name, explain the tonal/stylistic connection", "category": "flexible"},
-    {"title": "Film Title 6", "year": 2011, "reason": "Explain why this matches their specific A/B choices — reference their actual picks by name, explain the tonal/stylistic connection", "category": "flexible"},
-    {"title": "Film Title 7", "year": 2008, "reason": "Explain why this matches their specific A/B choices — reference their actual picks by name, explain the tonal/stylistic connection", "category": "flexible"}
+    {"title": "Film Title 1", "year": 2022, "reason": "1-2 sentences: tie to their unified profile; name 1-2 of their actual picks; same register as the set", "category": "flexible"},
+    {"title": "Film Title 2", "year": 1999, "reason": "same", "category": "flexible"},
+    {"title": "Film Title 3", "year": 2016, "reason": "same", "category": "flexible"},
+    {"title": "Film Title 4", "year": 2014, "reason": "same", "category": "flexible"},
+    {"title": "Film Title 5", "year": 2019, "reason": "same", "category": "flexible"},
+    {"title": "Film Title 6", "year": 2011, "reason": "same", "category": "flexible"},
+    {"title": "Film Title 7", "year": 2008, "reason": "same", "category": "flexible"}
   ]
 }
 
-Return exactly 7 recommendations. Every reason must reference their actual film picks by name.`;
+Return exactly 7 recommendations. Each reason must name at least one of their actual chosen films.`;
 
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
-      max_tokens: 1800,
-      temperature: 0.88,
+      max_tokens: 2200,
+      temperature: 0.82,
     });
 
     const content = response.choices[0]?.message?.content || "{}";
@@ -405,40 +390,31 @@ export async function generateReplacementRecommendation(
   const currentYear = new Date().getFullYear();
   const recentThreshold = currentYear - 3;
 
-  const categories = ["recent", "underseen", "classic", "flexible"];
+  const categories = ["recent", "classic", "flexible"] as const;
   const targetCategory = categories[Math.floor(Math.random() * categories.length)];
 
   let categoryInstruction = "";
   switch (targetCategory) {
     case "recent":
-      categoryInstruction = `Pick a RECENT film from ${recentThreshold}-${currentYear} matching their taste.`;
-      break;
-    case "underseen":
-      categoryInstruction = `Pick an UNDERSEEN GEM — critically acclaimed but lesser-known.`;
+      categoryInstruction = `Pick a RECENT, widely recognisable film (${recentThreshold}–${currentYear}) that fits their unified taste — not obscure.`;
       break;
     case "classic":
-      categoryInstruction = `Pick a CLASSIC from before 2010 that connects thematically.`;
+      categoryInstruction = `Pick a famous, highly-rated classic (pre-2010) that fits the same emotional register as their picks.`;
       break;
     default:
-      categoryInstruction = `Pick a film from any era that genuinely fits their taste profile.`;
+      categoryInstruction = `Pick one film from any era that fits their overall funnel profile — must be recognisable to a general audience (no obscure festival picks).`;
   }
 
-  const prompt = `You're a passionate film expert helping someone find something new to watch. You know their taste from their picks:
+  const prompt = `You're curating ONE replacement pick for someone who already has recommendations. Infer a single coherent taste profile from their funnel (not round-by-round quotas).
 
+Their picks:
 ${movieDescriptions.map((m) => `Round ${m.round}${m.weight > 1 ? " 🔥" : ""}: "${m.title}" (${m.year}) — Director: ${m.director}, Cast: ${m.cast.join(", ") || "Unknown"}, Themes: ${m.keywords.join(", ") || "N/A"}`).join("\n")}${rejectionHints}
 
-They've already seen or dismissed ${excludeTmdbIds.length} suggestions. Dig DEEPER.
+They've already seen or dismissed ${excludeTmdbIds.length} suggestions — avoid repeating that list.
 
 ${categoryInstruction}
 
-Think multi-dimensionally:
-- Cinematic texture and feel (pacing, visual style, score, emotional register)
-- Director sensibility or kindred vision
-- Thematic resonance beyond surface genre
-- Era matching and tonal kinship
-
-Make an unexpected but precisely right connection. Reference specific films from their picks in your reason.
-Well-rated only (IMDb 7.0+). [Seed: ${randomSeed}]
+Rules: stay tonally consistent with their choices; prefer household-name films; IMDb 7.0+; well-known in English-speaking markets. [Seed: ${randomSeed}]
 
 Respond in JSON:
 {
