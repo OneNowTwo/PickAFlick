@@ -146,7 +146,7 @@ async function callRecommendationsLLM(
     model: RECOMMENDATIONS_MODEL,
     messages,
     response_format: { type: "json_object" },
-    max_tokens: 1200,
+    max_tokens: 1600,
     temperature,
   });
 
@@ -187,7 +187,7 @@ export async function generateRecommendations(
 
   const prompt = `These are the results of my A/B testing funnel. Rounds marked * matter more.
 
-Based on those selections, recommend 5 movies I am most likely in the mood for and would genuinely enjoy right now.
+Based on those selections, recommend 8 movies I am most likely in the mood for and would genuinely enjoy right now.
 
 You should infer my taste from the choices and analyse:
 title, year, primary genre, director, cast, keywords, synopsis, subgenre, era, pacing, tone, and overall vibe.
@@ -195,7 +195,7 @@ title, year, primary genre, director, cast, keywords, synopsis, subgenre, era, p
 ${lanePromptBlock(lane)}
 
 Constraints:
-- exactly 5 films
+- exactly 8 films
 - at most ${MAX_PRE_1970_FILMS} film released before 1970
 - among 1970+ picks, spread across decades
 - include at least one 2020+ film when it fits naturally
@@ -217,6 +217,9 @@ Return JSON only:
 {"title":"Film Title","year":2000,"reason":""},
 {"title":"Film Title","year":2000,"reason":""},
 {"title":"Film Title","year":2000,"reason":""},
+{"title":"Film Title","year":2000,"reason":""},
+{"title":"Film Title","year":2000,"reason":""},
+{"title":"Film Title","year":2000,"reason":""},
 {"title":"Film Title","year":2000,"reason":""}
 ]}`;
 
@@ -233,7 +236,7 @@ Return JSON only:
     const recentHits = countRecentCollisions(analysis.recommendations, recentTitlesSet);
     if (pre1970Count > MAX_PRE_1970_FILMS || recentHits >= 4) {
       console.warn(`[ai-recommender] Retrying: ${recentHits} collisions, ${pre1970Count} pre-1970`);
-      const fixPrompt = `${prompt}\n\nRegenerate: max ${MAX_PRE_1970_FILMS} pre-1970; avoid recent repeats; 5 new titles; JSON only.`;
+      const fixPrompt = `${prompt}\n\nRegenerate: max ${MAX_PRE_1970_FILMS} pre-1970; avoid recent repeats; 8 new titles; JSON only.`;
       analysis = await callRecommendationsLLM(fixPrompt, llmTemp, systemMsg);
     }
 
@@ -243,7 +246,7 @@ Return JSON only:
 
     const chosenTmdbIds = new Set(chosenMovies.map((m) => m.tmdbId));
 
-    const recPromises = analysis.recommendations.slice(0, 5).map(async (rec) => {
+    const recPromises = analysis.recommendations.slice(0, 8).map(async (rec) => {
       try {
         const searchResult = await searchMovieByTitle(rec.title, rec.year);
         if (!searchResult || chosenTmdbIds.has(searchResult.id)) return null;
@@ -274,7 +277,7 @@ Return JSON only:
     const freshRecs = resolvedRecs.filter(
       (r) => !recentTitlesSet.has(normalizeTitleKey(r.movie.title))
     );
-    const recommendations = (freshRecs.length >= 3 ? freshRecs : resolvedRecs).slice(0, 5);
+    const recommendations = (freshRecs.length >= 5 ? freshRecs : resolvedRecs).slice(0, 5);
 
     recordRecommendedTitles(resolvedRecs.map((r) => r.movie.title));
 
