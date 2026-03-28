@@ -5,17 +5,17 @@ const LANES: { id: RecommendationLane; label: string; hint: string }[] = [
   {
     id: "mainstream",
     label: "Mainstream",
-    hint: "Polished, accessible picks — easy to love tonight.",
+    hint: "First-pass accessible picks — the default “good tonight” row.",
   },
   {
     id: "movie_buff",
     label: "Movie Buff",
-    hint: "More curated, less obvious — stronger film-nerd alignment.",
+    hint: "Not the same cloth — less obvious & more curated, still your A/B taste.",
   },
   {
     id: "left_field",
     label: "Left Field",
-    hint: "Surprising and exploratory — still anchored in your picks.",
+    hint: "Go deep — international & arthouse energy, still your funnel.",
   },
 ];
 

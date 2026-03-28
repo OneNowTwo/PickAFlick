@@ -376,7 +376,7 @@ export async function registerRoutes(
         try {
           const profile = await buildGenreProfile(req.user.id);
           if (profile.length > 0) {
-            finalRecs = rankRecommendations(aiResult.recommendations, profile, lane);
+            finalRecs = rankRecommendations(aiResult.recommendations, profile);
             hasPersonalisation = true;
             genreProfileSize = profile.length;
             console.log(
