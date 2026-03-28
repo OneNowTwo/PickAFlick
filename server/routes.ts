@@ -21,21 +21,29 @@ const NO_CACHE_HEADERS = {
 // Store movie pairs per session to ensure consistency
 const sessionPairs = new Map<string, { round: number; leftMovie: any; rightMovie: any }>();
 
-/** When the funnel completes, pre-generate all 3 lanes in parallel so lane choice is often instant. */
+/**
+ * Pre-generate all 3 lanes in parallel.
+ * Called twice: once after round 5 (partial warm-up) and again after round 7
+ * (final, full-data). The round-7 run overwrites the earlier cache so the
+ * user always gets results based on all 7 choices when possible.
+ */
 const recommendationPrefetchBySession = new Map<
   string,
   Record<RecommendationLane, Promise<RecommendationsResponse>>
 >();
 
-function startRecommendationPrefetches(sessionId: string): void {
-  if (recommendationPrefetchBySession.has(sessionId)) return;
+const PREFETCH_START_ROUND = 5;
+
+function startRecommendationPrefetches(sessionId: string, force = false): void {
+  if (!force && recommendationPrefetchBySession.has(sessionId)) return;
   const chosenMovies = sessionStorage.getChosenMovies(sessionId);
   const rejectedMovies = sessionStorage.getRejectedMovies(sessionId);
   const filters = sessionStorage.getSessionFilters(sessionId);
   const genreFilters = filters?.genres || [];
+  const tag = `[prefetch-lane r${chosenMovies.length}]`;
   const run = (lane: RecommendationLane) =>
     generateRecommendations(chosenMovies, rejectedMovies, genreFilters, lane).catch((err) => {
-      console.error(`[prefetch-lane] ${lane} failed for ${sessionId}:`, err);
+      console.error(`${tag} ${lane} failed for ${sessionId}:`, err);
       throw err;
     });
   recommendationPrefetchBySession.set(sessionId, {
@@ -43,7 +51,7 @@ function startRecommendationPrefetches(sessionId: string): void {
     movie_buff: run("movie_buff"),
     left_field: run("left_field"),
   });
-  console.log(`[prefetch-lane] Started all 3 lanes for session ${sessionId}`);
+  console.log(`${tag} Started all 3 lanes for session ${sessionId}`);
 }
 
 export async function registerRoutes(
@@ -270,8 +278,14 @@ export async function registerRoutes(
             rightMovie: pair[1],
           });
         }
+
+        // After round 5, start an early warm-up prefetch with partial data
+        if (updatedSession.choices.length >= PREFETCH_START_ROUND) {
+          startRecommendationPrefetches(sessionId);
+        }
       } else {
-        startRecommendationPrefetches(sessionId);
+        // Session complete (round 7) — overwrite the early prefetch with full data
+        startRecommendationPrefetches(sessionId, true);
       }
 
       const response: ChoiceResponse = {

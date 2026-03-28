@@ -3,8 +3,6 @@ import { cn } from "@/lib/utils";
 
 const LANES: {
   id: RecommendationLane;
-  tag: string;
-  tagVariant: "muted" | "recommended" | "dark";
   title: string;
   description: string;
   recommended?: boolean;
@@ -12,18 +10,14 @@ const LANES: {
 }[] = [
   {
     id: "mainstream",
-    tag: "ENTRY LEVEL",
-    tagVariant: "muted",
     title: "MAINSTREAM",
     description:
-      "First-pass accessible picks — the default “good tonight” row. Perfect for effortless entertainment and popcorn classics.",
+      "First-pass accessible picks — the default \u201Cgood tonight\u201D row. Perfect for effortless entertainment and popcorn classics.",
     bgClass:
-      "bg-gradient-to-br from-slate-800/90 via-zinc-950/95 to-black bg-[length:100%_100%]",
+      "bg-gradient-to-br from-slate-800/90 via-zinc-950/95 to-black",
   },
   {
     id: "movie_buff",
-    tag: "RECOMMENDED",
-    tagVariant: "recommended",
     title: "MOVIE BUFF",
     description:
       "Not the same cloth — less obvious & more curated, still your A/B taste. For the viewer who knows their directors.",
@@ -33,8 +27,6 @@ const LANES: {
   },
   {
     id: "left_field",
-    tag: "AVANT-GARDE",
-    tagVariant: "dark",
     title: "LEFT FIELD",
     description:
       "Go deep — international & arthouse energy, still your funnel. Uncover obscure masterpieces and bold cinema.",
@@ -50,8 +42,8 @@ interface RecommendationLanePickerProps {
 
 export function RecommendationLanePicker({ sessionId, onSelect }: RecommendationLanePickerProps) {
   return (
-    <div className="w-full max-w-6xl mx-auto px-3 sm:px-4 py-8 md:py-14">
-      <header className="text-center mb-8 md:mb-12">
+    <div className="w-full max-w-5xl mx-auto px-3 sm:px-4 py-8 md:py-14">
+      <header className="text-center mb-7 md:mb-10">
         <h2 className="text-4xl sm:text-5xl md:text-6xl font-black uppercase tracking-wide text-white drop-shadow-sm">
           Pick your{" "}
           <span className="text-primary">lane.</span>
@@ -61,7 +53,7 @@ export function RecommendationLanePicker({ sessionId, onSelect }: Recommendation
         </p>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
         {LANES.map((lane) => (
           <button
             key={lane.id}
@@ -77,14 +69,15 @@ export function RecommendationLanePicker({ sessionId, onSelect }: Recommendation
             }}
             data-testid={`lane-${lane.id}`}
             className={cn(
-              "group relative flex flex-col min-h-[300px] md:min-h-[380px] rounded-2xl overflow-hidden text-left border transition-all duration-300",
+              "group relative flex flex-col rounded-2xl overflow-hidden text-left border transition-all duration-300 ease-out",
+              "hover:-translate-y-1.5 hover:shadow-xl hover:shadow-black/50 active:translate-y-0 active:shadow-lg",
               "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
               lane.recommended
-                ? "border-primary/80 shadow-[0_0_28px_rgba(220,38,38,0.28)] md:scale-[1.02] z-[1]"
-                : "border-white/10 hover:border-white/20 hover:shadow-lg hover:shadow-black/40"
+                ? "border-primary/70 hover:border-primary hover:shadow-[0_8px_32px_rgba(220,38,38,0.35)]"
+                : "border-white/10 hover:border-white/25"
             )}
           >
-            {/* Moody backdrop + readability */}
+            {/* Moody backdrop */}
             <div
               className={cn(
                 "absolute inset-0 transition-transform duration-500 group-hover:scale-105",
@@ -101,21 +94,7 @@ export function RecommendationLanePicker({ sessionId, onSelect }: Recommendation
             <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-black/20" />
 
             <div className="relative z-10 flex flex-col flex-1 p-5 md:p-6">
-              <span
-                className={cn(
-                  "inline-flex self-start px-2.5 py-1 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-widest border",
-                  lane.tagVariant === "recommended" &&
-                    "bg-primary/20 text-primary border-primary/40",
-                  lane.tagVariant === "muted" &&
-                    "bg-black/55 text-white/85 border-white/10",
-                  lane.tagVariant === "dark" &&
-                    "bg-black/55 text-white/75 border-white/10"
-                )}
-              >
-                {lane.tag}
-              </span>
-
-              <h3 className="mt-5 text-2xl md:text-3xl font-black uppercase tracking-[0.12em] text-white">
+              <h3 className="text-2xl md:text-3xl font-black uppercase tracking-[0.12em] text-white">
                 {lane.title}
               </h3>
 
@@ -125,7 +104,7 @@ export function RecommendationLanePicker({ sessionId, onSelect }: Recommendation
 
               <span
                 className={cn(
-                  "mt-6 w-full py-3 rounded-lg text-center text-xs font-bold uppercase tracking-[0.2em] transition-colors",
+                  "mt-5 w-full py-3 rounded-lg text-center text-xs font-bold uppercase tracking-[0.2em] transition-colors",
                   lane.recommended
                     ? "bg-primary text-primary-foreground shadow-md shadow-primary/30 group-hover:bg-primary/90"
                     : "bg-white/10 text-white border border-white/10 group-hover:bg-white/15"
