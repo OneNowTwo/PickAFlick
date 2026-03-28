@@ -9,15 +9,15 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
-/** Default is fast; set OPENAI_RECOMMENDATIONS_MODEL=gpt-4o for max quality if needed. */
-const RECOMMENDATIONS_MODEL = process.env.OPENAI_RECOMMENDATIONS_MODEL ?? "gpt-4o-mini";
+/** Default gpt-4o for lane compliance + quality. Override with OPENAI_RECOMMENDATIONS_MODEL if needed. */
+const RECOMMENDATIONS_MODEL = process.env.OPENAI_RECOMMENDATIONS_MODEL ?? "gpt-4o";
 
 // Cross-session memory — persisted to DB so server restarts don't wipe it
 const recentlyRecommendedTitles: string[] = [];
 /** Keep a long tail so repeat titles across sessions drop in probability */
 const MAX_RECENT_TRACKED = 400;
 /** How many recent titles to inject into the prompt (must be ≤ MAX_RECENT_TRACKED). Smaller = faster LLM; collision detection still uses the full in-memory list. */
-const RECENT_EXCLUSIONS_PROMPT_COUNT = 90;
+const RECENT_EXCLUSIONS_PROMPT_COUNT = 72;
 let recsLoaded = false;
 
 async function ensureRecsLoaded(): Promise<void> {
