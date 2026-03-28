@@ -7,17 +7,18 @@ import { storage } from "./storage";
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+  maxRetries: 1,
 });
 
-/** Default gpt-4o for lane compliance + quality. Override with OPENAI_RECOMMENDATIONS_MODEL if needed. */
-const RECOMMENDATIONS_MODEL = process.env.OPENAI_RECOMMENDATIONS_MODEL ?? "gpt-4o";
+/** gpt-4o-mini is much faster for structured JSON; set OPENAI_RECOMMENDATIONS_MODEL=gpt-4o if you need max quality. */
+const RECOMMENDATIONS_MODEL = process.env.OPENAI_RECOMMENDATIONS_MODEL ?? "gpt-4o-mini";
 
 // Cross-session memory — persisted to DB so server restarts don't wipe it
 const recentlyRecommendedTitles: string[] = [];
 /** Keep a long tail so repeat titles across sessions drop in probability */
 const MAX_RECENT_TRACKED = 400;
 /** How many recent titles to inject into the prompt (must be ≤ MAX_RECENT_TRACKED). Smaller = faster LLM; collision detection still uses the full in-memory list. */
-const RECENT_EXCLUSIONS_PROMPT_COUNT = 72;
+const RECENT_EXCLUSIONS_PROMPT_COUNT = 48;
 let recsLoaded = false;
 
 async function ensureRecsLoaded(): Promise<void> {
@@ -86,18 +87,14 @@ function countRecentCollisions(recs: { title: string }[], recentSet: Set<string>
   return recs.filter((r) => recentSet.has(normalizeTitleKey(r.title))).length;
 }
 
-/** Short system preamble so lane wins over contradictory user-message bullets (OpenAI habit). */
+/** Short system preamble — lane wins over any generic wording below. */
 function systemMessageForLane(lane: RecommendationLane): string {
   const labels: Record<RecommendationLane, string> = {
     mainstream: "MAINSTREAM",
     movie_buff: "MOVIE BUFF",
     left_field: "LEFT FIELD",
   };
-  return `You are PickAFlick's recommender. The user chose lane ${labels[lane]}.
-
-CRITICAL: Later instructions may use words like "popular", "recognisable", or "crowd-pleasing". You MUST interpret those ONLY through this lane's meaning. If generic text conflicts with ${labels[lane]}, follow ${labels[lane]}.
-
-The A/B funnel evidence is always the spine — but HOW bold vs safe the picks are is decided ONLY by ${labels[lane]}.`;
+  return `PickAFlick recommender. Lane: ${labels[lane]}. All picks must match that lane (not generic "best movies"). A/B choices below are the evidence.`;
 }
 
 /**
@@ -106,74 +103,11 @@ The A/B funnel evidence is always the spine — but HOW bold vs safe the picks a
 function lanePrimaryTask(lane: RecommendationLane): string {
   switch (lane) {
     case "mainstream":
-      return `=== PRIMARY TASK — LANE: MAINSTREAM ===
-Deliver the **accessible default row**: polished, broadly appealing, **easy "good tonight"** films that still match their A/B taste. This is what people mean by "something good on" — **not** obscure.
-
-- Vary studios, eras, and subgenres; avoid **seven films that feel like the same movie**.
-- The funnel is the **only** justification for each title — not IMDb Top 250 nostalgia.`;
+      return `LANE MAINSTREAM: Accessible, crowd-pleasing "good tonight" picks from their A/B pattern. Vary subgenres/eras; not 7 samey films.`;
     case "movie_buff":
-      return `=== PRIMARY TASK — LANE: MOVIE BUFF ===
-**You must NOT output the model's default "smart recommendation" row** — seven similar US prestige / blockbuster-adjacent films **cut from the same cloth**.
-
-Deliver **more specific, less obvious** picks that still express the **same** A/B taste pattern. Think: **where would a film buff go after rejecting the obvious row?** — acclaimed indie, international, auteur, mid-budget festival fare — **not** micro-budget experiments.
-
-- **Hard:** at least **4 of 7** titles should be films a casual streamer **would not** name in 10 seconds (i.e. not the usual Reddit / Letterboxd top-20 suspects for that vibe).
-- **Avoid** leaning entirely on globally meme-famous international titles (*Parasite*, *Oldboy*, *Pan's Labyrinth*, etc.) — **at most one** such anchor; find **less exposed** films with the **same emotional DNA**.
-- **Australia:** every film plausibly findable (rent / major streamers / SBS / Mubi / etc.).`;
+      return `LANE MOVIE BUFF: Curated, less obvious — indie/international/auteur over default prestige blockbusters. ≥4/7 not instant household names; max 1 mega-famous foreign title. AU findable.`;
     case "left_field":
-      return `=== PRIMARY TASK — LANE: LEFT FIELD ===
-**"Foreign prestige everyone has heard of" is NOT Left Field** — that is still mainstream, just subtitled.
-
-Go **one tier deeper**: festival depth, regional cinema, **non-obvious** work by serious directors — **not** their most famous film unless the A/B pattern demands it.
-
-- **Hard:** at least **5 of 7** should feel like **discovery** to someone who only watches Netflix top-10.
-- **Hard:** **at most one** "globally household name" international title (Oscar/Palme meme-tier) — the rest must be **less exposed** with the same **pattern** (tone, morality, craft) from their A/B picks.
-- **Australia:** still actually watchable here (rent / SBS / Mubi / niche streamers — say so in reason text when helpful).`;
-  }
-}
-
-function laneCulturalBreadthLine(lane: RecommendationLane): string {
-  switch (lane) {
-    case "mainstream":
-      return `"Recognisable" includes: **big non-US hits**, **famous crossover** films, **beloved Hollywood**, **crowd-pleasers** — spread across **different cultural lanes** (multiplex vs cable-famous vs streaming hit) while matching their profile.`;
-    case "movie_buff":
-      return `**Cultural breadth here means variety of *specific* films** — not variety of famous IP. Mix **indie, international, auteur**, and **one** wider-audience anchor if needed. **Do not** use this section as an excuse to pick seven blockbusters.`;
-    case "left_field":
-      return `**Ignore** generic "crowd-pleasing blockbuster" language for this lane. Breadth = **different countries, eras, and subgenres of serious cinema** — still **A/B-justified**.`;
-  }
-}
-
-function laneQualityLine(lane: RecommendationLane): string {
-  switch (lane) {
-    case "mainstream":
-      return "- **Quality:** Broadly popular / well-voted; findable in Australia; no micro-budget obscurities.";
-    case "movie_buff":
-      return "- **Quality:** Well-reviewed and **substantive** — **not** all household-name; at least half should be **outside** the obvious default set for that taste; findable in Australia.";
-    case "left_field":
-      return "- **Quality:** Critically strong **or** festival-respected; **deliberately** less obvious than mainstream; still real releases with verifiable title+year; findable in Australia; no micro-budget obscurities.";
-  }
-}
-
-/** Repeated immediately before JSON — models often attend to the end. */
-function laneComplianceBeforeJson(lane: RecommendationLane): string {
-  switch (lane) {
-    case "mainstream":
-      return `=== STOP — CHECK LANE (MAINSTREAM) BEFORE JSON ===
-- [ ] 7 films are **accessible / good-tonight** level, not a cinephile-only list
-- [ ] Titles **vary** (not same cloth × 7)
-- [ ] Every pick ties to **A/B evidence**`;
-    case "movie_buff":
-      return `=== STOP — CHECK LANE (MOVIE BUFF) BEFORE JSON ===
-- [ ] **NOT** the default 7 similar blockbusters / prestige clones
-- [ ] **≥4** picks are **not** obvious first answers a casual fan would shout out
-- [ ] **≤1** globally meme-famous international anchor (Parasite/Oldboy/Pan's etc. tier)
-- [ ] Every pick ties to **A/B evidence**`;
-    case "left_field":
-      return `=== STOP — CHECK LANE (LEFT FIELD) BEFORE JSON ===
-- [ ] **NOT** a row of "famous foreign film" defaults
-- [ ] **≥5** picks feel like **discovery** to a casual viewer
-- [ ] **≤1** globally household-name prestige title
-- [ ] Every pick ties to **A/B evidence**`;
+      return `LANE LEFT FIELD: Deeper / discovery cinema — not "famous foreign hits" row. ≥5/7 feel like discovery; max 1 household-name prestige title. AU findable.`;
   }
 }
 
@@ -203,7 +137,7 @@ async function callRecommendationsLLM(
     model: RECOMMENDATIONS_MODEL,
     messages,
     response_format: { type: "json_object" },
-    max_tokens: 2000,
+    max_tokens: 1600,
     temperature,
   });
 
@@ -245,17 +179,16 @@ export async function generateRecommendations(
       era: getEra(m.year),
       primaryGenre: m.genres[0] || "Unknown",
       allGenres: m.genres,
-      overview: m.overview,
+      overview: (m.overview || "").slice(0, 140),
       director: m.director || "Unknown",
       cast: m.cast?.slice(0, 5) || [],
-      keywords: m.keywords?.slice(0, 10) || [],
+      keywords: m.keywords?.slice(0, 5) || [],
       rating: m.rating,
       round,
       weight,
     };
   });
 
-  // Rich rejection context including all metadata — the negative signal is just as important
   const rejectionContext = rejectedMovies.map((m, index) => {
     const chosenMovie = chosenMovies[index];
     return {
@@ -278,79 +211,48 @@ export async function generateRecommendations(
   const recentTitlesSet = new Set(recentlyRecommendedTitles.map((t) => normalizeTitleKey(t)));
 
   const filterContext = initialGenreFilters.length > 0
-    ? `\nStarting mood (supporting only): the user hinted at these genres before the funnel: ${initialGenreFilters.join(", ")}. The A/B evidence below is the primary signal — use the funnel profile first.\n`
+    ? `Mood hint (weak): ${initialGenreFilters.join(", ")}. `
     : "";
-
-  const curatorPreamble = `
-=== SOURCE OF TITLES ===
-You are **not** limited to any in-app catalogue. Use real films — any country — with accurate **English release title + year** for lookup. **Follow the PRIMARY TASK lane above first**; do not default to a generic "best movies" list.
-
-=== RELEASE YEAR — PRE-1970 CAP ===
-At most **${MAX_PRE_1970_FILMS}** of the 7 films may have a theatrical release year **before 1970** (i.e. 1969 or earlier). The rest must be **1970 or later**. If a classic pre-1970 title truly fits best, use **one**; do not stack multiple oldies unless the user's A/B choices are overwhelmingly classic-era (still respect the cap).
-
-=== ERA BREADTH (within 1970+) ===
-Across the six **1970+** slots, spread decades where it fits their profile — include at least one **2020 or newer** when it fits, so the row is not all 1990s–2010s.
-`;
 
   const laneTask = lanePrimaryTask(lane);
 
+  const choicesBlock = movieDescriptions
+    .map(
+      (m) =>
+        `R${m.round}${m.weight > 1 ? "*" : ""}: "${m.title}" (${m.year}) ${m.primaryGenre} | ${m.director} | kw:${m.keywords.slice(0, 3).join(",") || "—"} | ${m.overview || "—"}`
+    )
+    .join("\n");
+
+  const rejectsBlock =
+    rejectionContext.length > 0
+      ? rejectionContext.map((m) => `R${m.round}: no "${m.title}" (${m.year}) — picked ${m.lostTo}`).join("\n")
+      : "(none)";
+
+  const exclusionsBlock =
+    recentExclusions.length > 0 ? `Do not repeat: ${recentExclusions.join("; ")}` : "";
+
   const prompt = `${laneTask}
 
-You are a sharp film curator. The user finished a 7-step funnel: early rounds explore contrast; later rounds (🔥) matter more. Infer ONE clear taste profile from the whole run — then recommend 7 films that **vary** within that profile (different subgenres, eras, pacing, "vibes") so the list feels like a rich menu, not seven copies of the same film.${filterContext}
-${curatorPreamble}
+${filterContext}7-round A/B funnel. Infer one taste profile; rounds marked * matter more. Real films, English titles, accurate year. Max ${MAX_PRE_1970_FILMS} film(s) before 1970; include a 2020s title when it fits. No two same director. No picks from: ${chosenTitles}
 
-${recentExclusions.length > 0 ? `=== DO NOT RECOMMEND — already shown in recent sessions ===
-${recentExclusions.map(t => `• ${t}`).join("\n")}
+${exclusionsBlock}
 
-` : ""}Never recommend these (their own picks): ${chosenTitles}
+CHOSEN:
+${choicesBlock}
 
-=== EVIDENCE — what they chose (🔥 rounds weighted more) ===
-${movieDescriptions.map((m) => `Round ${m.round}${m.weight > 1 ? " 🔥" : ""}: "${m.title}" (${m.year}) — ${m.primaryGenre} | Dir: ${m.director} | Cast: ${m.cast.length > 0 ? m.cast.join(", ") : "Unknown"}
-  Keywords: ${m.keywords.length > 0 ? m.keywords.join(", ") : "N/A"}
-  Synopsis: ${m.overview || "N/A"}`).join("\n\n")}
+REJECTED:
+${rejectsBlock}
 
-=== EVIDENCE — what they rejected ===
-${rejectionContext.length > 0 ? rejectionContext.map((m) => `Round ${m.round}: rejected "${m.title}" (${m.year}, ${m.primaryGenre}) vs chose ${m.lostTo}`).join("\n\n") : "No rejection data"}
-
-=== PROFILE ===
-Summarise what they like and what rejections ruled out. 🔥 rounds pull more weight.
-
-=== A/B MUST DRIVE THE LIST (non-negotiable) ===
-These recommendations exist **because** of this session's picks and rejects — not as a generic "good movies" row. **Every** reason must:
-- Name **at least one film they actually chose** in the funnel, AND
-- Explain **why this recommendation matches the *pattern* of their choices vs rejects** (tone, era, pacing, genre — not vague praise).
-
-If you cannot tie a film to their evidence, pick a different film.
-
-=== CULTURAL BREADTH (lane-specific) ===
-${laneCulturalBreadthLine(lane)}
-
-=== HOW TO PICK 7 ===
-- **Not one niche:** Avoid seven films that are all the same tone/band even if genres differ on paper.
-${laneQualityLine(lane)}
-- **Hard rules:** No two from the same director or same franchise. Respect the **pre-1970 cap** above.
-
-${laneComplianceBeforeJson(lane)}
-
-=== OUTPUT — exact JSON only ===
-{
-  "topGenres": ["up to 3 genres spanning their taste, not a single label repeated"],
-  "themes": ["2-4 themes"],
-  "preferredEras": ["decade bands they lean toward"],
-  "visualStyle": "One sentence, 'you/your', screen feel",
-  "mood": "One sentence, 'you/your', emotional register",
-  "recommendations": [
-    {"title": "Film Title 1", "year": 2022, "reason": "1-2 sentences: tie to their A/B evidence; name a film they chose; what cultural lane this fills (not generic praise)", "category": "flexible"},
-    {"title": "Film Title 2", "year": 1999, "reason": "same idea", "category": "flexible"},
-    {"title": "Film Title 3", "year": 2016, "reason": "same idea", "category": "flexible"},
-    {"title": "Film Title 4", "year": 2014, "reason": "same idea", "category": "flexible"},
-    {"title": "Film Title 5", "year": 2019, "reason": "same idea", "category": "flexible"},
-    {"title": "Film Title 6", "year": 2011, "reason": "same idea", "category": "flexible"},
-    {"title": "Film Title 7", "year": 2008, "reason": "same idea", "category": "flexible"}
-  ]
-}
-
-Return exactly 7 recommendations. Each \`year\` must be the film's theatrical release year; **at most one** may be before 1970. Each reason must name at least one of their actual chosen films.`;
+Return JSON only. recommendations must have exactly 7 objects:
+{"topGenres":["",""],"themes":[""],"preferredEras":[""],"visualStyle":"","mood":"","recommendations":[
+{"title":"","year":2000,"reason":"One sentence; cite a chosen film."},
+{"title":"","year":2000,"reason":""},
+{"title":"","year":2000,"reason":""},
+{"title":"","year":2000,"reason":""},
+{"title":"","year":2000,"reason":""},
+{"title":"","year":2000,"reason":""},
+{"title":"","year":2000,"reason":""}
+]}`;
 
   try {
     const llmTemp = temperatureForLane(lane);
@@ -363,7 +265,7 @@ Return exactly 7 recommendations. Each \`year\` must be the film's theatrical re
 
     const recentHits = countRecentCollisions(analysis.recommendations, recentTitlesSet);
     const pre1970Count = countPre1970(analysis.recommendations);
-    const needsRetry = recentHits >= 2 || pre1970Count > MAX_PRE_1970_FILMS;
+    const needsRetry = pre1970Count > MAX_PRE_1970_FILMS || recentHits >= 4;
 
     if (needsRetry) {
       console.warn(
@@ -371,10 +273,7 @@ Return exactly 7 recommendations. Each \`year\` must be the film's theatrical re
       );
       const fixPrompt = `${prompt}
 
-=== REGENERATE (strict) ===
-Your previous answer broke rules: **zero** titles from the DO NOT RECOMMEND list; at most **one** film with release year before 1970; each reason must tie to their A/B picks. Output valid JSON only with **7 completely NEW titles**.
-
-Re-read **PRIMARY TASK** and **STOP — CHECK LANE** for this request — your last answer must satisfy the lane, not a generic good list.`;
+Regenerate: max ${MAX_PRE_1970_FILMS} pre-1970 film(s); avoid recent-session repeats; 7 new titles; JSON only.`;
       analysis = await callRecommendationsLLM(fixPrompt, llmTemp, systemMessageForLane(lane));
     }
 
@@ -463,7 +362,7 @@ Re-read **PRIMARY TASK** and **STOP — CHECK LANE** for this request — your l
     const trailerResults =
       wildcardCandidates.length > 0
         ? await Promise.all(
-            wildcardCandidates.map(async (candidate) => ({
+            wildcardCandidates.slice(0, 5).map(async (candidate) => ({
               candidate,
               trailers: await getMovieTrailers(candidate.tmdbId),
             }))
