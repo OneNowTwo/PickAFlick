@@ -17,7 +17,7 @@ const recentlyRecommendedTitles: string[] = [];
 /** Keep a long tail so repeat titles across sessions drop in probability */
 const MAX_RECENT_TRACKED = 400;
 /** How many recent titles to inject into the prompt (must be ≤ MAX_RECENT_TRACKED). Smaller = faster LLM; collision detection still uses the full in-memory list. */
-const RECENT_EXCLUSIONS_PROMPT_COUNT = 120;
+const RECENT_EXCLUSIONS_PROMPT_COUNT = 90;
 let recsLoaded = false;
 
 async function ensureRecsLoaded(): Promise<void> {
@@ -203,7 +203,7 @@ async function callRecommendationsLLM(
     model: RECOMMENDATIONS_MODEL,
     messages,
     response_format: { type: "json_object" },
-    max_tokens: 2200,
+    max_tokens: 2000,
     temperature,
   });
 
