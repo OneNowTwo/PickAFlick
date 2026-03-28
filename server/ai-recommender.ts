@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { Movie, Recommendation, RecommendationsResponse, RecommendationLane } from "@shared/schema";
-import { searchMovieByTitle, getMovieTrailer, getMovieTrailers, getMovieDetails } from "./tmdb";
+import { searchMovieByTitle, getMovieTrailers, getMovieDetails } from "./tmdb";
 import { getAllMovies } from "./catalogue";
 import { storage } from "./storage";
 
@@ -14,7 +14,8 @@ const RECOMMENDATIONS_MODEL = process.env.OPENAI_RECOMMENDATIONS_MODEL ?? "gpt-4
 
 const recentlyRecommendedTitles: string[] = [];
 const MAX_RECENT_TRACKED = 400;
-const RECENT_EXCLUSIONS_PROMPT_COUNT = 48;
+/** Larger list reduces "same movies every time" without huge prompt bloat */
+const RECENT_EXCLUSIONS_PROMPT_COUNT = 72;
 let recsLoaded = false;
 
 async function ensureRecsLoaded(): Promise<void> {
@@ -48,16 +49,12 @@ function recordRecommendedTitles(titles: string[]): void {
 
 interface AIRecommendationResult { title: string; year?: number; reason: string; }
 
-export interface TasteProfile {
+interface AIAnalysis {
   topGenres: string[];
   themes: string[];
   preferredEras: string[];
   visualStyle: string;
   mood: string;
-  tasteSignature: string;
-}
-
-interface AIAnalysis extends TasteProfile {
   recommendations: AIRecommendationResult[];
 }
 
@@ -75,58 +72,6 @@ function countRecentCollisions(recs: { title: string }[], recentSet: Set<string>
   return recs.filter((r) => recentSet.has(normalizeTitleKey(r.title))).length;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Phase 1 — build taste profile (runs during A/B rounds)
-// ═══════════════════════════════════════════════════════════════════
-
-function buildProfilePrompt(chosenMovies: Movie[], rejectedMovies: Movie[]): string {
-  const choicesBlock = chosenMovies.map((m, i) => {
-    const r = i + 1;
-    return `R${r}: chose "${m.title}" (${m.year}) — ${m.genres[0] || "?"}, dir. ${m.director || "?"}`;
-  }).join("\n");
-
-  const rejectsBlock = rejectedMovies.length > 0
-    ? rejectedMovies.map((m, i) => `R${i + 1}: rejected "${m.title}" (${m.year})`).join("\n")
-    : "(none)";
-
-  return `A/B movie funnel results. Infer ONE clear taste profile.
-
-CHOSEN:
-${choicesBlock}
-
-REJECTED:
-${rejectsBlock}
-
-Return JSON only:
-{"topGenres":["g1","g2","g3"],"themes":["t1","t2"],"preferredEras":["era1","era2"],"visualStyle":"one sentence using you/your about their screen taste","mood":"one sentence using you/your about their emotional register","tasteSignature":"2-3 sentence summary of what this person is in the mood for, referencing specific choices"}`;
-}
-
-export async function buildTasteProfile(
-  chosenMovies: Movie[],
-  rejectedMovies: Movie[] = []
-): Promise<TasteProfile> {
-  const prompt = buildProfilePrompt(chosenMovies, rejectedMovies);
-  const response = await openai.chat.completions.create({
-    model: RECOMMENDATIONS_MODEL,
-    messages: [
-      { role: "system", content: "PickAFlick taste profiler. Respond only with valid JSON." },
-      { role: "user", content: prompt },
-    ],
-    response_format: { type: "json_object" },
-    max_tokens: 400,
-    temperature: 0.7,
-  });
-
-  const content = response.choices[0]?.message?.content || "{}";
-  const parsed = JSON.parse(content) as TasteProfile;
-  console.log(`[profile] Built taste profile from ${chosenMovies.length} choices`);
-  return parsed;
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// Phase 2 — get recommendations (runs when user picks a lane)
-// ═══════════════════════════════════════════════════════════════════
-
 function laneInstruction(lane: RecommendationLane): string {
   switch (lane) {
     case "mainstream":
@@ -140,44 +85,129 @@ function laneInstruction(lane: RecommendationLane): string {
 
 function temperatureForLane(lane: RecommendationLane): number {
   switch (lane) {
-    case "left_field": return 0.94;
-    case "movie_buff": return 0.91;
-    default: return 0.88;
+    case "left_field": return 0.9;
+    case "movie_buff": return 0.86;
+    default: return 0.82;
   }
 }
 
-export async function generateRecommendationsFromProfile(
-  profile: TasteProfile,
+async function callRecommendationsLLM(
+  promptText: string,
+  temperature: number,
+  maxTokens: number
+): Promise<AIAnalysis> {
+  const response = await openai.chat.completions.create({
+    model: RECOMMENDATIONS_MODEL,
+    messages: [
+      { role: "system", content: "PickAFlick recommender. Respond only with valid JSON matching the schema." },
+      { role: "user", content: promptText },
+    ],
+    response_format: { type: "json_object" },
+    max_tokens: maxTokens,
+    temperature,
+  });
+  const content = response.choices[0]?.message?.content || "{}";
+  return JSON.parse(content) as AIAnalysis;
+}
+
+function formatChoicesBlock(chosenMovies: Movie[]): string {
+  return chosenMovies.map((m, i) => {
+    const round = i + 1;
+    const star = round >= 5 ? "*" : "";
+    const kw = (m.keywords || []).slice(0, 5).join(", ") || "—";
+    return `R${round}${star}: "${m.title}" (${m.year}) — ${m.genres[0] || "Unknown"}, dir. ${m.director || "Unknown"}, kw: ${kw}`;
+  }).join("\n");
+}
+
+function formatRejectsBlock(rejectedMovies: Movie[], chosenMovies: Movie[]): string {
+  if (rejectedMovies.length === 0) return "(none)";
+  return rejectedMovies.map((m, i) => {
+    const chosen = chosenMovies[i];
+    return `R${i + 1}: passed on "${m.title}" (${m.year}) — picked "${chosen?.title ?? "—"}"`;
+  }).join("\n");
+}
+
+async function resolveOneRecommendation(
+  rec: AIRecommendationResult,
+  chosenTmdbIds: Set<number>
+): Promise<Recommendation | null> {
+  try {
+    const searchResult = await searchMovieByTitle(rec.title, rec.year);
+    if (!searchResult || chosenTmdbIds.has(searchResult.id)) return null;
+
+    const [movieDetails, tmdbTrailers] = await Promise.all([
+      getMovieDetails(searchResult.id),
+      getMovieTrailers(searchResult.id),
+    ]);
+
+    if (!movieDetails) return null;
+    if (!movieDetails.posterPath?.trim()) return null;
+    if (tmdbTrailers.length === 0) return null;
+
+    movieDetails.listSource = "ai-recommendation";
+    return {
+      movie: movieDetails,
+      trailerUrl: tmdbTrailers[0],
+      trailerUrls: tmdbTrailers,
+      reason: rec.reason,
+    };
+  } catch {
+    return null;
+  }
+}
+
+
+export async function generateRecommendations(
   chosenMovies: Movie[],
+  rejectedMovies: Movie[] = [],
+  initialGenreFilters: string[] = [],
   lane: RecommendationLane = "mainstream"
 ): Promise<RecommendationsResponse> {
   await ensureRecsLoaded();
 
-  const chosenTitles = chosenMovies.map(m => `"${m.title}"`).join(", ");
+  const choicesBlock = formatChoicesBlock(chosenMovies);
+  const rejectsBlock = formatRejectsBlock(rejectedMovies, chosenMovies);
+  const chosenTitles = chosenMovies.map((m) => `"${m.title}"`).join(", ");
   const recentExclusions = recentlyRecommendedTitles.slice(-RECENT_EXCLUSIONS_PROMPT_COUNT);
   const recentTitlesSet = new Set(recentlyRecommendedTitles.map(normalizeTitleKey));
 
   const exclusionsLine = recentExclusions.length > 0
-    ? `Do not recommend these (recently shown): ${recentExclusions.join("; ")}`
+    ? `\nDo not recommend these titles (recently shown to users): ${recentExclusions.join("; ")}\n`
     : "";
 
-  const prompt = `Taste profile from A/B funnel:
-${profile.tasteSignature}
-Genres: ${profile.topGenres.join(", ")}. Themes: ${profile.themes.join(", ")}. Eras: ${profile.preferredEras.join(", ")}.
+  const genreFilterLine = initialGenreFilters.length > 0
+    ? `\nOptional funnel filters (respect if they still fit the mood): ${initialGenreFilters.join(", ")}.\n`
+    : "";
 
-Based on this, recommend 8 movies they'd genuinely enjoy right now.
+  const diversityBlock = `
+Diversity (critical):
+- No two picks from the same director.
+- No two picks from the same franchise / shared universe (e.g. MCU, Star Wars, Fast).
+- Spread subgenres and tones — do not output five films that feel like the same "type".
+- Avoid the same handful of famous titles that always appear in generic lists; dig for films that still fit the lane and the user's pattern.`;
+
+  const prompt = `These are the results of my A/B testing funnel. Rounds marked * matter more.
+
+CHOSEN:
+${choicesBlock}
+
+PASSED ON:
+${rejectsBlock}
+${genreFilterLine}
+Based on those selections, recommend 8 movies I'm most likely in the mood for right now.
 
 ${laneInstruction(lane)}
 
-Keep variety across era and tone. At most ${MAX_PRE_1970_FILMS} pre-1970. Include at least one 2020+ if it fits. Movies must be findable in Australia. No micro-budget obscurities. No two same director.
-Do not recommend: ${chosenTitles}
+Keep variety across era and tone. At most ${MAX_PRE_1970_FILMS} film before 1970. Include at least one 2020+ if it fits naturally. Movies must be findable / streamable in Australia. No micro-budget obscurities.
+Do not recommend any film I chose in the funnel: ${chosenTitles}
 ${exclusionsLine}
+${diversityBlock}
 
-Give short, specific reasons for each — name a film from their choices and explain the connection.
+Give short, specific reasons — name one of my chosen films and explain the connection (tone, pacing, texture, genre), not generic praise.
 
 Return JSON only:
-{"recommendations":[
-{"title":"","year":2000,"reason":"1-2 sentences"},
+{"topGenres":["","",""],"themes":["",""],"preferredEras":["",""],"visualStyle":"one sentence using you/your","mood":"one sentence using you/your","recommendations":[
+{"title":"Film Title","year":2000,"reason":"1-2 sentences"},
 {"title":"","year":2000,"reason":""},
 {"title":"","year":2000,"reason":""},
 {"title":"","year":2000,"reason":""},
@@ -187,20 +217,11 @@ Return JSON only:
 {"title":"","year":2000,"reason":""}
 ]}`;
 
-  try {
-    const response = await openai.chat.completions.create({
-      model: RECOMMENDATIONS_MODEL,
-      messages: [
-        { role: "system", content: "PickAFlick recommender. Respond only with valid JSON." },
-        { role: "user", content: prompt },
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 1400,
-      temperature: temperatureForLane(lane),
-    });
+  const llmTemp = temperatureForLane(lane);
+  const maxTokens = 2000;
 
-    const content = response.choices[0]?.message?.content || "{}";
-    let analysis = JSON.parse(content) as { recommendations: AIRecommendationResult[] };
+  try {
+    let analysis = await callRecommendationsLLM(prompt, llmTemp, maxTokens);
 
     if (!analysis.recommendations?.length) {
       throw new Error("LLM returned no recommendations");
@@ -208,19 +229,10 @@ Return JSON only:
 
     const pre1970Count = countPre1970(analysis.recommendations);
     const recentHits = countRecentCollisions(analysis.recommendations, recentTitlesSet);
-    if (pre1970Count > MAX_PRE_1970_FILMS || recentHits >= 4) {
-      console.warn(`[ai-recommender] Retrying: ${recentHits} collisions, ${pre1970Count} pre-1970`);
-      const fixResponse = await openai.chat.completions.create({
-        model: RECOMMENDATIONS_MODEL,
-        messages: [
-          { role: "system", content: "PickAFlick recommender. Respond only with valid JSON." },
-          { role: "user", content: `${prompt}\n\nRegenerate: max ${MAX_PRE_1970_FILMS} pre-1970; avoid recent repeats; 8 new titles; JSON only.` },
-        ],
-        response_format: { type: "json_object" },
-        max_tokens: 1400,
-        temperature: temperatureForLane(lane),
-      });
-      analysis = JSON.parse(fixResponse.choices[0]?.message?.content || "{}");
+    if (pre1970Count > MAX_PRE_1970_FILMS || recentHits >= 3) {
+      console.warn(`[ai-recommender] Retrying: ${recentHits} recent collisions, ${pre1970Count} pre-1970`);
+      const fixPrompt = `${prompt}\n\nRegenerate entirely: max ${MAX_PRE_1970_FILMS} pre-1970; avoid titles in the recent-shown list; 8 new titles; keep diversity rules; JSON only.`;
+      analysis = await callRecommendationsLLM(fixPrompt, llmTemp, maxTokens);
     }
 
     if (!analysis.recommendations?.length) {
@@ -228,32 +240,12 @@ Return JSON only:
     }
 
     const chosenTmdbIds = new Set(chosenMovies.map((m) => m.tmdbId));
+    const resolvedRecs = (
+      await Promise.all(
+        analysis.recommendations.slice(0, 8).map((r) => resolveOneRecommendation(r, chosenTmdbIds))
+      )
+    ).filter((x): x is Recommendation => x !== null);
 
-    const recPromises = analysis.recommendations.slice(0, 8).map(async (rec) => {
-      try {
-        const searchResult = await searchMovieByTitle(rec.title, rec.year);
-        if (!searchResult || chosenTmdbIds.has(searchResult.id)) return null;
-
-        const [movieDetails, tmdbTrailers] = await Promise.all([
-          getMovieDetails(searchResult.id),
-          getMovieTrailers(searchResult.id),
-        ]);
-
-        if (!movieDetails) return null;
-        if (!movieDetails.posterPath?.trim()) return null;
-        if (tmdbTrailers.length === 0) return null;
-
-        movieDetails.listSource = "ai-recommendation";
-        return {
-          movie: movieDetails,
-          trailerUrl: tmdbTrailers[0],
-          trailerUrls: tmdbTrailers,
-          reason: rec.reason,
-        } as Recommendation;
-      } catch { return null; }
-    });
-
-    const resolvedRecs = (await Promise.all(recPromises)).filter((r): r is Recommendation => r !== null);
     const freshRecs = resolvedRecs.filter((r) => !recentTitlesSet.has(normalizeTitleKey(r.movie.title)));
     const recommendations = (freshRecs.length >= 5 ? freshRecs : resolvedRecs).slice(0, 5);
 
@@ -262,28 +254,17 @@ Return JSON only:
     return {
       recommendations,
       preferenceProfile: {
-        topGenres: profile.topGenres || [],
-        themes: profile.themes || [],
-        preferredEras: profile.preferredEras || [],
-        visualStyle: profile.visualStyle || "",
-        mood: profile.mood || "",
+        topGenres: analysis.topGenres || [],
+        themes: analysis.themes || [],
+        preferredEras: analysis.preferredEras || [],
+        visualStyle: analysis.visualStyle || "",
+        mood: analysis.mood || "",
       },
     };
   } catch (error) {
     console.error("AI recommendation error:", error);
     return fallbackRecommendations(chosenMovies);
   }
-}
-
-// Legacy single-call path (kept for replacement flow)
-export async function generateRecommendations(
-  chosenMovies: Movie[],
-  rejectedMovies: Movie[] = [],
-  initialGenreFilters: string[] = [],
-  lane: RecommendationLane = "mainstream"
-): Promise<RecommendationsResponse> {
-  const profile = await buildTasteProfile(chosenMovies, rejectedMovies);
-  return generateRecommendationsFromProfile(profile, chosenMovies, lane);
 }
 
 async function fallbackRecommendations(chosenMovies: Movie[]): Promise<RecommendationsResponse> {
@@ -349,7 +330,7 @@ export async function generateReplacementRecommendation(
     ? `\nREJECTED: ${rejectedMovies.slice(0, 3).map(m => `"${m.title}"`).join(", ")}`
     : "";
 
-  const prompt = `Curate ONE replacement. Picks:\n${picks}${rejHints}\nSeen/dismissed: ${excludeTmdbIds.length}.\n${replacementLaneRules(lane)}\nFindable in Australia. JSON only:\n{"title":"","year":2000,"reason":"1-2 sentences."}`;
+  const prompt = `Curate ONE replacement. Picks:\n${picks}${rejHints}\nSeen/dismissed: ${excludeTmdbIds.length}.\n${replacementLaneRules(lane)}\nFindable in Australia. Avoid repeating obvious franchise defaults. JSON only:\n{"title":"","year":2000,"reason":"1-2 sentences."}`;
 
   try {
     const resp = await openai.chat.completions.create({
@@ -357,7 +338,7 @@ export async function generateReplacementRecommendation(
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
       max_tokens: 200,
-      temperature: 0.92,
+      temperature: 0.88,
     });
     const result: AIRecommendationResult = JSON.parse(resp.choices[0]?.message?.content || "{}");
     const search = await searchMovieByTitle(result.title, result.year);
