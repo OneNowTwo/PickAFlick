@@ -8,7 +8,7 @@ import { sessionStorage } from "./session-storage";
 import { generateRecommendations, generateReplacementRecommendation } from "./ai-recommender";
 import { buildGenreProfile, rankRecommendations } from "./recommendations";
 import { storage } from "./storage";
-import type { RoundPairResponse, ChoiceResponse, RecommendationsResponse } from "@shared/schema";
+import type { RoundPairResponse, ChoiceResponse, RecommendationsResponse, RecommendationLane } from "@shared/schema";
 import { insertWatchlistSchema, recommendationLaneSchema } from "@shared/schema";
 import { z } from "zod";
 
@@ -20,6 +20,31 @@ const NO_CACHE_HEADERS = {
 
 // Store movie pairs per session to ensure consistency
 const sessionPairs = new Map<string, { round: number; leftMovie: any; rightMovie: any }>();
+
+/** When the funnel completes, pre-generate all 3 lanes in parallel so lane choice is often instant. */
+const recommendationPrefetchBySession = new Map<
+  string,
+  Record<RecommendationLane, Promise<RecommendationsResponse>>
+>();
+
+function startRecommendationPrefetches(sessionId: string): void {
+  if (recommendationPrefetchBySession.has(sessionId)) return;
+  const chosenMovies = sessionStorage.getChosenMovies(sessionId);
+  const rejectedMovies = sessionStorage.getRejectedMovies(sessionId);
+  const filters = sessionStorage.getSessionFilters(sessionId);
+  const genreFilters = filters?.genres || [];
+  const run = (lane: RecommendationLane) =>
+    generateRecommendations(chosenMovies, rejectedMovies, genreFilters, lane).catch((err) => {
+      console.error(`[prefetch-lane] ${lane} failed for ${sessionId}:`, err);
+      throw err;
+    });
+  recommendationPrefetchBySession.set(sessionId, {
+    mainstream: run("mainstream"),
+    movie_buff: run("movie_buff"),
+    left_field: run("left_field"),
+  });
+  console.log(`[prefetch-lane] Started all 3 lanes for session ${sessionId}`);
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -245,6 +270,8 @@ export async function registerRoutes(
             rightMovie: pair[1],
           });
         }
+      } else {
+        startRecommendationPrefetches(sessionId);
       }
 
       const response: ChoiceResponse = {
@@ -360,12 +387,31 @@ export async function registerRoutes(
       }
       const lane = laneParsed.data;
 
-      const aiResult = await generateRecommendations(
-        chosenMovies,
-        rejectedMovies,
-        initialGenreFilters,
-        lane
-      );
+      const cached = recommendationPrefetchBySession.get(sessionId);
+      let aiResult: RecommendationsResponse;
+
+      if (cached) {
+        try {
+          aiResult = await cached[lane];
+          recommendationPrefetchBySession.delete(sessionId);
+          console.log(`[prefetch-lane] Served prefetched ${lane} for ${sessionId}`);
+        } catch {
+          console.warn(`[prefetch-lane] Prefetch unusable for ${lane}, regenerating for ${sessionId}`);
+          aiResult = await generateRecommendations(
+            chosenMovies,
+            rejectedMovies,
+            initialGenreFilters,
+            lane
+          );
+        }
+      } else {
+        aiResult = await generateRecommendations(
+          chosenMovies,
+          rejectedMovies,
+          initialGenreFilters,
+          lane
+        );
+      }
 
       // For logged-in users, re-rank using their full cross-session vote history
       let hasPersonalisation = false;

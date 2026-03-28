@@ -105,27 +105,42 @@ The user wants the **first-pass, accessible** list — the kind of row models re
 The user explicitly wants **different films** from that default row — **less obvious, more specific**, **more curated** — while still mapping to the **exact same** taste pattern inferred from their A/B choices and rejects.
 
 - **Lean into:** international crossovers, acclaimed indie, auteur-driven work, stranger but **real** titles (e.g. A24 / Searchlight / Neon **energy** — not a checklist to copy).
+- **Avoid** filling the list with the **same internationally famous** titles everyone recommends (*Parasite*, *Oldboy*, *Pan's Labyrinth*-tier) unless you need **at most one** anchor — prefer **less exposed** films with the **same vibe**.
 - **Still:** household-name **among people who care about film**; not experimental fringe; **findable in Australia** (rent / Netflix / Prime / SBS / Mubi / etc. — real availability class).
 - **English release title + year** for lookup. Every reason must still tie to their **chosen** films vs rejects.`;
     case "left_field":
-      return `=== RECOMMENDATION LANE: LEFT FIELD (go deep — still their taste) ===
-Go **deep** like a **serious film buff** who has read their A/B run — **not** random weirdness.
+      return `=== RECOMMENDATION LANE: LEFT FIELD (actually deep — not "famous foreign") ===
+**Left Field is NOT "international prestige everyone knows".** That row is still **mainstream** — it's just **non-English**. Models default to **Oscar / Palme / meme-famous** titles (e.g. *Parasite*, *Oldboy*, *Pan's Labyrinth*, *The Lives of Others*, *Incendies*) — **treat that as FAILURE for this lane.**
 
-- **Prioritise:** uncompromising international cinema, **arthouse** and **critical darlings**, bold directors — films that **illuminate** the same **pattern** as their picks (tension, morality, craft, pace, violence-as-pressure — **infer from their evidence**).
-- **Explicitly avoid** another row of the same **US blockbuster / default prestige** picks in different wrapping.
-- **Australia:** they must plausibly be able to **watch** these in Australia (streaming, rental, broadcast — you may mention likely outlets in prose, e.g. SBS, Prime, Mubi; do not invent deals).
-- **Examples of the *depth* you are aiming for** (do NOT copy this list — use their funnel): European moral thrillers, Korean slow-burn, New French Extremity-adjacent **only if** it matches their pattern, Schrader-style pressure-cookers, etc.
-- **English title + year** for lookup. **Every** reason must name what they chose and why this fits that **same** taste spine.`;
+**What to do instead:**
+- Pick films **one tier more obscure**: strong festival / critic / cinephile recognition, **but not** the handful of titles every casual film fan has already seen.
+- Prefer **mid-budget**, **regional**, **second-tier** work by serious directors — **not** their most famous film unless nothing else fits the A/B pattern.
+- **At most ONE** pick may be "globally household-name" prestige; the other **six** must feel like **discovery** to someone who only watches Netflix top-10.
+- **Still** every title must **map to their A/B evidence** (tone, moral grey, craft, pace — infer from picks vs rejects). **Never** random weird-for-weird's sake.
+- **Australia:** only films a motivated viewer can **actually** see (rent / SBS / Mubi / Binge / Prime / Netflix AU / etc.). Say so briefly in reasons when helpful.
+
+**English release title + year** for lookup. If you catch yourself reaching for the same 20 "best foreign film" answers — **stop** and choose a less exposed film with the **same vibe**.`;
   }
 }
 
-async function callRecommendationsLLM(promptText: string): Promise<AIAnalysis> {
+function temperatureForLane(lane: RecommendationLane): number {
+  switch (lane) {
+    case "left_field":
+      return 0.94;
+    case "movie_buff":
+      return 0.91;
+    default:
+      return 0.88;
+  }
+}
+
+async function callRecommendationsLLM(promptText: string, temperature = 0.88): Promise<AIAnalysis> {
   const response = await openai.chat.completions.create({
     model: RECOMMENDATIONS_MODEL,
     messages: [{ role: "user", content: promptText }],
     response_format: { type: "json_object" },
     max_tokens: 2200,
-    temperature: 0.88,
+    temperature,
   });
 
   const content = response.choices[0]?.message?.content || "{}";
@@ -272,7 +287,8 @@ If you cannot tie a film to their evidence, pick a different film.
 Return exactly 7 recommendations. Each \`year\` must be the film's theatrical release year; **at most one** may be before 1970. Each reason must name at least one of their actual chosen films.`;
 
   try {
-    let analysis = await callRecommendationsLLM(prompt);
+    const llmTemp = temperatureForLane(lane);
+    let analysis = await callRecommendationsLLM(prompt, llmTemp);
 
     if (!analysis.recommendations || !Array.isArray(analysis.recommendations) || analysis.recommendations.length === 0) {
       console.error("[ai-recommender] LLM returned no recommendations array. Keys:", Object.keys(analysis));
@@ -291,7 +307,7 @@ Return exactly 7 recommendations. Each \`year\` must be the film's theatrical re
 
 === REGENERATE (strict) ===
 Your previous answer broke rules: **zero** titles from the DO NOT RECOMMEND list; at most **one** film with release year before 1970; each reason must tie to their A/B picks. Output valid JSON only with **7 completely NEW titles**.`;
-      analysis = await callRecommendationsLLM(fixPrompt);
+      analysis = await callRecommendationsLLM(fixPrompt, llmTemp);
     }
 
     if (!analysis.recommendations || !Array.isArray(analysis.recommendations) || analysis.recommendations.length === 0) {
