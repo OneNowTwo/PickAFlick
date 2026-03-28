@@ -21,9 +21,9 @@ const NO_CACHE_HEADERS = {
 // Store movie pairs per session to ensure consistency
 const sessionPairs = new Map<string, { round: number; leftMovie: any; rightMovie: any }>();
 
-// Pre-fetch cache: starts the AI call after choice 5 so results are ready by the time voting ends
+// Pre-fetch cache: starts the full recommender when the final choice is recorded so the
+// results request often awaits work that already ran during navigation / transition.
 const prefetchCache = new Map<string, Promise<RecommendationsResponse>>();
-const PREFETCH_AT_CHOICE = 4;
 
 export async function registerRoutes(
   httpServer: Server,
@@ -230,7 +230,7 @@ export async function registerRoutes(
         }).catch(err => console.error("[votes] Failed to save vote:", err));
       }
 
-      // Prepare next pair if not complete
+      // Prepare next pair if not complete; when complete, pre-generate recommendations (full funnel)
       if (!updatedSession.isComplete) {
         const usedIds = new Set(
           updatedSession.choices.flatMap((c) => [c.leftMovie.id, c.rightMovie.id])
@@ -249,24 +249,20 @@ export async function registerRoutes(
             rightMovie: pair[1],
           });
         }
-
-        // After choice 5, kick off the AI call in the background so results are
-        // ready (or nearly ready) by the time the user finishes the last 2 rounds
-        if (updatedSession.choices.length === PREFETCH_AT_CHOICE && !prefetchCache.has(sessionId)) {
-          const chosenSoFar = sessionStorage.getChosenMovies(sessionId);
-          const rejectedSoFar = sessionStorage.getRejectedMovies(sessionId);
-          const prefetchFilters = sessionStorage.getSessionFilters(sessionId);
-          const genreFilters = prefetchFilters?.genres || [];
-          console.log(`[prefetch] Kicking off background AI call for session ${sessionId} after choice ${PREFETCH_AT_CHOICE}`);
-          prefetchCache.set(
-            sessionId,
-            generateRecommendations(chosenSoFar, rejectedSoFar, genreFilters).catch((err) => {
-              console.error(`[prefetch] Background AI call failed for session ${sessionId}:`, err);
-              prefetchCache.delete(sessionId);
-              throw err;
-            })
-          );
-        }
+      } else if (!prefetchCache.has(sessionId)) {
+        const chosenMovies = sessionStorage.getChosenMovies(sessionId);
+        const rejectedMovies = sessionStorage.getRejectedMovies(sessionId);
+        const prefetchFilters = sessionStorage.getSessionFilters(sessionId);
+        const genreFilters = prefetchFilters?.genres || [];
+        console.log(`[prefetch] Session ${sessionId} complete — starting recommendations (background)`);
+        prefetchCache.set(
+          sessionId,
+          generateRecommendations(chosenMovies, rejectedMovies, genreFilters).catch((err) => {
+            console.error(`[prefetch] Background AI call failed for session ${sessionId}:`, err);
+            prefetchCache.delete(sessionId);
+            throw err;
+          })
+        );
       }
 
       const response: ChoiceResponse = {

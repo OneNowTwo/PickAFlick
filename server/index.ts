@@ -7,6 +7,7 @@ import { createServer } from "http";
 import { setupAuth } from "./auth";
 import { setupWatchlistRoutes } from "./watchlist";
 import { pool } from "./db";
+import { preloadRecentRecommendationsCache } from "./ai-recommender";
 
 const PgSession = connectPgSimple(session);
 
@@ -146,6 +147,8 @@ app.use((req, res, next) => {
   setupWatchlistRoutes(app);
 
   await registerRoutes(httpServer, app);
+
+  void preloadRecentRecommendationsCache();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

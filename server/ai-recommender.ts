@@ -9,12 +9,15 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
+/** Override with e.g. gpt-4o-mini for lower latency (default keeps current behaviour). */
+const RECOMMENDATIONS_MODEL = process.env.OPENAI_RECOMMENDATIONS_MODEL ?? "gpt-4o";
+
 // Cross-session memory — persisted to DB so server restarts don't wipe it
 const recentlyRecommendedTitles: string[] = [];
 /** Keep a long tail so repeat titles across sessions drop in probability */
 const MAX_RECENT_TRACKED = 400;
-/** How many recent titles to inject into the prompt (must be ≤ MAX_RECENT_TRACKED) */
-const RECENT_EXCLUSIONS_PROMPT_COUNT = 200;
+/** How many recent titles to inject into the prompt (must be ≤ MAX_RECENT_TRACKED). Smaller = faster LLM; collision detection still uses the full in-memory list. */
+const RECENT_EXCLUSIONS_PROMPT_COUNT = 120;
 let recsLoaded = false;
 
 async function ensureRecsLoaded(): Promise<void> {
@@ -28,6 +31,11 @@ async function ensureRecsLoaded(): Promise<void> {
   } catch {
     // Non-fatal — start with empty list
   }
+}
+
+/** Warm the cross-session title list on startup so the first request skips a DB round-trip. */
+export async function preloadRecentRecommendationsCache(): Promise<void> {
+  await ensureRecsLoaded();
 }
 
 function recordRecommendedTitles(titles: string[]): void {
@@ -80,7 +88,7 @@ function countRecentCollisions(recs: { title: string }[], recentSet: Set<string>
 
 async function callRecommendationsLLM(promptText: string): Promise<AIAnalysis> {
   const response = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: RECOMMENDATIONS_MODEL,
     messages: [{ role: "user", content: promptText }],
     response_format: { type: "json_object" },
     max_tokens: 2200,
@@ -331,24 +339,28 @@ Your previous answer broke rules: **zero** titles from the DO NOT RECOMMEND list
     );
 
     let wildcardAdded = false;
-    for (const candidate of eligibleWildcards.slice(0, 10)) {
-      if (!candidate.posterPath || !candidate.posterPath.trim()) continue;
-
-      const [wildcardTrailers, wildcardProviders] = await Promise.all([
-        getMovieTrailers(candidate.tmdbId),
-        getWatchProviders(candidate.tmdbId, candidate.title, candidate.year),
-      ]);
-
-      if (wildcardTrailers.length === 0) continue;
-
+    const wildcardCandidates = eligibleWildcards
+      .filter((m) => m.posterPath && m.posterPath.trim())
+      .slice(0, 10);
+    const trailerResults =
+      wildcardCandidates.length > 0
+        ? await Promise.all(
+            wildcardCandidates.map(async (candidate) => ({
+              candidate,
+              trailers: await getMovieTrailers(candidate.tmdbId),
+            }))
+          )
+        : [];
+    const firstWildcard = trailerResults.find((r) => r.trailers.length > 0);
+    if (firstWildcard) {
+      const { candidate, trailers } = firstWildcard;
       recommendations.push({
         movie: { ...candidate, listSource: "wildcard" },
-        trailerUrl: wildcardTrailers[0],
-        trailerUrls: wildcardTrailers,
+        trailerUrl: trailers[0],
+        trailerUrls: trailers,
         reason: `A surprise pick from our curated collection — this ${candidate.genres.slice(0, 2).join("/")} film from ${candidate.year} might just become your next favourite.`,
       });
       wildcardAdded = true;
-      break;
     }
 
     // If wildcard failed, use 6th AI backup
@@ -495,7 +507,7 @@ Respond in JSON:
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: RECOMMENDATIONS_MODEL,
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
       max_tokens: 250,
