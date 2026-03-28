@@ -93,6 +93,10 @@ export const insertWatchlistSchema = createInsertSchema(watchlist).omit({ id: tr
 export type InsertWatchlistItem = z.infer<typeof insertWatchlistSchema>;
 export type WatchlistItem = typeof watchlist.$inferSelect;
 
+/** Post–A/B recommendation path — controls LLM + ranking */
+export const recommendationLaneSchema = z.enum(["mainstream", "movie_buff", "left_field"]);
+export type RecommendationLane = z.infer<typeof recommendationLaneSchema>;
+
 // Movie schema with extended metadata for preference learning
 export const movieSchema = z.object({
   id: z.number(),

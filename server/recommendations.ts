@@ -14,7 +14,7 @@
 import { db } from "./db";
 import { userVotes } from "@shared/schema";
 import { eq } from "drizzle-orm";
-import type { Recommendation } from "@shared/schema";
+import type { Recommendation, RecommendationLane } from "@shared/schema";
 
 // ─── Genre profile ───────────────────────────────────────────────────────────
 
@@ -79,23 +79,36 @@ export interface RankedRecommendation extends Recommendation {
 /**
  * Re-rank a list of AI recommendations using the user's genre profile.
  *
- * - Top 70 % (by genre match score) are returned first, unmodified.
- * - Bottom 30 % are returned after, labelled as wildcards if they are both
+ * - Top portion (by genre match score) are returned first — split ratio depends on lane.
+ * - Bottom portion are returned after, labelled as wildcards if they are both
  *   high-rated (≥ 7.5) AND outside the user's top-3 genres.
  *
  * The original AI ordering is used as a tiebreaker so relative quality
  * ordering is preserved within each bucket.
  */
+function matchSplitRatio(lane: RecommendationLane | undefined): number {
+  switch (lane) {
+    case "movie_buff":
+      return 0.78;
+    case "left_field":
+      return 0.52;
+    case "mainstream":
+    default:
+      return 0.7;
+  }
+}
+
 export function rankRecommendations(
   recommendations: Recommendation[],
-  profile: GenreWeight[]
+  profile: GenreWeight[],
+  lane?: RecommendationLane
 ): RankedRecommendation[] {
   if (profile.length === 0 || recommendations.length === 0) {
     return recommendations as RankedRecommendation[];
   }
 
   const top3 = new Set(profile.slice(0, 3).map((p) => p.genre));
-  const splitAt = Math.ceil(recommendations.length * 0.7);
+  const splitAt = Math.ceil(recommendations.length * matchSplitRatio(lane));
 
   const scored = recommendations.map((rec, originalIndex) => ({
     rec,

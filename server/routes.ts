@@ -9,7 +9,7 @@ import { generateRecommendations, generateReplacementRecommendation } from "./ai
 import { buildGenreProfile, rankRecommendations } from "./recommendations";
 import { storage } from "./storage";
 import type { RoundPairResponse, ChoiceResponse, RecommendationsResponse } from "@shared/schema";
-import { insertWatchlistSchema } from "@shared/schema";
+import { insertWatchlistSchema, recommendationLaneSchema } from "@shared/schema";
 import { z } from "zod";
 
 const NO_CACHE_HEADERS = {
@@ -20,10 +20,6 @@ const NO_CACHE_HEADERS = {
 
 // Store movie pairs per session to ensure consistency
 const sessionPairs = new Map<string, { round: number; leftMovie: any; rightMovie: any }>();
-
-// Pre-fetch cache: starts the full recommender when the final choice is recorded so the
-// results request often awaits work that already ran during navigation / transition.
-const prefetchCache = new Map<string, Promise<RecommendationsResponse>>();
 
 export async function registerRoutes(
   httpServer: Server,
@@ -230,7 +226,7 @@ export async function registerRoutes(
         }).catch(err => console.error("[votes] Failed to save vote:", err));
       }
 
-      // Prepare next pair if not complete; when complete, pre-generate recommendations (full funnel)
+      // Prepare next pair if not complete (recommendations run after user picks a lane)
       if (!updatedSession.isComplete) {
         const usedIds = new Set(
           updatedSession.choices.flatMap((c) => [c.leftMovie.id, c.rightMovie.id])
@@ -249,20 +245,6 @@ export async function registerRoutes(
             rightMovie: pair[1],
           });
         }
-      } else if (!prefetchCache.has(sessionId)) {
-        const chosenMovies = sessionStorage.getChosenMovies(sessionId);
-        const rejectedMovies = sessionStorage.getRejectedMovies(sessionId);
-        const prefetchFilters = sessionStorage.getSessionFilters(sessionId);
-        const genreFilters = prefetchFilters?.genres || [];
-        console.log(`[prefetch] Session ${sessionId} complete — starting recommendations (background)`);
-        prefetchCache.set(
-          sessionId,
-          generateRecommendations(chosenMovies, rejectedMovies, genreFilters).catch((err) => {
-            console.error(`[prefetch] Background AI call failed for session ${sessionId}:`, err);
-            prefetchCache.delete(sessionId);
-            throw err;
-          })
-        );
       }
 
       const response: ChoiceResponse = {
@@ -369,17 +351,21 @@ export async function registerRoutes(
         return;
       }
 
-      // Use pre-fetched result if available (started after choice 5), otherwise generate now
-      let aiResult: RecommendationsResponse;
-      const prefetched = prefetchCache.get(sessionId);
-      if (prefetched) {
-        console.log(`[prefetch] Using pre-fetched AI result for session ${sessionId}`);
-        prefetchCache.delete(sessionId);
-        aiResult = await prefetched;
-      } else {
-        console.log(`[prefetch] No pre-fetch available for session ${sessionId} — generating now`);
-        aiResult = await generateRecommendations(chosenMovies, rejectedMovies, initialGenreFilters);
+      const laneParsed = recommendationLaneSchema.safeParse(req.query.lane);
+      if (!laneParsed.success) {
+        res.status(400).json({
+          error: "Missing or invalid lane (mainstream, movie_buff, or left_field)",
+        });
+        return;
       }
+      const lane = laneParsed.data;
+
+      const aiResult = await generateRecommendations(
+        chosenMovies,
+        rejectedMovies,
+        initialGenreFilters,
+        lane
+      );
 
       // For logged-in users, re-rank using their full cross-session vote history
       let hasPersonalisation = false;
@@ -390,7 +376,7 @@ export async function registerRoutes(
         try {
           const profile = await buildGenreProfile(req.user.id);
           if (profile.length > 0) {
-            finalRecs = rankRecommendations(aiResult.recommendations, profile);
+            finalRecs = rankRecommendations(aiResult.recommendations, profile, lane);
             hasPersonalisation = true;
             genreProfileSize = profile.length;
             console.log(
@@ -415,7 +401,7 @@ export async function registerRoutes(
   app.post("/api/session/:sessionId/replacement", async (req: Request, res: Response) => {
     try {
       const { sessionId } = req.params;
-      const { excludeTmdbIds } = req.body;
+      const { excludeTmdbIds, lane: laneBody } = req.body;
 
       if (!Array.isArray(excludeTmdbIds)) {
         res.status(400).json({ error: "excludeTmdbIds must be an array" });
@@ -436,7 +422,15 @@ export async function registerRoutes(
         return;
       }
 
-      const replacement = await generateReplacementRecommendation(chosenMovies, excludeTmdbIds, rejectedMovies);
+      const laneParsed = recommendationLaneSchema.safeParse(laneBody);
+      const lane = laneParsed.success ? laneParsed.data : "mainstream";
+
+      const replacement = await generateReplacementRecommendation(
+        chosenMovies,
+        excludeTmdbIds,
+        rejectedMovies,
+        lane
+      );
       
       if (!replacement) {
         res.status(404).json({ error: "No replacement available" });

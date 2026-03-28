@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import type { Movie, Recommendation, RecommendationsResponse } from "@shared/schema";
+import type { Movie, Recommendation, RecommendationsResponse, RecommendationLane } from "@shared/schema";
 import { searchMovieByTitle, getMovieTrailer, getMovieTrailers, getMovieDetails, getWatchProviders } from "./tmdb";
 import { getAllMovies } from "./catalogue";
 import { storage } from "./storage";
@@ -86,6 +86,63 @@ function countRecentCollisions(recs: { title: string }[], recentSet: Set<string>
   return recs.filter((r) => recentSet.has(normalizeTitleKey(r.title))).length;
 }
 
+function lanePromptSection(lane: RecommendationLane): string {
+  switch (lane) {
+    case "mainstream":
+      return `=== RECOMMENDATION LANE: MAINSTREAM ===
+The user chose **Mainstream**. Prioritise:
+- **Polished, accessible, broadly appealing** films that still match their A/B taste profile.
+- **Easier "good tonight"** watches — high craft, readable, satisfying; still vary subgenre and era across the 7.
+- **Do not** dial down taste fit: every pick must still tie to their picks and rejects.
+- Prefer titles that are **easy to find** and widely discussed.`;
+    case "movie_buff":
+      return `=== RECOMMENDATION LANE: MOVIE BUFF ===
+The user chose **Movie Buff**. Prioritise:
+- **More curated, specific, less obvious** picks than mainstream consensus — still recognisable to film lovers.
+- **Stronger cinephile alignment:** acclaimed indie, international crossovers, auteur-driven work, studios like A24 / Neon / Searchlight where appropriate.
+- **Still not experimental fringe:** no micro-budget obscurities; every title must tie to their A/B evidence; correct English release title + year.`;
+    case "left_field":
+      return `=== RECOMMENDATION LANE: LEFT FIELD ===
+The user chose **Left Field**. Prioritise:
+- **Surprising, exploratory, less predictable** picks within their taste **shape** — not random.
+- **Wider swings** in era, culture, tone, or subgenre; still **anchored** in what they chose vs rejected.
+- **Do not** abandon the funnel: every reason must tie to their A/B picks. Prefer bold, distinctive films that feel like a discovery.`;
+  }
+}
+
+function laneQualityLine(lane: RecommendationLane): string {
+  switch (lane) {
+    case "mainstream":
+      return "- **Quality:** Broadly popular / well-voted; findable in Australia; no micro-budget obscurities.";
+    case "movie_buff":
+      return "- **Quality:** Well-reviewed (think IMDb mid-7s+), including acclaimed indie and international titles; findable in Australia; no micro-budget obscurities.";
+    case "left_field":
+      return "- **Quality:** Striking, distinctive films — may include less obvious critical darlings; still real releases with verifiable title+year; findable in Australia; no micro-budget obscurities.";
+  }
+}
+
+function laneCulturalBreadthLine(lane: RecommendationLane): string {
+  switch (lane) {
+    case "mainstream":
+      return `"Recognisable" includes: **big non-US hits**, **famous non-English crossover** films, **beloved 70s–90s Hollywood**, **crowd-pleasing blockbusters**, **well-known comedy/horror/action** — not only prestige drama. Spread films across **different "where it lives in culture"** while still matching their profile.`;
+    case "movie_buff":
+      return `Lean into **cinephile lanes**: international arthouse crossover, **A24-style** indie, **cult classics** with strong reputations, **award-season standouts** that are not the default Reddit top-10 — still recognisable and match their profile.`;
+    case "left_field":
+      return `Push **cultural range**: oddball gems, genre-benders, **non-English** standouts, **cult** and **midnight-movie** famous — **still** tied to their A/B pattern; avoid safe consensus picks.`;
+  }
+}
+
+function wildcardMinRating(lane: RecommendationLane): number {
+  switch (lane) {
+    case "mainstream":
+      return 7.0;
+    case "movie_buff":
+      return 6.8;
+    case "left_field":
+      return 6.5;
+  }
+}
+
 async function callRecommendationsLLM(promptText: string): Promise<AIAnalysis> {
   const response = await openai.chat.completions.create({
     model: RECOMMENDATIONS_MODEL,
@@ -119,7 +176,8 @@ function getEra(year: number | null): string {
 export async function generateRecommendations(
   chosenMovies: Movie[],
   rejectedMovies: Movie[] = [],
-  initialGenreFilters: string[] = []
+  initialGenreFilters: string[] = [],
+  lane: RecommendationLane = "mainstream"
 ): Promise<RecommendationsResponse> {
   await ensureRecsLoaded();
 
@@ -179,8 +237,12 @@ At most **${MAX_PRE_1970_FILMS}** of the 7 films may have a theatrical release y
 Across the six **1970+** slots, spread decades where it fits their profile — include at least one **2020 or newer** when it fits, so the row is not all 1990s–2010s.
 `;
 
+  const laneBlock = lanePromptSection(lane);
+
   const prompt = `You are a sharp film curator. The user finished a 7-step funnel: early rounds explore contrast; later rounds (🔥) matter more. Infer ONE clear taste profile from the whole run — then recommend 7 films that **vary** within that profile (different subgenres, eras, pacing, "vibes") so the list feels like a rich menu, not seven copies of the same film.${filterContext}
 ${curatorPreamble}
+
+${laneBlock}
 
 ${recentExclusions.length > 0 ? `=== DO NOT RECOMMEND — already shown in recent sessions ===
 ${recentExclusions.map(t => `• ${t}`).join("\n")}
@@ -206,11 +268,11 @@ These recommendations exist **because** of this session's picks and rejects — 
 If you cannot tie a film to their evidence, pick a different film.
 
 === CULTURAL BREADTH (recognisable ≠ vanilla) ===
-"Recognisable" includes: **big non-US hits**, **famous non-English crossover** films, **beloved 70s–90s Hollywood**, **crowd-pleasing blockbusters**, **well-known comedy/horror/action** — not only late-capital prestige drama. Spread films across **different "where it lives in culture"** (arthouse crossover vs multiplex vs classic cable-TV famous vs streaming-era hit) while still matching their profile.
+${laneCulturalBreadthLine(lane)}
 
 === HOW TO PICK 7 ===
 - **Not one niche:** Avoid seven films that are all the same tone/band even if genres differ on paper.
-- **Quality:** Broadly popular / well-voted; findable in Australia; no micro-budget obscurities.
+${laneQualityLine(lane)}
 - **Hard rules:** No two from the same director or same franchise. Respect the **pre-1970 cap** above.
 
 === OUTPUT — exact JSON only ===
@@ -334,8 +396,9 @@ Your previous answer broke rules: **zero** titles from the DO NOT RECOMMEND list
       ...recommendations.map((r) => r.movie.tmdbId),
     ]);
 
+    const wMin = wildcardMinRating(lane);
     const eligibleWildcards = shuffleArray(
-      allMovies.filter((m) => !usedTmdbIds.has(m.tmdbId) && m.rating && m.rating >= 7.0)
+      allMovies.filter((m) => !usedTmdbIds.has(m.tmdbId) && m.rating && m.rating >= wMin)
     );
 
     let wildcardAdded = false;
@@ -383,13 +446,15 @@ Your previous answer broke rules: **zero** titles from the DO NOT RECOMMEND list
 
     // Fallback: return random catalogue movies
     const allMovies = getAllMovies();
+    const fbMin = wildcardMinRating(lane);
+    const enOnly = lane === "mainstream";
     const fallbackMovies = shuffleArray([...allMovies])
       .filter((m) =>
         !chosenMovies.some((c) => c.tmdbId === m.tmdbId) &&
         m.posterPath && m.posterPath.trim() &&
         m.year && m.year >= 1980 &&
-        m.rating && m.rating >= 7.0 &&
-        (!m.original_language || m.original_language === "en")
+        m.rating && m.rating >= fbMin &&
+        (enOnly ? !m.original_language || m.original_language === "en" : true)
       )
       .slice(0, 5);
 
@@ -443,11 +508,23 @@ function extractTopGenres(movies: Movie[]): string[] {
     .map(([genre]) => genre);
 }
 
+function replacementLaneRules(lane: RecommendationLane): string {
+  switch (lane) {
+    case "mainstream":
+      return `The user chose lane **Mainstream**: pick one **polished, accessible** film — easy "good tonight" energy, still tonally aligned with their funnel.`;
+    case "movie_buff":
+      return `The user chose lane **Movie Buff**: pick one **more curated, less obvious** film (e.g. acclaimed indie, international crossover, auteur) — still recognisable, IMDb 7.0+ class.`;
+    case "left_field":
+      return `The user chose lane **Left Field**: pick one **surprising, exploratory** film within their taste — a bolder swing, not a random title.`;
+  }
+}
+
 // Generate a single replacement recommendation when user marks one as "seen it"
 export async function generateReplacementRecommendation(
   chosenMovies: Movie[],
   excludeTmdbIds: number[],
-  rejectedMovies: Movie[] = []
+  rejectedMovies: Movie[] = [],
+  lane: RecommendationLane = "mainstream"
 ): Promise<Recommendation | null> {
   const movieDescriptions = chosenMovies.map((m, index) => {
     const round = index + 1;
@@ -494,9 +571,11 @@ ${movieDescriptions.map((m) => `Round ${m.round}${m.weight > 1 ? " 🔥" : ""}: 
 
 They've already seen or dismissed ${excludeTmdbIds.length} suggestions — avoid repeating that list.
 
+${replacementLaneRules(lane)}
+
 ${categoryInstruction}
 
-Rules: stay tonally consistent with their choices; prefer household-name films; IMDb 7.0+; well-known in English-speaking markets. [Seed: ${randomSeed}]
+Rules: stay tonally consistent with their choices; IMDb 7.0+ unless lane allows slightly lower for bold picks (Left Field only). [Seed: ${randomSeed}]
 
 Respond in JSON:
 {
@@ -521,7 +600,7 @@ Respond in JSON:
 
     if (!searchResult || excludeTmdbIds.includes(searchResult.id)) {
       // Fallback: try catalogue
-      return await catalogueFallbackReplacement(excludeTmdbIds);
+      return await catalogueFallbackReplacement(excludeTmdbIds, lane);
     }
 
     const [movieDetails, tmdbTrailers, watchProviders] = await Promise.all([
@@ -530,16 +609,16 @@ Respond in JSON:
       getWatchProviders(searchResult.id, result.title, result.year || null),
     ]);
 
-    if (!movieDetails) return catalogueFallbackReplacement(excludeTmdbIds);
+    if (!movieDetails) return catalogueFallbackReplacement(excludeTmdbIds, lane);
 
     if (!movieDetails.posterPath || !movieDetails.posterPath.trim()) {
       console.log(`Skipping replacement "${movieDetails.title}" - no poster`);
-      return catalogueFallbackReplacement(excludeTmdbIds);
+      return catalogueFallbackReplacement(excludeTmdbIds, lane);
     }
 
     if (tmdbTrailers.length === 0) {
       console.log(`Skipping replacement "${movieDetails.title}" - no trailer`);
-      return catalogueFallbackReplacement(excludeTmdbIds);
+      return catalogueFallbackReplacement(excludeTmdbIds, lane);
     }
 
     // No hard streaming filter — most films are available to rent/buy
@@ -553,14 +632,18 @@ Respond in JSON:
     };
   } catch (error) {
     console.error("Failed to generate replacement:", error);
-    return catalogueFallbackReplacement(excludeTmdbIds);
+    return catalogueFallbackReplacement(excludeTmdbIds, lane);
   }
 }
 
-async function catalogueFallbackReplacement(excludeTmdbIds: number[]): Promise<Recommendation | null> {
+async function catalogueFallbackReplacement(
+  excludeTmdbIds: number[],
+  lane: RecommendationLane = "mainstream"
+): Promise<Recommendation | null> {
+  const minRating = wildcardMinRating(lane);
   const allMovies = getAllMovies();
   const eligible = shuffleArray(
-    allMovies.filter((m) => !excludeTmdbIds.includes(m.tmdbId) && m.rating && m.rating >= 7.0)
+    allMovies.filter((m) => !excludeTmdbIds.includes(m.tmdbId) && m.rating && m.rating >= minRating)
   );
 
   for (const movie of eligible.slice(0, 10)) {

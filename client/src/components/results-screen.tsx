@@ -1,4 +1,9 @@
-import type { RecommendationsResponse, WatchProvidersResponse, Recommendation } from "@shared/schema";
+import type {
+  RecommendationsResponse,
+  WatchProvidersResponse,
+  Recommendation,
+  RecommendationLane,
+} from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Play, RefreshCw, Film, ChevronLeft, ChevronRight, Bookmark, Tv, Brain, Eye, Share2, Check } from "lucide-react";
@@ -55,10 +60,19 @@ interface ResultsScreenProps {
   isLoading: boolean;
   onPlayAgain: () => void;
   sessionId?: string | null;
+  /** Same lane as initial recommendations — used for "seen it" replacements */
+  recLane?: RecommendationLane | null;
   suppressTrailer?: boolean; // hide iframe when an overlay modal is open (YouTube z-index fix)
 }
 
-export function ResultsScreen({ recommendations, isLoading, onPlayAgain, sessionId, suppressTrailer = false }: ResultsScreenProps) {
+export function ResultsScreen({
+  recommendations,
+  isLoading,
+  onPlayAgain,
+  sessionId,
+  recLane = null,
+  suppressTrailer = false,
+}: ResultsScreenProps) {
   const { user } = useAuth();
   const [authModal, setAuthModal] = useState<{ heading: string; triggerSource: string } | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -147,7 +161,11 @@ export function ResultsScreen({ recommendations, isLoading, onPlayAgain, session
   // Mutation to get a replacement recommendation
   const replacementMutation = useMutation({
     mutationFn: async (excludeTmdbIds: number[]) => {
-      const res = await apiRequest("POST", `/api/session/${sessionId}/replacement`, { excludeTmdbIds });
+      const lane = recLane ?? "mainstream";
+      const res = await apiRequest("POST", `/api/session/${sessionId}/replacement`, {
+        excludeTmdbIds,
+        lane,
+      });
       return res.json() as Promise<Recommendation>;
     },
     onSuccess: (newRec) => {
