@@ -60,91 +60,8 @@ interface AIAnalysis {
   recommendations: AIRecommendationResult[];
 }
 
-/**
- * Titles models over-recommend on “smart” taste — cap how many may appear per response.
- * Not exhaustive; extend as you spot repeats in PostHog / support tickets.
- */
-/** Stricter = fewer "award carousel" titles per response */
-const USUAL_SUSPECTS_MAX = 1;
-const USUAL_SUSPECTS_TITLES_LOWER = new Set(
-  [
-    "gone girl",
-    "the prestige",
-    "arrival",
-    "drive",
-    "mad max: fury road",
-    "the lord of the rings: the fellowship of the ring",
-    "the lord of the rings the fellowship of the ring",
-    "1917",
-    "in bruges",
-    "get out",
-    "the cabin in the woods",
-    "the nice guys",
-    "knives out",
-    "annihilation",
-    "inside man",
-    "la la land",
-    "the wolf of wall street",
-    "the grand budapest hotel",
-    "catch me if you can",
-    "the social network",
-    "shutter island",
-    "the talented mr. ripley",
-    "her",
-    "donnie darko",
-    "no country for old men",
-    "prisoners",
-    "interstellar",
-    "inception",
-    "fight club",
-    "the dark knight",
-    "blade runner 2049",
-    "ex machina",
-    "whiplash",
-    "nightcrawler",
-    "zodiac",
-    "se7en",
-    "the silence of the lambs",
-    "parasite",
-    "everything everywhere all at once",
-    "dune",
-    "oppenheimer",
-    "barbie",
-    "the revenant",
-    "the matrix",
-    "edge of tomorrow",
-    "fantastic beasts and where to find them",
-    "march of the penguins",
-    "life of pi",
-    "the hunt for red october",
-    "schindler's list",
-    "schindlers list",
-    "amy",
-    "heat",
-    "birdman",
-    "the sixth sense",
-    "the shape of water",
-    "the curious case of benjamin button",
-    "the witch",
-    "deadpool",
-    "midnight in paris",
-    "ford v ferrari",
-    "green book",
-    "the trial of the chicago 7",
-    "the jungle book",
-    "chef",
-    "10 things i hate about you",
-    "call me by your name",
-    "the fault in our stars",
-    "spider-man: far from home",
-    "spider-man far from home",
-    "easy a",
-    "gladiator",
-    "jojo rabbit",
-    "hugo",
-    "tangled",
-  ].map((t) => t.toLowerCase().trim())
-);
+/** At most this many picks may have theatrical release year strictly before 1970 */
+const MAX_PRE_1970_FILMS = 1;
 
 function normalizeTitleKey(title: string): string {
   return title
@@ -153,8 +70,8 @@ function normalizeTitleKey(title: string): string {
     .replace(/^the\s+/i, "");
 }
 
-function countUsualSuspects(recs: { title: string }[]): number {
-  return recs.filter((r) => USUAL_SUSPECTS_TITLES_LOWER.has(r.title.toLowerCase().trim())).length;
+function countPre1970(recs: { year?: number }[]): number {
+  return recs.filter((r) => typeof r.year === "number" && r.year < 1970).length;
 }
 
 function countRecentCollisions(recs: { title: string }[], recentSet: Set<string>): number {
@@ -243,23 +160,19 @@ export async function generateRecommendations(
     ? `\nStarting mood (supporting only): the user hinted at these genres before the funnel: ${initialGenreFilters.join(", ")}. The A/B evidence below is the primary signal — use the funnel profile first.\n`
     : "";
 
-  const usualSuspectsRule = `
-=== SOURCE OF TITLES (read this) ===
-You are NOT choosing from any app database or catalogue we gave you. Use your full knowledge of real released films — any country, any era — the way a human curator would. We only need correct **English title + year** to look films up (same as recommending from memory and film culture at large).
+  const curatorPreamble = `
+=== SOURCE OF TITLES ===
+You are **not** limited to any in-app catalogue. Name real films from your knowledge — any country — with accurate **English release title + year** for lookup. Act like a movie buff: varied picks that still fit their funnel, not a generic "best movies" list.
 
-=== ANTI–"USUAL SUSPECTS" (critical) ===
-Models default to the same ~50 "Reddit / Letterboxd / film-bro" prestige titles (2000s–2010s psych-thrillers, same A-list directors). **Do not fill the list with those.**
+=== RELEASE YEAR — PRE-1970 CAP ===
+At most **${MAX_PRE_1970_FILMS}** of the 7 films may have a theatrical release year **before 1970** (i.e. 1969 or earlier). The rest must be **1970 or later**. If a classic pre-1970 title truly fits best, use **one**; do not stack multiple oldies unless the user's A/B choices are overwhelmingly classic-era (still respect the cap).
 
-- At most **${USUAL_SUSPECTS_MAX}** of your 7 picks may be from this overused cluster (examples — also avoid obvious equivalents): Gone Girl, The Prestige, Drive, Knives Out, Parasite, Dune, Arrival, Grand Budapest Hotel, Green Book, 1917, The Revenant, The Matrix, etc.
-- The **other ${7 - USUAL_SUSPECTS_MAX}** must be **recognisable** but **not** the same Oscar-season / "Netflix top 10 for smart people" row. Think: **studio hits, cult favourites, famous international crossovers, iconic older Hollywood** — still household-level, but **different cultural lanes** (not seven Best Picture nominees from the 2010s).
-- If their taste is genuinely that cluster, still obey the **${USUAL_SUSPECTS_MAX}-from-list cap** and use **adjacent** equally famous films.
-
-=== ERA SPREAD (unless profile is purely one era) ===
-Include **at least one** widely known film **before 1990** and **at least one** from **2020+** (still mainstream: major release / cultural footprint). This breaks the "all 2005–2016" clump.
+=== ERA BREADTH (within 1970+) ===
+Across the six **1970+** slots, spread decades where it fits their profile — include at least one **2020 or newer** when it fits, so the row is not all 1990s–2010s.
 `;
 
   const prompt = `You are a sharp film curator. The user finished a 7-step funnel: early rounds explore contrast; later rounds (🔥) matter more. Infer ONE clear taste profile from the whole run — then recommend 7 films that **vary** within that profile (different subgenres, eras, pacing, "vibes") so the list feels like a rich menu, not seven copies of the same film.${filterContext}
-${usualSuspectsRule}
+${curatorPreamble}
 
 ${recentExclusions.length > 0 ? `=== DO NOT RECOMMEND — already shown in recent sessions ===
 ${recentExclusions.map(t => `• ${t}`).join("\n")}
@@ -288,9 +201,9 @@ If you cannot tie a film to their evidence, pick a different film.
 "Recognisable" includes: **big non-US hits**, **famous non-English crossover** films, **beloved 70s–90s Hollywood**, **crowd-pleasing blockbusters**, **well-known comedy/horror/action** — not only late-capital prestige drama. Spread films across **different "where it lives in culture"** (arthouse crossover vs multiplex vs classic cable-TV famous vs streaming-era hit) while still matching their profile.
 
 === HOW TO PICK 7 ===
-- **Not one niche:** Avoid seven films that are all the same "award-bait" band even if genres differ on paper.
+- **Not one niche:** Avoid seven films that are all the same tone/band even if genres differ on paper.
 - **Quality:** Broadly popular / well-voted; findable in Australia; no micro-budget obscurities.
-- **Hard rules:** No two from the same director or same franchise. **Visible year spread** — include at least one **pre-1990** famous title and at least one **2020+** title when the profile allows.
+- **Hard rules:** No two from the same director or same franchise. Respect the **pre-1970 cap** above.
 
 === OUTPUT — exact JSON only ===
 {
@@ -310,7 +223,7 @@ If you cannot tie a film to their evidence, pick a different film.
   ]
 }
 
-Return exactly 7 recommendations. Each reason must name at least one of their actual chosen films.`;
+Return exactly 7 recommendations. Each \`year\` must be the film's theatrical release year; **at most one** may be before 1970. Each reason must name at least one of their actual chosen films.`;
 
   try {
     let analysis = await callRecommendationsLLM(prompt);
@@ -321,18 +234,17 @@ Return exactly 7 recommendations. Each reason must name at least one of their ac
     }
 
     const recentHits = countRecentCollisions(analysis.recommendations, recentTitlesSet);
-    const needsRetry =
-      countUsualSuspects(analysis.recommendations) > USUAL_SUSPECTS_MAX ||
-      recentHits >= 2;
+    const pre1970Count = countPre1970(analysis.recommendations);
+    const needsRetry = recentHits >= 2 || pre1970Count > MAX_PRE_1970_FILMS;
 
     if (needsRetry) {
       console.warn(
-        `[ai-recommender] Retrying LLM: usual-suspects over cap and/or ${recentHits} recent-title collision(s)`
+        `[ai-recommender] Retrying LLM: ${recentHits} recent-title collision(s), ${pre1970Count} pre-1970 pick(s) (max ${MAX_PRE_1970_FILMS})`
       );
       const fixPrompt = `${prompt}
 
 === REGENERATE (strict) ===
-Your previous answer broke rules: at most ${USUAL_SUSPECTS_MAX} from the usual-suspects cluster; **zero** titles from the DO NOT RECOMMEND list; each reason must tie to their A/B picks. Output valid JSON only with **7 completely NEW titles**.`;
+Your previous answer broke rules: **zero** titles from the DO NOT RECOMMEND list; at most **one** film with release year before 1970; each reason must tie to their A/B picks. Output valid JSON only with **7 completely NEW titles**.`;
       analysis = await callRecommendationsLLM(fixPrompt);
     }
 
@@ -340,9 +252,9 @@ Your previous answer broke rules: at most ${USUAL_SUSPECTS_MAX} from the usual-s
       throw new Error("LLM returned no recommendations after retry");
     }
 
-    const usualSuspectCount = countUsualSuspects(analysis.recommendations);
-    if (usualSuspectCount > USUAL_SUSPECTS_MAX) {
-      console.warn(`[ai-recommender] usual-suspects count ${usualSuspectCount} still exceeds cap ${USUAL_SUSPECTS_MAX} after retry`);
+    const pre1970After = countPre1970(analysis.recommendations);
+    if (pre1970After > MAX_PRE_1970_FILMS) {
+      console.warn(`[ai-recommender] pre-1970 count ${pre1970After} still exceeds cap ${MAX_PRE_1970_FILMS} after retry`);
     }
 
     const chosenTmdbIds = new Set(chosenMovies.map((m) => m.tmdbId));
