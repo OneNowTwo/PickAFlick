@@ -31,6 +31,11 @@ import { ShareCard } from "./share-card";
 import { AuthPromptModal } from "./auth-prompt-modal";
 import { SignUpNudge } from "./signup-nudge";
 import { useAuth } from "@/contexts/AuthContext";
+import {
+  appendShownRecommendations,
+  buildAnonMemoryHeaders,
+  getAnonMemoryPayloadForSession,
+} from "@/lib/anonymous-rec-memory";
 
 function tasteHeadline(profile: RecommendationsResponse["preferenceProfile"] | undefined): string {
   const h = profile?.headline?.trim();
@@ -168,7 +173,7 @@ export function ResultsScreen({
     queryFn: async () => {
       const res = await fetch(`/api/session/${sessionId}/taste-preview`);
       if (!res.ok) throw new Error("Failed to load taste preview");
-      return res.json() as TastePreview;
+      return (await res.json()) as TastePreview;
     },
     enabled: !!sessionId && isLoading,
     retry: 1,
@@ -182,13 +187,25 @@ export function ResultsScreen({
     }
   }, [recommendations]);
 
+  useEffect(() => {
+    if (isLoading || !recommendations?.recommendations?.length || user) return;
+    appendShownRecommendations(recommendations.recommendations, activeTrack);
+  }, [isLoading, recommendations, user, activeTrack]);
+
   // Mutation to get a replacement recommendation
   const replacementMutation = useMutation({
     mutationFn: async (vars: { excludeTmdbIds: number[]; track: "mainstream" | "indie" }) => {
-      const res = await apiRequest("POST", `/api/session/${sessionId}/replacement`, {
-        excludeTmdbIds: vars.excludeTmdbIds,
-        track: vars.track,
-      });
+      const payload = sessionId ? getAnonMemoryPayloadForSession(sessionId) : [];
+      const extra = buildAnonMemoryHeaders(payload) as Record<string, string>;
+      const res = await apiRequest(
+        "POST",
+        `/api/session/${sessionId}/replacement`,
+        {
+          excludeTmdbIds: vars.excludeTmdbIds,
+          track: vars.track,
+        },
+        { headers: extra }
+      );
       return res.json() as Promise<Recommendation>;
     },
     onSuccess: (newRec) => {
@@ -265,8 +282,21 @@ export function ResultsScreen({
   }, [isLoading, recommendations, sessionId]);
 
   const { data: watchProviders, isLoading: isLoadingProviders } = useQuery<WatchProvidersResponse>({
-    queryKey: [`/api/watch-providers/${currentTmdbId}?title=${encodeURIComponent(currentRec?.movie.title || '')}&year=${currentRec?.movie.year || ''}`],
-    enabled: (showWatchProviders || !!currentTmdbId) && !!currentRec,
+    queryKey: [
+      "/api/watch-providers",
+      currentTmdbId,
+      currentRec?.movie.title ?? "",
+      currentRec?.movie.year ?? "",
+    ],
+    queryFn: async () => {
+      const title = currentRec?.movie.title ?? "";
+      const year = currentRec?.movie.year ?? "";
+      const q = new URLSearchParams({ title, year: String(year) });
+      const res = await fetch(`/api/watch-providers/${currentTmdbId}?${q.toString()}`);
+      if (!res.ok) throw new Error("Failed to load providers");
+      return res.json() as Promise<WatchProvidersResponse>;
+    },
+    enabled: showWatchProviders && !!currentTmdbId && !!currentRec,
   });
 
   /** Seen toggle: on → mark + request replacement once; off → clear mark (no second API). */
@@ -447,7 +477,7 @@ export function ResultsScreen({
   const isCurrentSeen = currentRec ? seenMovies.has(currentRec.movie.tmdbId) : false;
   const otherTrack: RecommendationTrack = activeTrack === "mainstream" ? "indie" : "mainstream";
   const switchLaneButtonLabel =
-    otherTrack === "indie" ? "Switch to Indie picks" : "Switch to Mainstream picks";
+    otherTrack === "indie" ? "Switch to Left Field picks" : "Switch to Mainstream picks";
 
   const mainstreamThumbs = displayRecs.filter((r) => r.pickedAs !== "indie");
   const indieThumbs = displayRecs.filter((r) => r.pickedAs === "indie");
@@ -517,9 +547,14 @@ export function ResultsScreen({
       : `https://image.tmdb.org/t/p/w500${currentRec.movie.posterPath}`
     : null;
 
-  const primaryProvider = watchProviders?.providers?.find(p => p.type === "subscription") ?? watchProviders?.providers?.[0];
-  const watchNowLabel = primaryProvider
-    ? `Watch now on ${primaryProvider.name}`
+  const primaryProvider =
+    watchProviders?.providers?.find((p) => p.type === "subscription") ??
+    watchProviders?.providers?.[0];
+  const hasAuWatchFlag = currentRec?.auWatchAvailable !== false;
+  const watchNowLabel = user
+    ? primaryProvider
+      ? `Watch now on ${primaryProvider.name}`
+      : "Stream or rent in AU"
     : "Where to Watch";
 
   return (
@@ -669,22 +704,27 @@ export function ResultsScreen({
                   </Badge>
                 )}
               </div>
-              <Button
-                variant="default"
-                size="lg"
-                onClick={() => {
-                  if (!user) {
-                    setAuthModal({ heading: "Sign in to track what you watch and get better picks next time", triggerSource: "where_to_watch" });
-                    return;
-                  }
-                  setShowWatchProviders(true);
-                }}
-                className="gap-2 shrink-0 w-full md:w-auto font-semibold"
-                data-testid="button-watch-now"
-              >
-                <Tv className="w-4 h-4" />
-                {watchNowLabel}
-              </Button>
+              {hasAuWatchFlag ? (
+                <Button
+                  variant="default"
+                  size="lg"
+                  onClick={() => {
+                    if (!user) {
+                      setAuthModal({
+                        heading: "Sign in to track what you watch and get better picks next time",
+                        triggerSource: "where_to_watch",
+                      });
+                      return;
+                    }
+                    setShowWatchProviders(true);
+                  }}
+                  className="gap-2 shrink-0 w-full md:w-auto font-semibold"
+                  data-testid="button-watch-now"
+                >
+                  <Tv className="w-4 h-4" />
+                  {watchNowLabel}
+                </Button>
+              ) : null}
             </div>
             <p className="text-foreground/75 text-sm leading-snug mt-2 max-w-prose" data-testid="text-movie-reason">
               <span className="font-medium text-foreground/90">Why this fits your picks:</span>{" "}
@@ -807,13 +847,16 @@ export function ResultsScreen({
           <button
             type="button"
             onClick={() => onSwitchLane(otherTrack)}
-            className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold
-              border border-primary/35 bg-primary/10 text-white/95 backdrop-blur-md
-              transition-all duration-200 hover:scale-[1.04] hover:border-primary/50 hover:bg-primary/18
-              hover:shadow-[0_0_18px_rgba(220,38,38,0.2)] active:scale-[0.97]"
+            className={`
+              inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold
+              border backdrop-blur-md transition-all duration-200
+              border-white/20 bg-white/[0.12] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]
+              hover:scale-[1.04] hover:border-white/35 hover:bg-white/[0.18] hover:shadow-[0_0_22px_rgba(255,255,255,0.12)]
+              active:scale-[0.97] active:border-white/25 active:bg-white/[0.14]
+            `}
             data-testid="button-switch-lane"
           >
-            <ArrowLeftRight className="w-3.5 h-3.5 text-primary/90 shrink-0" />
+            <ArrowLeftRight className="w-3.5 h-3.5 text-white shrink-0" />
             {switchLaneButtonLabel}
           </button>
         )}

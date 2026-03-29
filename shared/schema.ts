@@ -197,6 +197,8 @@ export const recommendationSchema = z.object({
   wildcardBadge: z.string().optional(), // Set on personalised wildcard picks
   /** Dual-row flow: mainstream vs acclaimed lesser-known row */
   pickedAs: recommendationTrackSchema.optional(),
+  /** True when AU stream/rent/buy links exist (final picks must satisfy this). */
+  auWatchAvailable: z.boolean().optional(),
 });
 
 export type Recommendation = z.infer<typeof recommendationSchema>;

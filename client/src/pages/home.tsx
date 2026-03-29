@@ -21,6 +21,13 @@ import { HowToPlaySection } from "@/components/how-to-play";
 import { FAQSection } from "@/components/faq-section";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
+import type { AnonymousRecMemoryEntry } from "@shared/anonymous-rec-memory";
+import {
+  buildAnonMemoryHeaders,
+  clearAnonMemoryRequestSnapshot,
+  fingerprintAnonPayload,
+  getAnonMemoryPayloadForSession,
+} from "@/lib/anonymous-rec-memory";
 
 type GameState =
   | "start"
@@ -172,13 +179,24 @@ export default function Home() {
     },
   });
 
+  const anonRecPayload = useMemo((): AnonymousRecMemoryEntry[] => {
+    if (!sessionId) return [];
+    return getAnonMemoryPayloadForSession(sessionId);
+  }, [sessionId]);
+
+  const anonRecFingerprint = useMemo(
+    () => fingerprintAnonPayload(anonRecPayload),
+    [anonRecPayload]
+  );
+
   // Get current round query
   const recsQuery = useQuery<RecommendationsResponse>({
-    queryKey: ["/api/session", sessionId, "recommendations-bundle"],
+    queryKey: ["/api/session", sessionId, "recommendations-bundle", anonRecFingerprint],
     queryFn: async () => {
       const tr = resultsTrack ?? "mainstream";
       const res = await fetch(
-        `/api/session/${sessionId}/recommendations?track=${encodeURIComponent(tr)}`
+        `/api/session/${sessionId}/recommendations?track=${encodeURIComponent(tr)}`,
+        { headers: buildAnonMemoryHeaders(anonRecPayload) }
       );
       if (!res.ok) throw new Error(await res.text());
       return res.json() as Promise<RecommendationsResponse>;
@@ -338,6 +356,7 @@ export default function Home() {
     const sid = sessionId;
     sessionStorage.removeItem("homeState");
     if (sid) {
+      clearAnonMemoryRequestSnapshot(sid);
       queryClient.removeQueries({ queryKey: ["/api/session", sid, "recommendations-bundle"] });
     }
     setSessionId(null);

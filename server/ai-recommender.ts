@@ -5,7 +5,9 @@ import type {
   RecommendationsResponse,
   RecommendationTrack,
 } from "@shared/schema";
-import { searchMovieByTitle, getMovieTrailers, getMovieDetails } from "./tmdb";
+import { searchMovieByTitle, getMovieTrailers, getMovieDetails, getWatchProviders } from "./tmdb";
+import type { AnonymousRecMemoryEntry } from "@shared/anonymous-rec-memory";
+import { anonFingerprint } from "./anon-memory-request";
 import { getAllMovies } from "./catalogue";
 import { storage } from "./storage";
 import { sessionStorage as gameSessionStorage } from "./session-storage";
@@ -22,7 +24,9 @@ const recentlyRecommendedTitles: string[] = [];
 const MAX_RECENT_TRACKED = 400;
 const RECENT_EXCLUSIONS_PROMPT_COUNT = 64;
 const TARGET_RESOLVED = 6;
-const LLM_PICK_COUNT = 8;
+/** Large LLM pool: resolve + AU filter fills the row without repeated regen in the common case. */
+const LLM_PICK_COUNT = 18;
+const ANON_PRIMARY_GENRE_OVERUSE = 4;
 const MAX_PRE_1970 = 1;
 const MIN_PICKS_YEAR_LEQ_2010 = 2;
 
@@ -155,19 +159,24 @@ interface PrefetchEntry {
 
 const prefetchBySession = new Map<string, Promise<PrefetchEntry>>();
 
-/** Per-session cache: each lane stores a full response; lane switch must be cache-only. */
-interface SessionLaneCacheEntry {
+/** Taste/mood for a session (shared across anon-memory fingerprints). */
+interface SessionTasteEntry {
   taste?: TasteObservationResult;
   mood?: SessionMoodProfile;
-  mainstream?: RecommendationsResponse;
-  indie?: RecommendationsResponse;
 }
 
-const sessionLaneCache = new Map<string, SessionLaneCacheEntry>();
+const sessionTasteMeta = new Map<string, SessionTasteEntry>();
+type LaneBundle = Partial<Record<RecommendationTrack, RecommendationsResponse>>;
+const sessionLaneBundleCache = new Map<string, LaneBundle>();
+
+function laneBundleKey(sessionId: string, anonFp: string): string {
+  return `${sessionId}::${anonFp}`;
+}
+
 const laneInflight = new Map<string, Promise<RecommendationsResponse>>();
 
-function laneInflightKey(sessionId: string, track: RecommendationTrack): string {
-  return `${sessionId}:${track}`;
+function laneInflightKey(sessionId: string, track: RecommendationTrack, anonFp: string): string {
+  return `${sessionId}:${track}:${anonFp}`;
 }
 
 function logRecsTiming(sessionId: string, phase: string, ms: number): void {
@@ -175,19 +184,24 @@ function logRecsTiming(sessionId: string, phase: string, ms: number): void {
   console.log(`[recs-timing] ${id} ${phase}=${ms}ms`);
 }
 
-function patchSessionLaneMeta(sessionId: string, partial: Partial<SessionLaneCacheEntry>): void {
-  const cur = sessionLaneCache.get(sessionId) ?? {};
-  sessionLaneCache.set(sessionId, { ...cur, ...partial });
+function patchSessionTasteMeta(
+  sessionId: string,
+  partial: Partial<{ taste: TasteObservationResult; mood: SessionMoodProfile }>
+): void {
+  const cur = sessionTasteMeta.get(sessionId) ?? {};
+  sessionTasteMeta.set(sessionId, { ...cur, ...partial });
 }
 
-function mergeLaneIntoCache(
+function mergeLaneBundleIntoCache(
   sessionId: string,
+  anonFp: string,
   track: RecommendationTrack,
   res: RecommendationsResponse
 ): void {
-  const cur = sessionLaneCache.get(sessionId) ?? {};
+  const k = laneBundleKey(sessionId, anonFp);
+  const cur = sessionLaneBundleCache.get(k) ?? {};
   cur[track] = res;
-  sessionLaneCache.set(sessionId, cur);
+  sessionLaneBundleCache.set(k, cur);
 }
 
 function normalizeTitleKey(title: string): string {
@@ -294,6 +308,63 @@ function buildBannedContext(chosenMovies: Movie[], rejectedMovies: Movie[]): {
 
   const bannedTitlesPrompt = labels.slice(0, 100).join("; ");
   return { bannedSet, bannedTitlesPrompt };
+}
+
+interface MergedBannedContext {
+  bannedSet: Set<string>;
+  bannedTitlesPrompt: string;
+  anonDirectorKeys: Set<string>;
+  anonPrimaryGenreCounts: Map<string, number>;
+}
+
+function mergeAnonymousIntoBanned(
+  base: { bannedSet: Set<string>; bannedTitlesPrompt: string },
+  entries: AnonymousRecMemoryEntry[]
+): MergedBannedContext {
+  const bannedSet = new Set(base.bannedSet);
+  const extraTitles: string[] = [];
+  const anonDirectorKeys = new Set<string>();
+  const anonPrimaryGenreCounts = new Map<string, number>();
+
+  for (const e of entries) {
+    const tk = normalizeTitleKey(e.title);
+    if (tk && !bannedSet.has(tk)) {
+      bannedSet.add(tk);
+      extraTitles.push(e.title.trim());
+    }
+    const d = (e.director || "").toLowerCase().trim();
+    if (d) anonDirectorKeys.add(d);
+    const g0 = e.genres?.[0]?.trim().toLowerCase();
+    if (g0) anonPrimaryGenreCounts.set(g0, (anonPrimaryGenreCounts.get(g0) ?? 0) + 1);
+  }
+
+  const memoryLines = [
+    extraTitles.length > 0 &&
+      `Browser memory — do NOT repeat these titles (or close variants): ${extraTitles.slice(0, 40).join("; ")}.`,
+    anonDirectorKeys.size > 0 &&
+      `Browser memory — avoid leaning on these directors again tonight (prefer fresh voices): ${Array.from(anonDirectorKeys).slice(0, 25).join("; ")}.`,
+  ].filter(Boolean) as string[];
+
+  const bannedTitlesPrompt = [base.bannedTitlesPrompt, ...memoryLines].filter(Boolean).join(" ");
+
+  return { bannedSet, bannedTitlesPrompt, anonDirectorKeys, anonPrimaryGenreCounts };
+}
+
+function cloneMergedBanned(m: MergedBannedContext): MergedBannedContext {
+  return {
+    bannedSet: new Set(m.bannedSet),
+    bannedTitlesPrompt: m.bannedTitlesPrompt,
+    anonDirectorKeys: new Set(m.anonDirectorKeys),
+    anonPrimaryGenreCounts: new Map(m.anonPrimaryGenreCounts),
+  };
+}
+
+function movieFailsAnonDiversity(movie: Movie, mb: MergedBannedContext): boolean {
+  const d = (movie.director || "").toLowerCase().trim();
+  if (d && mb.anonDirectorKeys.has(d)) return true;
+  const p = (movie.genres[0] || "").trim().toLowerCase();
+  if (p && (mb.anonPrimaryGenreCounts.get(p) ?? 0) >= ANON_PRIMARY_GENRE_OVERUSE) return true;
+  return false;
 }
 
 function filterPicksAgainstBanned(
@@ -584,19 +655,24 @@ export async function generateSingleTrackPicks(
 async function resolveOneRecommendation(
   rec: AIRecommendationResult,
   chosenTmdbIds: Set<number>,
-  pickedAs: RecommendationTrack
+  pickedAs: RecommendationTrack,
+  mergedBanned?: MergedBannedContext | null
 ): Promise<Recommendation | null> {
   try {
     const searchResult = await searchMovieByTitle(rec.title, rec.year);
     if (!searchResult || chosenTmdbIds.has(searchResult.id)) return null;
 
-    const [movieDetails, tmdbTrailers] = await Promise.all([
+    const [movieDetails, tmdbTrailers, watchResult] = await Promise.all([
       getMovieDetails(searchResult.id),
       getMovieTrailers(searchResult.id).catch(() => [] as string[]),
+      getWatchProviders(searchResult.id, rec.title, rec.year ?? null),
     ]);
 
     if (!movieDetails) return null;
     if (!movieDetails.posterPath?.trim()) return null;
+    if (!watchResult.providers.length) return null;
+
+    if (mergedBanned && movieFailsAnonDiversity(movieDetails, mergedBanned)) return null;
 
     movieDetails.listSource = "ai-recommendation";
     const reason =
@@ -610,6 +686,7 @@ async function resolveOneRecommendation(
       trailerUrls: urls,
       reason,
       pickedAs,
+      auWatchAvailable: true,
     };
   } catch {
     return null;
@@ -619,13 +696,16 @@ async function resolveOneRecommendation(
 async function resolvePicksToRecommendations(
   picks: AIRecommendationResult[],
   chosenMovies: Movie[],
-  track: RecommendationTrack
+  track: RecommendationTrack,
+  mergedBanned: MergedBannedContext | null
 ): Promise<Recommendation[]> {
   const chosenTmdbIds = new Set(chosenMovies.map((m) => m.tmdbId));
   const seenTitles = new Set<string>();
   const seenDirectors = new Set<string>();
   const settled = await Promise.all(
-    picks.slice(0, LLM_PICK_COUNT).map((r) => resolveOneRecommendation(r, chosenTmdbIds, track))
+    picks
+      .slice(0, LLM_PICK_COUNT)
+      .map((r) => resolveOneRecommendation(r, chosenTmdbIds, track, mergedBanned))
   );
   const out: Recommendation[] = [];
   for (const r of settled) {
@@ -696,7 +776,7 @@ export function beginRecommendationPrefetch(sessionId: string): void {
 }
 
 export async function getTastePreviewForSession(sessionId: string): Promise<TasteObservationResult> {
-  const cachedTaste = sessionLaneCache.get(sessionId)?.taste;
+  const cachedTaste = sessionTasteMeta.get(sessionId)?.taste;
   if (cachedTaste) return cachedTaste;
 
   let entryPromise = prefetchBySession.get(sessionId);
@@ -713,7 +793,7 @@ export async function getTastePreviewForSession(sessionId: string): Promise<Tast
   try {
     const entry = await entryPromise;
     const t = await entry.taste;
-    patchSessionLaneMeta(sessionId, { mood: entry.mood, taste: t });
+    patchSessionTasteMeta(sessionId, { mood: entry.mood, taste: t });
     return t;
   } catch {
     const chosen = gameSessionStorage.getChosenMovies(sessionId);
@@ -721,62 +801,132 @@ export async function getTastePreviewForSession(sessionId: string): Promise<Tast
   }
 }
 
-/** TMDB resolve + at most one extra LLM pass when picks or resolve count are critically low. */
+/**
+ * One large pick pool → resolve + AU filter → at most one LLM regen if the row is still short.
+ * Timing logs identify whether slowness is LLM vs TMDB/AU resolution.
+ */
 async function finalizeSingleTrackToResponse(
   track: RecommendationTrack,
   chosen: Movie[],
   rejected: Movie[],
   filters: string[],
   mood: SessionMoodProfile,
-  banned: { bannedSet: Set<string>; bannedTitlesPrompt: string },
+  banned: MergedBannedContext,
   taste: TasteObservationResult,
   rawFromPrefetch: SingleTrackLLMResult | null,
   timingSessionId?: string
 ): Promise<RecommendationsResponse> {
-  let picks = rawFromPrefetch?.picks || [];
+  const finalizeStart = Date.now();
+  const sid = timingSessionId;
+  const shortSid = sid && sid.length > 16 ? `${sid.slice(0, 8)}…` : sid;
+
+  const logFinalize = (msg: string, detail?: Record<string, number | string | boolean>) => {
+    if (!sid) return;
+    const tail = detail ? ` ${JSON.stringify(detail)}` : "";
+    console.log(`[recs-finalize] ${shortSid} ${track} ${msg}${tail}`);
+  };
+
+  let supplementLlmMs = 0;
+  let auResolvePass1Ms = 0;
+  let regenLlmMs = 0;
+  let auResolvePass2Ms = 0;
+  let regenUsed = false;
+
+  let workingBanned = cloneMergedBanned(banned);
+  let picks = filterPicksAgainstBanned(rawFromPrefetch?.picks || [], workingBanned.bannedSet);
   let trackCopy: SingleTrackLLMResult | null = rawFromPrefetch;
 
   if (picks.length < 6) {
+    const t0 = Date.now();
     const raw = await generateSingleTrackPicks(
       chosen,
       rejected,
       filters,
       track,
       mood,
-      banned,
+      workingBanned,
       "",
       timingSessionId
     );
-    picks = raw.picks || [];
+    supplementLlmMs = Date.now() - t0;
+    picks = filterPicksAgainstBanned(raw.picks || [], workingBanned.bannedSet);
     trackCopy = raw;
+    logFinalize("supplement_llm_ms", { ms: supplementLlmMs, picks_after_filter: picks.length });
   }
 
-  const tmdb1 = Date.now();
-  let recommendations = await resolvePicksToRecommendations(picks, chosen, track);
-  if (timingSessionId) {
-    logRecsTiming(timingSessionId, `tmdb_enrichment_${track}_pass1`, Date.now() - tmdb1);
-  }
+  const tAu1 = Date.now();
+  let recommendations = await resolvePicksToRecommendations(picks, chosen, track, workingBanned);
+  auResolvePass1Ms = Date.now() - tAu1;
+  logFinalize("au_resolve_pass1_ms", {
+    ms: auResolvePass1Ms,
+    pick_pool: picks.length,
+    resolved: recommendations.length,
+  });
 
   if (recommendations.length < TARGET_RESOLVED) {
-    if (timingSessionId) {
-      logRecsTiming(timingSessionId, `regen_${track}_unresolved_tmdb`, 0);
+    regenUsed = true;
+    logFinalize("REGEN_TRIGGERED", {
+      reason: "resolved_lt_target",
+      pass1_resolved: recommendations.length,
+      target: TARGET_RESOLVED,
+      pass1_au_ms: auResolvePass1Ms,
+    });
+    for (const p of picks) {
+      const k = normalizeTitleKey(p.title);
+      if (k) workingBanned.bannedSet.add(k);
     }
+    const regenExtra =
+      "Every pick must be streamable, rentable, or purchasable in Australia (real AU provider destinations). Prior batch had too few AU-available titles; output one fresh full pick list with different titles.";
+
+    const tRegen = Date.now();
     const raw = await generateSingleTrackPicks(
       chosen,
       rejected,
       filters,
       track,
       mood,
-      banned,
-      "",
+      workingBanned,
+      regenExtra,
       timingSessionId
     );
-    const tmdb2 = Date.now();
-    recommendations = await resolvePicksToRecommendations(raw.picks, chosen, track);
-    if (timingSessionId) {
-      logRecsTiming(timingSessionId, `tmdb_enrichment_${track}_pass2`, Date.now() - tmdb2);
-    }
+    regenLlmMs = Date.now() - tRegen;
+    logFinalize("regen_llm_ms", {
+      ms: regenLlmMs,
+      picks_raw: raw.picks?.length ?? 0,
+    });
+    picks = filterPicksAgainstBanned(raw.picks || [], workingBanned.bannedSet);
     trackCopy = raw;
+
+    const tAu2 = Date.now();
+    recommendations = await resolvePicksToRecommendations(picks, chosen, track, workingBanned);
+    auResolvePass2Ms = Date.now() - tAu2;
+    logFinalize("au_resolve_pass2_ms", {
+      ms: auResolvePass2Ms,
+      pick_pool: picks.length,
+      resolved: recommendations.length,
+    });
+
+    if (recommendations.length < TARGET_RESOLVED) {
+      console.warn(
+        `[recs-finalize] ${shortSid ?? "?"} ${track} HARD_FAILURE insufficient_resolved after_single_regen ` +
+          `resolved=${recommendations.length} target=${TARGET_RESOLVED} ` +
+          `(regen_llm_ms=${regenLlmMs} au_pass2_ms=${auResolvePass2Ms})`
+      );
+    }
+  }
+
+  const totalFinalizeMs = Date.now() - finalizeStart;
+  if (sid) {
+    console.log(
+      `[recs-finalize] ${shortSid} ${track} SUMMARY ` +
+        `total_finalize_ms=${totalFinalizeMs} ` +
+        `supplement_llm_ms=${supplementLlmMs} ` +
+        `au_resolve_pass1_ms=${auResolvePass1Ms} ` +
+        `regen_used=${regenUsed} ` +
+        `regen_llm_ms=${regenLlmMs} ` +
+        `au_resolve_pass2_ms=${auResolvePass2Ms} ` +
+        `final_resolved_count=${recommendations.length}`
+    );
   }
 
   const mainstream = track === "mainstream" ? recommendations : [];
@@ -802,25 +952,35 @@ async function finalizeSingleTrackToResponse(
   };
 }
 
-function kickWarmOtherLane(sessionId: string, pickedTrack: RecommendationTrack): void {
+function kickWarmOtherLane(
+  sessionId: string,
+  pickedTrack: RecommendationTrack,
+  anonFp: string,
+  clientAnonMemory: AnonymousRecMemoryEntry[]
+): void {
   const other: RecommendationTrack = pickedTrack === "mainstream" ? "indie" : "mainstream";
-  if (sessionLaneCache.get(sessionId)?.[other]) return;
-  void ensureLaneReady(sessionId, other).catch((err) =>
+  if (sessionLaneBundleCache.get(laneBundleKey(sessionId, anonFp))?.[other]) return;
+  void ensureLaneReady(sessionId, other, clientAnonMemory).catch((err) =>
     console.error("[warm-other-lane]", err)
   );
 }
 
-async function ensureLaneReady(sessionId: string, track: RecommendationTrack): Promise<RecommendationsResponse> {
+async function ensureLaneReady(
+  sessionId: string,
+  track: RecommendationTrack,
+  clientAnonMemory: AnonymousRecMemoryEntry[] = []
+): Promise<RecommendationsResponse> {
   const totalStart = Date.now();
   await ensureRecsLoaded();
+  const anonFp = anonFingerprint(clientAnonMemory);
 
-  const cached = sessionLaneCache.get(sessionId)?.[track];
+  const cached = sessionLaneBundleCache.get(laneBundleKey(sessionId, anonFp))?.[track];
   if (cached) {
     logRecsTiming(sessionId, `lane_${track}_cache_hit`, Date.now() - totalStart);
     return cached;
   }
 
-  const lk = laneInflightKey(sessionId, track);
+  const lk = laneInflightKey(sessionId, track, anonFp);
   const inflight = laneInflight.get(lk);
   if (inflight) {
     const r = await inflight;
@@ -835,7 +995,7 @@ async function ensureLaneReady(sessionId: string, track: RecommendationTrack): P
 
     if (chosen.length === 0) {
       const r = await fallbackSingleTrack(chosen, track);
-      mergeLaneIntoCache(sessionId, track, r);
+      mergeLaneBundleIntoCache(sessionId, anonFp, track, r);
       logRecsTiming(sessionId, `lane_${track}_total`, Date.now() - totalStart);
       return r;
     }
@@ -847,18 +1007,18 @@ async function ensureLaneReady(sessionId: string, track: RecommendationTrack): P
     }
 
     let mood: SessionMoodProfile;
-    let banned: { bannedSet: Set<string>; bannedTitlesPrompt: string };
     let taste: TasteObservationResult;
     let raw: SingleTrackLLMResult | null = null;
+    let bannedMerged: MergedBannedContext;
 
     try {
       const prefetchWait = Date.now();
       const entry = await entryPromise;
       logRecsTiming(sessionId, "prefetch_entry_wait", Date.now() - prefetchWait);
       mood = entry.mood;
-      banned = entry.banned;
+      bannedMerged = mergeAnonymousIntoBanned(entry.banned, clientAnonMemory);
       taste = await entry.taste.catch(() => moodToTasteObservation(mood, chosen));
-      patchSessionLaneMeta(sessionId, { mood, taste });
+      patchSessionTasteMeta(sessionId, { mood, taste });
 
       const laneWait = Date.now();
       raw = await (track === "mainstream" ? entry.mainstream : entry.indie).catch((e) => {
@@ -866,14 +1026,31 @@ async function ensureLaneReady(sessionId: string, track: RecommendationTrack): P
         return { picks: [] as AIRecommendationResult[] };
       });
       logRecsTiming(sessionId, `llm_raw_wait_${track}`, Date.now() - laneWait);
+
+      let filtered = filterPicksAgainstBanned(raw.picks || [], bannedMerged.bannedSet);
+      if (filtered.length < 6) {
+        const regen = await generateSingleTrackPicks(
+          chosen,
+          rejected,
+          filters,
+          track,
+          mood,
+          bannedMerged,
+          "Regenerate: too many picks overlapped browser memory or bans. Complete JSON with all picks.",
+          sessionId
+        );
+        raw = regen;
+        filtered = filterPicksAgainstBanned(raw.picks || [], bannedMerged.bannedSet);
+      }
+      raw = { ...raw, picks: filtered };
     } catch (e) {
       console.error("[prefetch] entry failed", e);
       const moodT0 = Date.now();
       mood = await extractSessionMood(chosen, rejected, filters);
       logRecsTiming(sessionId, "taste_extraction_cold", Date.now() - moodT0);
       taste = moodToTasteObservation(mood, chosen);
-      banned = buildBannedContext(chosen, rejected);
-      patchSessionLaneMeta(sessionId, { mood, taste });
+      bannedMerged = mergeAnonymousIntoBanned(buildBannedContext(chosen, rejected), clientAnonMemory);
+      patchSessionTasteMeta(sessionId, { mood, taste });
       const coldLlm = Date.now();
       raw = await generateSingleTrackPicks(
         chosen,
@@ -881,7 +1058,7 @@ async function ensureLaneReady(sessionId: string, track: RecommendationTrack): P
         filters,
         track,
         mood,
-        banned,
+        bannedMerged,
         "",
         sessionId
       );
@@ -895,17 +1072,17 @@ async function ensureLaneReady(sessionId: string, track: RecommendationTrack): P
       rejected,
       filters,
       mood,
-      banned,
+      bannedMerged,
       taste,
       raw,
       sessionId
     );
     logRecsTiming(sessionId, `finalize_${track}`, Date.now() - finalizeT0);
 
-    mergeLaneIntoCache(sessionId, track, res);
+    mergeLaneBundleIntoCache(sessionId, anonFp, track, res);
     recordRecommendedTitles(res.recommendations.map((r) => r.movie.title));
 
-    const cur = sessionLaneCache.get(sessionId);
+    const cur = sessionLaneBundleCache.get(laneBundleKey(sessionId, anonFp));
     if (cur?.mainstream && cur?.indie) {
       prefetchBySession.delete(sessionId);
     }
@@ -924,7 +1101,8 @@ async function ensureLaneReady(sessionId: string, track: RecommendationTrack): P
 
 export async function finalizeRecommendationsForTrack(
   sessionId: string,
-  track: RecommendationTrack
+  track: RecommendationTrack,
+  clientAnonMemory: AnonymousRecMemoryEntry[] = []
 ): Promise<RecommendationsResponse> {
   const routeStart = Date.now();
   await ensureRecsLoaded();
@@ -933,10 +1111,11 @@ export async function finalizeRecommendationsForTrack(
     return fallbackSingleTrack(chosen, track);
   }
 
-  const active = await ensureLaneReady(sessionId, track);
-  kickWarmOtherLane(sessionId, track);
+  const anonFp = anonFingerprint(clientAnonMemory);
+  const active = await ensureLaneReady(sessionId, track, clientAnonMemory);
+  kickWarmOtherLane(sessionId, track, anonFp, clientAnonMemory);
 
-  const bundle = sessionLaneCache.get(sessionId) ?? {};
+  const bundle = sessionLaneBundleCache.get(laneBundleKey(sessionId, anonFp)) ?? {};
   const m = bundle.mainstream;
   const i = bundle.indie;
 
@@ -970,20 +1149,24 @@ async function fallbackSingleTrack(chosenMovies: Movie[], track: RecommendationT
         m.rating &&
         m.rating >= 7.0
     )
-  ).slice(0, TARGET_RESOLVED);
+  ).slice(0, 80);
 
-  const recs: Recommendation[] = await Promise.all(
-    pool.map(async (m) => {
-      const trailerUrls = await getMovieTrailers(m.tmdbId);
-      return {
-        movie: { ...m, listSource: "ai-recommendation" },
-        trailerUrl: trailerUrls[0] || null,
-        trailerUrls,
-        reason: "Sits in the same ballpark as the pattern your picks sketched.",
-        pickedAs: track,
-      };
-    })
-  );
+  const recs: Recommendation[] = [];
+  for (const m of pool) {
+    if (recs.length >= TARGET_RESOLVED) break;
+    const trailerUrls = await getMovieTrailers(m.tmdbId);
+    if (trailerUrls.length === 0) continue;
+    const watch = await getWatchProviders(m.tmdbId, m.title, m.year);
+    if (watch.providers.length === 0) continue;
+    recs.push({
+      movie: { ...m, listSource: "ai-recommendation" },
+      trailerUrl: trailerUrls[0] || null,
+      trailerUrls,
+      reason: "Sits in the same ballpark as the pattern your picks sketched.",
+      pickedAs: track,
+      auWatchAvailable: true,
+    });
+  }
 
   return {
     recommendations: recs,
@@ -1031,53 +1214,89 @@ export async function generateReplacementRecommendation(
   chosenMovies: Movie[],
   excludeTmdbIds: number[],
   rejectedMovies: Movie[] = [],
-  track: RecommendationTrack = "mainstream"
+  track: RecommendationTrack = "mainstream",
+  clientAnonMemory: AnonymousRecMemoryEntry[] = []
 ): Promise<Recommendation | null> {
   const picks = chosenMovies.map((m, i) => `R${i + 1}: "${m.title}" (${m.year}) — ${m.director || "?"}`).join("\n");
   const rejHints = rejectedMovies.length > 0
     ? `\nPASSED ON: ${rejectedMovies.slice(0, 3).map(m => `"${m.title}"`).join(", ")}`
     : "";
+  const memoryHint =
+    clientAnonMemory.length > 0
+      ? `\nBrowser memory — do NOT repeat these titles: ${clientAnonMemory
+          .slice(-20)
+          .map((e) => e.title.trim())
+          .join("; ")}.`
+      : "";
 
-  const prompt = `One replacement for the ${track} list. Infer taste from the whole funnel — do not mirror one funnel title to one pick.
+  const baseUser = `One replacement for the ${track} list. Infer taste from the whole funnel — do not mirror one funnel title to one pick.
 
-${picks}${rejHints}
+${picks}${rejHints}${memoryHint}
 
 Exclude ${excludeTmdbIds.length} titles already shown.
 
 ${replacementRules(track)}
 
+The film must be streamable, rentable, or purchasable in Australia (real AU provider options).
+
 Reason: 1–2 sentences, max 35 words. Tie to overall funnel pattern. Do NOT name any funnel film.
 
 JSON only: {"title":"","year":2000,"reason":""}`;
 
+  const triedTitles: string[] = [];
+
   try {
-    const resp = await openai.chat.completions.create({
-      model: RECOMMENDATIONS_MODEL,
-      messages: [{ role: "user", content: prompt }],
-      response_format: { type: "json_object" },
-      max_tokens: 240,
-      temperature: 0.85,
-    });
-    const result: AIRecommendationResult = JSON.parse(resp.choices[0]?.message?.content || "{}");
-    const search = await searchMovieByTitle(result.title, result.year);
-    if (!search || excludeTmdbIds.includes(search.id)) return await catalogueFallbackReplacement(excludeTmdbIds, track);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const banLine =
+        triedTitles.length > 0
+          ? `\nDo not suggest these (already tried or unavailable in AU): ${triedTitles.join("; ")}.`
+          : "";
+      const prompt = baseUser + banLine;
 
-    const [details, trailers] = await Promise.all([getMovieDetails(search.id), getMovieTrailers(search.id)]);
-    if (!details || !details.posterPath?.trim() || trailers.length === 0) {
-      return catalogueFallbackReplacement(excludeTmdbIds, track);
+      const resp = await openai.chat.completions.create({
+        model: RECOMMENDATIONS_MODEL,
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+        max_tokens: 280,
+        temperature: 0.85,
+      });
+      const result: AIRecommendationResult = JSON.parse(resp.choices[0]?.message?.content || "{}");
+      if (!result.title?.trim()) continue;
+
+      const search = await searchMovieByTitle(result.title, result.year);
+      if (!search || excludeTmdbIds.includes(search.id)) {
+        triedTitles.push(result.title);
+        continue;
+      }
+
+      const [details, trailers, watch] = await Promise.all([
+        getMovieDetails(search.id),
+        getMovieTrailers(search.id),
+        getWatchProviders(search.id, result.title, result.year ?? null),
+      ]);
+      if (!details || !details.posterPath?.trim() || trailers.length === 0) {
+        triedTitles.push(result.title);
+        continue;
+      }
+      if (watch.providers.length === 0) {
+        triedTitles.push(result.title);
+        continue;
+      }
+
+      details.listSource = "replacement";
+      return {
+        movie: details,
+        trailerUrl: trailers[0],
+        trailerUrls: trailers,
+        reason: result.reason,
+        pickedAs: track,
+        auWatchAvailable: true,
+      };
     }
-
-    details.listSource = "replacement";
-    return {
-      movie: details,
-      trailerUrl: trailers[0],
-      trailerUrls: trailers,
-      reason: result.reason,
-      pickedAs: track,
-    };
   } catch {
-    return catalogueFallbackReplacement(excludeTmdbIds, track);
+    /* fall through */
   }
+  return catalogueFallbackReplacement(excludeTmdbIds, track);
 }
 
 async function catalogueFallbackReplacement(
@@ -1087,16 +1306,19 @@ async function catalogueFallbackReplacement(
   const eligible = shuffleArray(
     getAllMovies().filter((m) => !excludeTmdbIds.includes(m.tmdbId) && m.rating && m.rating >= 7.0)
   );
-  for (const movie of eligible.slice(0, 12)) {
+  for (const movie of eligible.slice(0, 40)) {
     if (!movie.posterPath?.trim()) continue;
     const trailerUrls = await getMovieTrailers(movie.tmdbId);
     if (trailerUrls.length === 0) continue;
+    const watch = await getWatchProviders(movie.tmdbId, movie.title, movie.year);
+    if (watch.providers.length === 0) continue;
     return {
       movie: { ...movie, listSource: "replacement" },
       trailerUrl: trailerUrls[0],
       trailerUrls,
       reason: "Fits the mood your rounds pointed toward.",
       pickedAs: track,
+      auWatchAvailable: true,
     };
   }
   return null;

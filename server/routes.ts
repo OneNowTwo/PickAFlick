@@ -11,6 +11,7 @@ import {
   getTastePreviewForSession,
   generateReplacementRecommendation,
 } from "./ai-recommender";
+import { parseAnonymousRecMemoryFromRequest } from "./anon-memory-request";
 import { buildGenreProfile } from "./recommendations";
 import { storage } from "./storage";
 import type { RoundPairResponse, ChoiceResponse, RecommendationsResponse } from "@shared/schema";
@@ -382,7 +383,11 @@ export async function registerRoutes(
       }
       const track = trackParsed.data;
 
-      const aiResult = await finalizeRecommendationsForTrack(sessionId, track);
+      const aiResult = await finalizeRecommendationsForTrack(
+        sessionId,
+        track,
+        parseAnonymousRecMemoryFromRequest(req)
+      );
 
       // Session funnel + LLM order are authoritative here; genre-profile re-ranking
       // homogenises lists across runs — revisit when auth-specific personalisation ships.
@@ -438,7 +443,8 @@ export async function registerRoutes(
         chosenMovies,
         excludeTmdbIds,
         rejectedMovies,
-        track
+        track,
+        parseAnonymousRecMemoryFromRequest(req)
       );
       
       if (!replacement) {
