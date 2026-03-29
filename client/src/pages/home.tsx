@@ -7,7 +7,6 @@ import type {
   ChoiceResponse,
   RecommendationsResponse,
   RecommendationTrack,
-  TastePreview,
 } from "@shared/schema";
 import { RoundPicker } from "@/components/round-picker";
 import { ResultsScreen } from "@/components/results-screen";
@@ -253,18 +252,6 @@ export default function Home() {
   const handleSkip = useCallback(() => {
     skipMutation.mutate();
   }, [skipMutation]);
-
-  const tastePreviewQuery = useQuery<TastePreview>({
-    queryKey: ["/api/session", sessionId, "taste-preview"],
-    queryFn: async () => {
-      const res = await fetch(`/api/session/${sessionId}/taste-preview`);
-      if (!res.ok) throw new Error("taste preview failed");
-      return res.json() as Promise<TastePreview>;
-    },
-    enabled: gameState === "pick-track" && !!sessionId,
-    staleTime: 0,
-    retry: 1,
-  });
 
   const handleTrackChosen = useCallback(
     async (track: RecommendationTrack) => {
@@ -665,12 +652,7 @@ export default function Home() {
         )}
 
         {gameState === "pick-track" && sessionId && (
-          <RecommendationTrackPicker
-            sessionId={sessionId}
-            taste={tastePreviewQuery.data}
-            tasteLoading={tastePreviewQuery.isLoading}
-            onSelect={handleTrackChosen}
-          />
+          <RecommendationTrackPicker sessionId={sessionId} onSelect={handleTrackChosen} />
         )}
 
         {(gameState === "loading-recommendations" || gameState === "results") && (

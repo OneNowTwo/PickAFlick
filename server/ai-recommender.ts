@@ -20,8 +20,8 @@ const RECOMMENDATIONS_MODEL = process.env.OPENAI_RECOMMENDATIONS_MODEL ?? "gpt-4
 
 const recentlyRecommendedTitles: string[] = [];
 const MAX_RECENT_TRACKED = 400;
-const RECENT_EXCLUSIONS_PROMPT_COUNT = 56;
-const TARGET_RESOLVED = 5;
+const RECENT_EXCLUSIONS_PROMPT_COUNT = 64;
+const TARGET_RESOLVED = 6;
 const LLM_PICK_COUNT = 8;
 const MAX_PRE_1970 = 1;
 
@@ -180,13 +180,13 @@ Rules:
   }
 }
 
-// ── Single track: 8 LLM picks (mainstream OR indie) ──────────────────────────
+// ── Single track: 8 LLM picks → resolve to 6 for display ─────────────────────
 
-function trackPromptBlock(track: RecommendationTrack): string {
+function laneRules(track: RecommendationTrack): string {
   if (track === "mainstream") {
-    return `TRACK: Mainstream — widely known, easy to find tonight, polished and accessible. Still vary tone, era, and subgenre. Avoid five near-identical blockbusters.`;
+    return `LANE — Mainstream: lean toward accessible, high-confidence picks that are easy to watch tonight, but avoid generic blockbuster sameness and repeated default titles.`;
   }
-  return `TRACK: Indie / less obvious — less famous but acclaimed or strong word-of-mouth; smart indies, international, or auteur-led. Watchable, not homework, not micro-budget obscurity.`;
+  return `LANE — Less obvious: prioritise strong, less predictable films. Avoid default or commonly recommended titles. Favour more specific, distinctive picks that still match the taste. Shun the usual prestige/blockbuster names that appear on every generic list unless the funnel is an extremely strong match.`;
 }
 
 function buildSingleTrackPrompt(
@@ -198,10 +198,10 @@ function buildSingleTrackPrompt(
   genreFilterLine: string
 ): string {
   const exclusionsLine = recentExclusions.length > 0
-    ? `Do not recommend: ${recentExclusions.join("; ")} (recently shown).`
+    ? `Also avoid these (recent sessions): ${recentExclusions.join("; ")}.`
     : "";
 
-  return `Recommend films from the OPEN web of cinema — not from a fixed database list. Infer taste from the WHOLE funnel pattern (wins vs passes), not movie-for-movie mapping.
+  return `Recommend films for tonight from this A/B funnel. The signal is CHOSEN vs PASSED ON (rounds marked * count more).
 
 CHOSEN:
 ${choicesBlock}
@@ -210,35 +210,35 @@ PASSED ON:
 ${rejectsBlock}
 ${genreFilterLine}
 
-${trackPromptBlock(track)}
+${laneRules(track)}
 
-Constraints:
-- Exactly ${LLM_PICK_COUNT} films in "picks".
-- At most ${MAX_PRE_1970} before 1970; include a 2020+ title if it fits.
-- Plausibly available in Australia.
-- No duplicate directors in the list.
-- Do not recommend funnel choices: ${chosenTitles}
+Shared (tight):
+- Exactly ${LLM_PICK_COUNT} films in "picks" (extras help after title lookup). We show 6 — make them feel distinct, not six of the same cluster.
+- Variety: max ${MAX_PRE_1970} pre-1970; include a 2020+ if it fits. Australia-available. No duplicate directors.
+- Obviousness: avoid over-recommended "internet default" films unless an extremely strong funnel match. Prioritise specificity and fit over raw popularity.
+- Use the funnel pattern — do not substitute a generic good-film list.
+- Not funnel picks: ${chosenTitles}
 ${exclusionsLine}
 
-Per-film "reason" (CRITICAL):
-- 1–2 sentences, max ~40 words total.
-- Tie this film to the OVERALL taste signal from the funnel (tension level, humour, scale, moral grey, pacing). Describe the film’s flavour.
-- Do NOT name or reference any specific A/B film title. Do NOT say "because you chose…" or "if you liked X".
-- Example of acceptable shape: "Delivers sustained tension and a survival stakes story that matches the grit your picks kept favouring."
+Reasons: short; tie to overall funnel pattern only; never name a funnel film.
 
-Return JSON only: {"picks":[{"title":"","year":2020,"reason":""}, ... ${LLM_PICK_COUNT} items]}`;
+JSON only: {"picks":[{"title":"","year":2020,"reason":""}, ... ${LLM_PICK_COUNT} entries]}`;
 }
 
 async function callSingleTrackLLM(promptText: string, track: RecommendationTrack): Promise<SingleTrackLLMResult> {
   const response = await openai.chat.completions.create({
     model: RECOMMENDATIONS_MODEL,
     messages: [
-      { role: "system", content: "PickAFlick. JSON only. Diverse, non-repetitive titles." },
+      {
+        role: "system",
+        content:
+          "PickAFlick. JSON only. Obey lane rules. Reject safe-list defaults; enforce variety across picks.",
+      },
       { role: "user", content: promptText },
     ],
     response_format: { type: "json_object" },
-    max_tokens: 1600,
-    temperature: track === "indie" ? 0.86 : 0.78,
+    max_tokens: 1500,
+    temperature: track === "indie" ? 0.92 : 0.74,
   });
   return JSON.parse(response.choices[0]?.message?.content || "{}") as SingleTrackLLMResult;
 }
@@ -270,14 +270,14 @@ export async function generateSingleTrackPicks(
 
   let result = await callSingleTrackLLM(prompt, track);
   let picks = result.picks || [];
-  if (picks.length < LLM_PICK_COUNT - 2) {
-    result = await callSingleTrackLLM(`${prompt}\n\nRegenerate: full ${LLM_PICK_COUNT} picks; JSON only.`, track);
+  if (picks.length < 6) {
+    result = await callSingleTrackLLM(`${prompt}\n\nRegenerate: ${LLM_PICK_COUNT} picks; JSON only.`, track);
     picks = result.picks || [];
   }
 
   const pre1970 = countPre1970(picks);
   const recentHits = countRecentCollisions(picks, recentTitlesSet);
-  if (pre1970 > MAX_PRE_1970 || recentHits >= 3) {
+  if (pre1970 > MAX_PRE_1970 || recentHits >= 2) {
     result = await callSingleTrackLLM(
       `${prompt}\n\nRegenerate: max ${MAX_PRE_1970} pre-1970; avoid recent list; ${LLM_PICK_COUNT} picks; JSON only.`,
       track
@@ -418,7 +418,7 @@ export async function finalizeRecommendationsForTrack(
     picks = raw.picks || [];
   }
 
-  if (picks.length < 5) {
+  if (picks.length < 6) {
     const raw = await generateSingleTrackPicks(chosen, rejected, filters, track);
     picks = raw.picks || [];
   }
@@ -514,9 +514,9 @@ function extractTopGenres(movies: Movie[]): string[] {
 
 function replacementRules(track: RecommendationTrack): string {
   if (track === "indie") {
-    return `TRACK — Indie: one less famous, critically strong pick; fits funnel taste; Australia.`;
+    return `Less obvious: one strong, less predictable pick — not a default list title; fits funnel; Australia.`;
   }
-  return `TRACK — Mainstream: one accessible, well-known pick; fits funnel taste; Australia.`;
+  return `Mainstream: one accessible pick — avoid generic default blockbusters; fits funnel; Australia.`;
 }
 
 export async function generateReplacementRecommendation(
