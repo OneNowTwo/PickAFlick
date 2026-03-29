@@ -24,6 +24,7 @@ const RECENT_EXCLUSIONS_PROMPT_COUNT = 64;
 const TARGET_RESOLVED = 6;
 const LLM_PICK_COUNT = 8;
 const MAX_PRE_1970 = 1;
+const MIN_PICKS_YEAR_LEQ_2010 = 2;
 
 let recsLoaded = false;
 
@@ -76,7 +77,7 @@ interface PrefetchEntry {
   indie: Promise<SingleTrackLLMResult>;
 }
 
-const prefetchBySession = new Map<string, PrefetchEntry>();
+const prefetchBySession = new Map<string, Promise<PrefetchEntry>>();
 
 function normalizeTitleKey(title: string): string {
   return title.toLowerCase().trim().replace(/^the\s+/i, "");
@@ -84,6 +85,29 @@ function normalizeTitleKey(title: string): string {
 
 function countPre1970(recs: { year?: number }[]): number {
   return recs.filter((r) => typeof r.year === "number" && r.year < 1970).length;
+}
+
+function countYearLeq2010(recs: { year?: number }[]): number {
+  return recs.filter((r) => typeof r.year === "number" && r.year <= 2010).length;
+}
+
+/** 1-based index into the LLM pick list for the per-session exploration slot. */
+function explorationPickIndex(sessionId: string): number {
+  let h = 0;
+  for (let i = 0; i < sessionId.length; i++) h = (h * 31 + sessionId.charCodeAt(i)) >>> 0;
+  return h % LLM_PICK_COUNT;
+}
+
+function directorKeyForMovie(movie: { tmdbId: number; director?: string | null }): string {
+  const d = (movie.director || "").toLowerCase().trim();
+  return d || `__anon_director_${movie.tmdbId}`;
+}
+
+function resolvedEraSpreadOk(recs: Recommendation[]): boolean {
+  const le2010 = recs.filter(
+    (r) => typeof r.movie.year === "number" && r.movie.year <= 2010
+  ).length;
+  return le2010 >= MIN_PICKS_YEAR_LEQ_2010;
 }
 
 function countRecentCollisions(recs: { title: string }[], recentSet: Set<string>): number {
@@ -195,15 +219,37 @@ function buildSingleTrackPrompt(
   rejectsBlock: string,
   chosenTitles: string,
   recentExclusions: string[],
-  genreFilterLine: string
+  genreFilterLine: string,
+  tasteContext: TasteObservationResult | null,
+  sessionId: string | undefined,
+  promptExtra: string
 ): string {
   const exclusionsLine = recentExclusions.length > 0
     ? `Also avoid these (recent sessions): ${recentExclusions.join("; ")}.`
     : "";
 
+  const tasteBlock = tasteContext
+    ? `FUNNEL READ (every pick must fit this — not a generic good-film list):
+- Headline: ${tasteContext.headline}
+- Pattern: ${tasteContext.patternSummary}
+- Genres: ${(tasteContext.topGenres || []).slice(0, 5).join(", ") || "—"}
+- Themes: ${(tasteContext.themes || []).slice(0, 4).join(", ") || "—"}
+- Era lean: ${(tasteContext.preferredEras || []).slice(0, 3).join(", ") || "—"}
+
+`
+    : "";
+
+  const explorationSlot = sessionId
+    ? `EXPLORATION SLOT: In your ordered "picks" array, position ${
+        explorationPickIndex(sessionId) + 1
+      } (1-based) must be the most off-the-beaten-path title that still matches the funnel — e.g. non-English, older gem, or strong but lesser-known director — not a film that appears on every generic list.\n\n`
+    : "";
+
+  const extra = promptExtra.trim() ? `${promptExtra.trim()}\n\n` : "";
+
   return `Recommend films for tonight from this A/B funnel. The signal is CHOSEN vs PASSED ON (rounds marked * count more).
 
-CHOSEN:
+${tasteBlock}CHOSEN:
 ${choicesBlock}
 
 PASSED ON:
@@ -212,15 +258,17 @@ ${genreFilterLine}
 
 ${laneRules(track)}
 
-Shared (tight):
+${explorationSlot}Shared (tight):
 - Exactly ${LLM_PICK_COUNT} films in "picks" (extras help after title lookup). We show 6 — make them feel distinct, not six of the same cluster.
-- Variety: max ${MAX_PRE_1970} pre-1970; include a 2020+ if it fits. Australia-available. No duplicate directors.
+- Decades (use each pick's "year" field): at least ${MIN_PICKS_YEAR_LEQ_2010} picks with year ≤ 2010; at most ${MAX_PRE_1970} with year < 1970; include a 2020+ if it fits the funnel.
+- Primary genre: no more than 2 picks may share the same first-listed genre (spread subgenres and moods).
+- Australia-available. No duplicate directors in the list (each director once).
 - Obviousness: avoid over-recommended "internet default" films unless an extremely strong funnel match. Prioritise specificity and fit over raw popularity.
 - Use the funnel pattern — do not substitute a generic good-film list.
 - Not funnel picks: ${chosenTitles}
 ${exclusionsLine}
 
-Reasons: short; tie to overall funnel pattern only; never name a funnel film.
+${extra}Reasons: short; tie to overall funnel pattern only; never name a funnel film.
 
 JSON only: {"picks":[{"title":"","year":2020,"reason":""}, ... ${LLM_PICK_COUNT} entries]}`;
 }
@@ -247,7 +295,10 @@ export async function generateSingleTrackPicks(
   chosenMovies: Movie[],
   rejectedMovies: Movie[],
   initialGenreFilters: string[],
-  track: RecommendationTrack
+  track: RecommendationTrack,
+  tasteContext: TasteObservationResult | null = null,
+  sessionId?: string,
+  promptExtra = ""
 ): Promise<SingleTrackLLMResult> {
   await ensureRecsLoaded();
   const choicesBlock = formatChoicesBlock(chosenMovies);
@@ -265,7 +316,10 @@ export async function generateSingleTrackPicks(
     rejectsBlock,
     chosenTitles,
     recentExclusions,
-    genreFilterLine
+    genreFilterLine,
+    tasteContext,
+    sessionId,
+    promptExtra
   );
 
   let result = await callSingleTrackLLM(prompt, track);
@@ -277,9 +331,10 @@ export async function generateSingleTrackPicks(
 
   const pre1970 = countPre1970(picks);
   const recentHits = countRecentCollisions(picks, recentTitlesSet);
-  if (pre1970 > MAX_PRE_1970 || recentHits >= 2) {
+  const le2010 = countYearLeq2010(picks);
+  if (pre1970 > MAX_PRE_1970 || recentHits >= 2 || le2010 < MIN_PICKS_YEAR_LEQ_2010) {
     result = await callSingleTrackLLM(
-      `${prompt}\n\nRegenerate: max ${MAX_PRE_1970} pre-1970; avoid recent list; ${LLM_PICK_COUNT} picks; JSON only.`,
+      `${prompt}\n\nRegenerate: max ${MAX_PRE_1970} pre-1970; at least ${MIN_PICKS_YEAR_LEQ_2010} picks with year ≤ 2010; avoid recent list; ${LLM_PICK_COUNT} picks; JSON only.`,
       track
     );
     picks = result.picks || [];
@@ -325,7 +380,8 @@ async function resolvePicksToRecommendations(
   track: RecommendationTrack
 ): Promise<Recommendation[]> {
   const chosenTmdbIds = new Set(chosenMovies.map((m) => m.tmdbId));
-  const seen = new Set<string>();
+  const seenTitles = new Set<string>();
+  const seenDirectors = new Set<string>();
   const settled = await Promise.all(
     picks.slice(0, LLM_PICK_COUNT).map((r) => resolveOneRecommendation(r, chosenTmdbIds, track))
   );
@@ -333,26 +389,39 @@ async function resolvePicksToRecommendations(
   for (const r of settled) {
     if (!r || out.length >= TARGET_RESOLVED) continue;
     const k = normalizeTitleKey(r.movie.title);
-    if (seen.has(k)) continue;
-    seen.add(k);
+    if (seenTitles.has(k)) continue;
+    const dk = directorKeyForMovie(r.movie);
+    if (seenDirectors.has(dk)) continue;
+    seenTitles.add(k);
+    seenDirectors.add(dk);
     out.push(r);
   }
   return out;
 }
 
-function startPrefetchPromises(
+/** Taste first, then both tracks (each pick prompt includes the taste read + session exploration slot). */
+async function buildPrefetchEntry(
+  sessionId: string,
   chosenMovies: Movie[],
   rejectedMovies: Movie[],
   filters: string[]
-): PrefetchEntry {
+): Promise<PrefetchEntry> {
+  const taste = await buildTasteObservation(chosenMovies, rejectedMovies, filters);
   return {
-    taste: buildTasteObservation(chosenMovies, rejectedMovies, filters),
-    mainstream: generateSingleTrackPicks(chosenMovies, rejectedMovies, filters, "mainstream"),
-    indie: generateSingleTrackPicks(chosenMovies, rejectedMovies, filters, "indie"),
+    taste: Promise.resolve(taste),
+    mainstream: generateSingleTrackPicks(
+      chosenMovies,
+      rejectedMovies,
+      filters,
+      "mainstream",
+      taste,
+      sessionId
+    ),
+    indie: generateSingleTrackPicks(chosenMovies, rejectedMovies, filters, "indie", taste, sessionId),
   };
 }
 
-/** Fire when the last A/B choice is recorded — runs taste + both tracks in parallel. */
+/** Fire when the last A/B choice is recorded — runs taste then both tracks. */
 export function beginRecommendationPrefetch(sessionId: string): void {
   if (prefetchBySession.has(sessionId)) return;
   const session = gameSessionStorage.getSession(sessionId);
@@ -363,22 +432,23 @@ export function beginRecommendationPrefetch(sessionId: string): void {
   if (chosen.length === 0) return;
 
   console.log(`[prefetch] Starting taste + mainstream + indie for ${sessionId}`);
-  prefetchBySession.set(sessionId, startPrefetchPromises(chosen, rejected, filters));
+  prefetchBySession.set(sessionId, buildPrefetchEntry(sessionId, chosen, rejected, filters));
 }
 
 export async function getTastePreviewForSession(sessionId: string): Promise<TasteObservationResult> {
-  let entry = prefetchBySession.get(sessionId);
-  if (!entry) {
+  let entryPromise = prefetchBySession.get(sessionId);
+  if (!entryPromise) {
     const session = gameSessionStorage.getSession(sessionId);
     if (!session?.isComplete) return fallbackTaste([]);
     const chosen = gameSessionStorage.getChosenMovies(sessionId);
     const rejected = gameSessionStorage.getRejectedMovies(sessionId);
     const filters = gameSessionStorage.getSessionFilters(sessionId)?.genres ?? [];
     if (chosen.length === 0) return fallbackTaste([]);
-    entry = startPrefetchPromises(chosen, rejected, filters);
-    prefetchBySession.set(sessionId, entry);
+    entryPromise = buildPrefetchEntry(sessionId, chosen, rejected, filters);
+    prefetchBySession.set(sessionId, entryPromise);
   }
   try {
+    const entry = await entryPromise;
     return await entry.taste;
   } catch {
     const chosen = gameSessionStorage.getChosenMovies(sessionId);
@@ -401,32 +471,56 @@ export async function finalizeRecommendationsForTrack(
   let taste: TasteObservationResult;
   let picks: AIRecommendationResult[] = [];
 
-  const entry = prefetchBySession.get(sessionId);
-  if (entry) {
-    taste = await entry.taste.catch(() => fallbackTaste(chosen));
+  const entryPromise = prefetchBySession.get(sessionId);
+  if (entryPromise) {
     try {
-      const raw = await (track === "mainstream" ? entry.mainstream : entry.indie);
-      picks = raw.picks || [];
+      const entry = await entryPromise;
+      taste = await entry.taste.catch(() => fallbackTaste(chosen));
+      try {
+        const raw = await (track === "mainstream" ? entry.mainstream : entry.indie);
+        picks = raw.picks || [];
+      } catch (e) {
+        console.error("[finalize] track prefetch failed", e);
+        picks = [];
+      }
     } catch (e) {
-      console.error("[finalize] track prefetch failed", e);
-      picks = [];
+      console.error("[finalize] prefetch failed", e);
+      taste = await buildTasteObservation(chosen, rejected, filters);
+      const raw = await generateSingleTrackPicks(chosen, rejected, filters, track, taste, sessionId);
+      picks = raw.picks || [];
     }
     prefetchBySession.delete(sessionId);
   } else {
     taste = await buildTasteObservation(chosen, rejected, filters);
-    const raw = await generateSingleTrackPicks(chosen, rejected, filters, track);
+    const raw = await generateSingleTrackPicks(chosen, rejected, filters, track, taste, sessionId);
     picks = raw.picks || [];
   }
 
   if (picks.length < 6) {
-    const raw = await generateSingleTrackPicks(chosen, rejected, filters, track);
+    const raw = await generateSingleTrackPicks(chosen, rejected, filters, track, taste, sessionId);
     picks = raw.picks || [];
   }
 
   let recommendations = await resolvePicksToRecommendations(picks, chosen, track);
   if (recommendations.length < TARGET_RESOLVED) {
-    const raw = await generateSingleTrackPicks(chosen, rejected, filters, track);
+    const raw = await generateSingleTrackPicks(chosen, rejected, filters, track, taste, sessionId);
     recommendations = await resolvePicksToRecommendations(raw.picks, chosen, track);
+  }
+
+  if (recommendations.length >= TARGET_RESOLVED && !resolvedEraSpreadOk(recommendations)) {
+    const raw = await generateSingleTrackPicks(
+      chosen,
+      rejected,
+      filters,
+      track,
+      taste,
+      sessionId,
+      `At least ${MIN_PICKS_YEAR_LEQ_2010} picks must be films released in 2010 or earlier (use accurate release years in JSON — TMDB will match them).`
+    );
+    const alt = await resolvePicksToRecommendations(raw.picks, chosen, track);
+    if (alt.length >= TARGET_RESOLVED && resolvedEraSpreadOk(alt)) {
+      recommendations = alt;
+    }
   }
 
   recordRecommendedTitles(recommendations.map((r) => r.movie.title));

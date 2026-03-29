@@ -11,7 +11,7 @@ import {
   getTastePreviewForSession,
   generateReplacementRecommendation,
 } from "./ai-recommender";
-import { buildGenreProfile, rankRecommendations } from "./recommendations";
+import { buildGenreProfile } from "./recommendations";
 import { storage } from "./storage";
 import type { RoundPairResponse, ChoiceResponse, RecommendationsResponse } from "@shared/schema";
 import { insertWatchlistSchema, recommendationLaneSchema, recommendationTrackSchema } from "@shared/schema";
@@ -382,37 +382,15 @@ export async function registerRoutes(
       }
       const track = trackParsed.data;
 
-      let aiResult = await finalizeRecommendationsForTrack(sessionId, track);
+      const aiResult = await finalizeRecommendationsForTrack(sessionId, track);
 
-      let hasPersonalisation = false;
-      let genreProfileSize = 0;
-      let finalRecs = aiResult.recommendations;
-
-      if (req.isAuthenticated() && req.user) {
-        try {
-          const profile = await buildGenreProfile(req.user.id);
-          if (profile.length > 0) {
-            finalRecs = rankRecommendations(aiResult.recommendations, profile);
-            hasPersonalisation = true;
-            genreProfileSize = profile.length;
-            aiResult = {
-              ...aiResult,
-              recommendations: finalRecs,
-              mainstreamRecommendations: track === "mainstream" ? finalRecs : [],
-              indieRecommendations: track === "indie" ? finalRecs : [],
-            };
-          }
-        } catch (err) {
-          console.error("[personalisation] Failed to build genre profile:", err);
-        }
-      }
-
+      // Session funnel + LLM order are authoritative here; genre-profile re-ranking
+      // homogenises lists across runs — revisit when auth-specific personalisation ships.
       res.set(NO_CACHE_HEADERS);
       res.json({
         ...aiResult,
-        recommendations: finalRecs,
-        hasPersonalisation,
-        genreProfileSize,
+        hasPersonalisation: false,
+        genreProfileSize: 0,
       });
     } catch (error) {
       console.error("Error generating recommendations:", error);
