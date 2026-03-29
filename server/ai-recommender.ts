@@ -155,6 +155,30 @@ interface PrefetchEntry {
 
 const prefetchBySession = new Map<string, Promise<PrefetchEntry>>();
 
+/** Cached final responses per session + lane (no re-LLM when switching lanes). */
+const sessionTrackCache = new Map<
+  string,
+  Partial<Record<RecommendationTrack, RecommendationsResponse>>
+>();
+
+/** In-flight compute per session+track (dedupe concurrent GETs). */
+const sessionTrackInflight = new Map<string, Promise<RecommendationsResponse>>();
+
+function sessionTrackInflightKey(sessionId: string, track: RecommendationTrack): string {
+  return `${sessionId}:${track}`;
+}
+
+function otherTrack(track: RecommendationTrack): RecommendationTrack {
+  return track === "mainstream" ? "indie" : "mainstream";
+}
+
+function tryClearPrefetchWhenBundleComplete(sessionId: string): void {
+  const bag = sessionTrackCache.get(sessionId);
+  if (bag?.mainstream && bag?.indie) {
+    prefetchBySession.delete(sessionId);
+  }
+}
+
 function normalizeTitleKey(title: string): string {
   return title.toLowerCase().trim().replace(/^the\s+/i, "");
 }
@@ -691,49 +715,33 @@ export async function getTastePreviewForSession(sessionId: string): Promise<Tast
   }
 }
 
-export async function finalizeRecommendationsForTrack(
+/** Full pipeline for one lane — same steps as before (LLM → resolve → regen rules). */
+async function computeRecommendationsForTrackFromSession(
   sessionId: string,
-  track: RecommendationTrack
+  track: RecommendationTrack,
+  entry: PrefetchEntry | null,
+  chosen: Movie[],
+  rejected: Movie[],
+  filters: string[]
 ): Promise<RecommendationsResponse> {
-  await ensureRecsLoaded();
-  const chosen = gameSessionStorage.getChosenMovies(sessionId);
-  const rejected = gameSessionStorage.getRejectedMovies(sessionId);
-  const filters = gameSessionStorage.getSessionFilters(sessionId)?.genres ?? [];
-  if (chosen.length === 0) {
-    return fallbackSingleTrack(chosen, track);
-  }
-
   let taste: TasteObservationResult;
   let mood: SessionMoodProfile;
   let banned: { bannedSet: Set<string>; bannedTitlesPrompt: string };
   let picks: AIRecommendationResult[] = [];
   let trackCopy: SingleTrackLLMResult | null = null;
 
-  const entryPromise = prefetchBySession.get(sessionId);
-  if (entryPromise) {
+  if (entry) {
+    mood = entry.mood;
+    banned = entry.banned;
+    taste = await entry.taste.catch(() => moodToTasteObservation(mood, chosen));
     try {
-      const entry = await entryPromise;
-      mood = entry.mood;
-      banned = entry.banned;
-      taste = await entry.taste.catch(() => moodToTasteObservation(mood, chosen));
-      try {
-        const raw = await (track === "mainstream" ? entry.mainstream : entry.indie);
-        picks = raw.picks || [];
-        trackCopy = raw;
-      } catch (e) {
-        console.error("[finalize] track prefetch failed", e);
-        picks = [];
-      }
-    } catch (e) {
-      console.error("[finalize] prefetch failed", e);
-      mood = await extractSessionMood(chosen, rejected, filters);
-      taste = moodToTasteObservation(mood, chosen);
-      banned = buildBannedContext(chosen, rejected);
-      const raw = await generateSingleTrackPicks(chosen, rejected, filters, track, mood, banned);
+      const raw = await (track === "mainstream" ? entry.mainstream : entry.indie);
       picks = raw.picks || [];
       trackCopy = raw;
+    } catch (e) {
+      console.error("[recs] track prefetch failed", e);
+      picks = [];
     }
-    prefetchBySession.delete(sessionId);
   } else {
     mood = await extractSessionMood(chosen, rejected, filters);
     taste = moodToTasteObservation(mood, chosen);
@@ -796,6 +804,77 @@ export async function finalizeRecommendationsForTrack(
       tagline: "",
     },
   };
+}
+
+export async function finalizeRecommendationsForTrack(
+  sessionId: string,
+  track: RecommendationTrack
+): Promise<RecommendationsResponse> {
+  await ensureRecsLoaded();
+  const chosen = gameSessionStorage.getChosenMovies(sessionId);
+  const rejected = gameSessionStorage.getRejectedMovies(sessionId);
+  const filters = gameSessionStorage.getSessionFilters(sessionId)?.genres ?? [];
+  if (chosen.length === 0) {
+    return fallbackSingleTrack(chosen, track);
+  }
+
+  const cachedBag = sessionTrackCache.get(sessionId);
+  const cached = cachedBag?.[track];
+  if (cached) {
+    return cached;
+  }
+
+  const ik = sessionTrackInflightKey(sessionId, track);
+  let inflight = sessionTrackInflight.get(ik);
+  if (!inflight) {
+    inflight = (async (): Promise<RecommendationsResponse> => {
+      try {
+        let entry: PrefetchEntry | null = null;
+        const entryPromise = prefetchBySession.get(sessionId);
+        if (entryPromise) {
+          try {
+            entry = await entryPromise;
+          } catch (e) {
+            console.error("[finalize] prefetch await failed", e);
+            entry = null;
+          }
+        }
+
+        const result = await computeRecommendationsForTrackFromSession(
+          sessionId,
+          track,
+          entry,
+          chosen,
+          rejected,
+          filters
+        );
+
+        const bag = sessionTrackCache.get(sessionId) ?? {};
+        bag[track] = result;
+        sessionTrackCache.set(sessionId, bag);
+        tryClearPrefetchWhenBundleComplete(sessionId);
+
+        const ot = otherTrack(track);
+        if (
+          !sessionTrackCache.get(sessionId)?.[ot] &&
+          !sessionTrackInflight.has(sessionTrackInflightKey(sessionId, ot))
+        ) {
+          queueMicrotask(() => {
+            finalizeRecommendationsForTrack(sessionId, ot).catch((err) =>
+              console.error("[recs] background lane failed", ot, err)
+            );
+          });
+        }
+
+        return result;
+      } finally {
+        sessionTrackInflight.delete(ik);
+      }
+    })();
+    sessionTrackInflight.set(ik, inflight);
+  }
+
+  return await inflight;
 }
 
 async function fallbackSingleTrack(chosenMovies: Movie[], track: RecommendationTrack): Promise<RecommendationsResponse> {

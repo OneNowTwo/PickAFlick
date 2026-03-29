@@ -1,5 +1,6 @@
 import type {
   RecommendationsResponse,
+  RecommendationTrack,
   WatchProvidersResponse,
   Recommendation,
 } from "@shared/schema";
@@ -28,6 +29,11 @@ function tasteHeadline(profile: RecommendationsResponse["preferenceProfile"] | u
 interface ResultsScreenProps {
   recommendations: RecommendationsResponse | null;
   isLoading: boolean;
+  /** Inline skeleton + copy while recommendations fetch (not full-screen). */
+  inlineRecommendationsLoading?: boolean;
+  currentTrack?: RecommendationTrack | null;
+  /** Switch to the other pre-generated lane (no extra LLM when server cache hits). */
+  onSwitchLane?: () => void;
   onPlayAgain: () => void;
   sessionId?: string | null;
   suppressTrailer?: boolean; // hide iframe when an overlay modal is open (YouTube z-index fix)
@@ -36,6 +42,9 @@ interface ResultsScreenProps {
 export function ResultsScreen({
   recommendations,
   isLoading,
+  inlineRecommendationsLoading = false,
+  currentTrack = null,
+  onSwitchLane,
   onPlayAgain,
   sessionId,
   suppressTrailer = false,
@@ -63,7 +72,7 @@ export function ResultsScreen({
 
   // Track when results screen loads with recommendations
   useEffect(() => {
-    if (!isLoading && recommendations) {
+    if (!isLoading && !inlineRecommendationsLoading && recommendations) {
       if (typeof window !== 'undefined' && window.posthog) {
         window.posthog.capture("completed_flow");
       }
@@ -72,7 +81,7 @@ export function ResultsScreen({
         sessionStorage.setItem("signup_nudge_flows_since", String(since));
       }
     }
-  }, [isLoading, recommendations, user]);
+  }, [isLoading, inlineRecommendationsLoading, recommendations, user]);
 
   // Reset trailer state when changing movies
   useEffect(() => {
@@ -82,7 +91,7 @@ export function ResultsScreen({
 
   // Staged messages only - no percentage. Smooth continuous progress bar.
   useEffect(() => {
-    if (!isLoading) {
+    if (!isLoading && !inlineRecommendationsLoading) {
       setLoadingProgress(0);
       setLoadingStage("Analyzing your choices…");
       return;
@@ -116,13 +125,17 @@ export function ResultsScreen({
       clearInterval(stageInterval);
       clearInterval(progressInterval);
     };
-  }, [isLoading]);
+  }, [isLoading, inlineRecommendationsLoading]);
 
   // Initialize local recs from recommendations
   useEffect(() => {
     if (recommendations?.recommendations) {
       setLocalRecs([...recommendations.recommendations]);
     }
+  }, [recommendations]);
+
+  useEffect(() => {
+    setCurrentIndex(0);
   }, [recommendations]);
 
   // Mutation to get a replacement recommendation
@@ -303,13 +316,11 @@ export function ResultsScreen({
     },
   });
 
-  if (isLoading) {
+  if (isLoading && !inlineRecommendationsLoading) {
     return (
       <div className="flex flex-col items-center justify-center gap-6 min-h-[60vh]" data-testid="loading-recommendations">
-        {/* Dark backdrop for better text visibility */}
         <div className="bg-black/60 backdrop-blur-sm rounded-2xl p-8 flex flex-col items-center gap-6 min-w-[320px] max-w-md">
           <div className="relative" style={{ width: 120, height: 120 }}>
-            {/* Animated closing ring */}
             <svg className="transform -rotate-90" width={120} height={120}>
               <circle
                 cx={60}
@@ -342,16 +353,53 @@ export function ResultsScreen({
           <div className="text-center w-full px-4">
             <h2 className="text-xl md:text-2xl font-bold text-white mb-2">Hold a tic...</h2>
             <p className="text-white/80 text-sm md:text-base mb-4">{loadingStage}</p>
-            
-            {/* Smooth progress bar - no percentage */}
             <div className="w-full bg-white/20 rounded-full h-2 overflow-hidden">
-              <div 
+              <div
                 className="h-full bg-gradient-to-r from-primary via-primary/80 to-primary/60 rounded-full transition-all duration-300 ease-out"
                 style={{ width: `${loadingProgress}%` }}
               />
             </div>
             <p className="text-white/60 text-xs mt-3">This usually takes a few seconds</p>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  const otherLane: RecommendationTrack | null =
+    currentTrack === "mainstream" ? "indie" : currentTrack === "indie" ? "mainstream" : null;
+  const switchLabel =
+    otherLane === "indie" ? "See Indie picks" : otherLane === "mainstream" ? "See Mainstream picks" : null;
+  const laneBadgeLabel = currentTrack === "mainstream" ? "Mainstream" : currentTrack === "indie" ? "Indie" : null;
+
+  if (inlineRecommendationsLoading && !recommendations) {
+    return (
+      <div
+        className="flex flex-col items-center gap-4 w-full max-w-7xl mx-auto px-2 md:px-4 pt-4 pb-8"
+        data-testid="inline-loading-recommendations"
+      >
+        <div className="text-center max-w-xl px-3 space-y-1">
+          <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-2" />
+          <h2 className="text-base md:text-lg font-semibold text-white">Finalising your picks…</h2>
+          <p className="text-xs md:text-sm text-white/50">This usually takes just a moment</p>
+        </div>
+        {laneBadgeLabel && switchLabel && onSwitchLane && (
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <span className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide bg-primary/20 text-primary border border-primary/35">
+              {laneBadgeLabel}
+            </span>
+            <span className="text-white/25 text-sm">·</span>
+            <span className="text-xs text-white/35">{switchLabel}</span>
+          </div>
+        )}
+        <div className="w-full max-w-4xl mx-auto aspect-video rounded-xl bg-white/[0.06] border border-white/10 animate-pulse" />
+        <div className="flex gap-2 justify-center flex-wrap">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div
+              key={i}
+              className="w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg bg-white/[0.08] animate-pulse border border-white/5"
+            />
+          ))}
         </div>
       </div>
     );
@@ -472,8 +520,28 @@ export function ResultsScreen({
         </p>
       )}
 
+      {laneBadgeLabel && switchLabel && onSwitchLane && (
+        <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3 w-full px-2">
+          <span
+            className="rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-black/50 text-white/90 border border-white/15 backdrop-blur-md"
+            data-testid="lane-badge-current"
+          >
+            {laneBadgeLabel}
+          </span>
+          <button
+            type="button"
+            onClick={onSwitchLane}
+            disabled={inlineRecommendationsLoading}
+            className="text-sm font-semibold text-primary hover:text-primary/90 underline-offset-4 hover:underline disabled:opacity-40 disabled:no-underline transition-colors"
+            data-testid="button-switch-lane"
+          >
+            {switchLabel}
+          </button>
+        </div>
+      )}
+
       {/* Trailer card with nav - row on desktop, stacked on mobile */}
-      <div className="flex flex-col md:flex-row md:items-stretch gap-2 md:gap-3 w-full max-w-7xl">
+      <div className="relative flex flex-col md:flex-row md:items-stretch gap-2 md:gap-3 w-full max-w-7xl">
         {/* Previous - hidden on mobile, shown beside card on desktop */}
         <Button
           variant="default"
@@ -658,52 +726,71 @@ export function ResultsScreen({
         </Button>
       </div>
 
-      {/* Save, Seen it, Share */}
-      <div className="flex items-center justify-center gap-3 w-full flex-wrap py-2">
-        <Button
-          variant={isLiked ? "default" : "outline"}
-          size="lg"
+      {/* Save / Seen / Share — compact glass pills (secondary to Watch now) */}
+      <div className="flex items-center justify-center gap-2 md:gap-2.5 w-full flex-wrap py-2">
+        <button
+          type="button"
           onClick={handleLike}
-          className={`gap-1.5 ${isLiked ? "bg-green-600 border-green-600 hover:bg-green-700" : ""}`}
+          className={`
+            inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold border transition-all duration-200 ease-out
+            backdrop-blur-md shadow-sm active:scale-[0.96]
+            hover:scale-[1.04] hover:shadow-[0_0_20px_rgba(220,38,38,0.22)]
+            ${
+              isLiked
+                ? "bg-primary text-primary-foreground border-primary/80"
+                : "bg-black/45 text-white/90 border-white/15 hover:border-primary/40 hover:bg-black/60"
+            }
+          `}
           data-testid="button-save-watchlist"
         >
-          <Bookmark className="w-4 h-4" />
-          {isLiked ? "Saved to Watchlist" : "Save to Watchlist"}
-        </Button>
+          <Bookmark className={`w-3.5 h-3.5 shrink-0 ${isLiked ? "fill-current" : ""}`} />
+          Save
+        </button>
 
-        <Button
-          variant="outline"
-          size="lg"
+        <button
+          type="button"
           onClick={handleSeenIt}
           disabled={replacementMutation.isPending || !sessionId}
-          className="gap-1.5 border-2 border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/70"
+          aria-pressed={replacementMutation.isPending}
+          className={`
+            inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold border transition-all duration-200 ease-out
+            backdrop-blur-md shadow-sm active:scale-[0.96] disabled:opacity-45
+            hover:scale-[1.04]
+            ${
+              replacementMutation.isPending
+                ? "bg-amber-500/25 text-amber-100 border-amber-400/50 shadow-[0_0_16px_rgba(245,158,11,0.2)]"
+                : "bg-black/45 text-white/90 border-white/15 hover:border-amber-400/35 hover:bg-amber-500/10"
+            }
+          `}
           data-testid="button-seen-it"
         >
           {replacementMutation.isPending ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
           ) : (
-            <Eye className="w-5 h-5" />
+            <Eye className="w-3.5 h-3.5 shrink-0" />
           )}
-          Seen It
-        </Button>
+          Seen
+        </button>
 
-        <Button 
-          size="lg"
-          variant="default"
+        <button
+          type="button"
           onClick={() => shareMutation.mutate()}
           disabled={shareMutation.isPending}
-          className="gap-1.5"
+          className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold border transition-all duration-200 ease-out
+            bg-black/45 text-white/90 border-white/15 backdrop-blur-md shadow-sm
+            hover:scale-[1.04] hover:border-white/30 hover:bg-white/10 hover:shadow-[0_0_18px_rgba(255,255,255,0.08)]
+            active:scale-[0.96] disabled:opacity-45"
           data-testid="button-share"
         >
           {shareMutation.isPending ? (
-            <Loader2 className="w-4 h-4" />
+            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
           ) : copied ? (
-            <Check className="w-4 h-4" />
+            <Check className="w-3.5 h-3.5 shrink-0 text-green-400" />
           ) : (
-            <Share2 className="w-4 h-4" />
+            <Share2 className="w-3.5 h-3.5 shrink-0" />
           )}
-          {copied ? "Copied!" : "Share"}
-        </Button>
+          Share
+        </button>
       </div>
 
       <div className="flex flex-col gap-4 w-full max-w-4xl mx-auto pb-2">
@@ -986,7 +1073,7 @@ export function ResultsScreen({
       )}
 
       {/* Post-recommendation sign-up nudge — soft bottom sheet, shown after 2s for logged-out users */}
-      {!user && !isLoading && recommendations && (
+      {!user && !isLoading && !inlineRecommendationsLoading && recommendations && (
         <SignUpNudge movieTitle={currentRec?.movie.title} />
       )}
     </div>

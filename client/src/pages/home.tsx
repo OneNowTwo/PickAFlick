@@ -73,6 +73,11 @@ export default function Home() {
   });
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [recommendations, setRecommendations] = useState<RecommendationsResponse | null>(null);
+  const [selectedTrack, setSelectedTrack] = useState<RecommendationTrack | null>(null);
+  const [laneBundle, setLaneBundle] = useState<
+    Partial<Record<RecommendationTrack, RecommendationsResponse>>
+  >({});
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [selectedMoods, setSelectedMoods] = useState<string[]>([]);
   const [showMoreGenres, setShowMoreGenres] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -89,6 +94,8 @@ export default function Home() {
         sessionId?: string | null;
         recommendations?: RecommendationsResponse | null;
         selectedMoods?: string[];
+        selectedTrack?: RecommendationTrack | null;
+        laneBundle?: Partial<Record<RecommendationTrack, RecommendationsResponse>>;
       };
 
       // Only restore states where we have meaningful data to show.
@@ -101,10 +108,19 @@ export default function Home() {
         return;
       }
       if (parsed.gameState && restorableStates.includes(parsed.gameState)) {
-        setGameState(parsed.gameState);
+        let gs = parsed.gameState;
+        if (gs === "loading-recommendations") {
+          gs = "results";
+        }
+        setGameState(gs);
         setSessionId(parsed.sessionId ?? null);
         setRecommendations(parsed.recommendations ?? null);
         setSelectedMoods(parsed.selectedMoods ?? []);
+        setSelectedTrack(parsed.selectedTrack ?? null);
+        setLaneBundle(parsed.laneBundle ?? {});
+        if (parsed.gameState === "loading-recommendations") {
+          setRecommendationsLoading(!parsed.recommendations);
+        }
       }
     } catch {
       // ignore corrupted state
@@ -114,9 +130,16 @@ export default function Home() {
   useEffect(() => {
     sessionStorage.setItem(
       "homeState",
-      JSON.stringify({ gameState, sessionId, recommendations, selectedMoods })
+      JSON.stringify({
+        gameState,
+        sessionId,
+        recommendations,
+        selectedMoods,
+        selectedTrack,
+        laneBundle,
+      })
     );
-  }, [gameState, sessionId, recommendations, selectedMoods]);
+  }, [gameState, sessionId, recommendations, selectedMoods, selectedTrack, laneBundle]);
 
   const toggleMood = useCallback((moodId: string) => {
     setSelectedMoods(prev => 
@@ -256,33 +279,73 @@ export default function Home() {
   const handleTrackChosen = useCallback(
     async (track: RecommendationTrack) => {
       if (!sessionId) return;
-      setGameState("loading-recommendations");
+      setSelectedTrack(track);
+      setGameState("results");
+      const cached = laneBundle[track];
+      if (cached) {
+        setRecommendations(cached);
+        setRecommendationsLoading(false);
+        return;
+      }
+      setRecommendationsLoading(true);
       try {
         const res = await fetch(
           `/api/session/${sessionId}/recommendations?track=${encodeURIComponent(track)}`
         );
         if (res.ok) {
-          setRecommendations((await res.json()) as RecommendationsResponse);
-          setGameState("results");
+          const data = (await res.json()) as RecommendationsResponse;
+          setLaneBundle((b) => ({ ...b, [track]: data }));
+          setRecommendations(data);
         } else {
           console.error("Recommendations failed:", await res.text());
           setRecommendations(null);
-          setGameState("results");
         }
       } catch (e) {
         console.error(e);
         setRecommendations(null);
-        setGameState("results");
+      } finally {
+        setRecommendationsLoading(false);
       }
     },
-    [sessionId]
+    [sessionId, laneBundle]
   );
+
+  const handleSwitchLane = useCallback(async () => {
+    if (!sessionId || !selectedTrack) return;
+    const next: RecommendationTrack = selectedTrack === "mainstream" ? "indie" : "mainstream";
+    setSelectedTrack(next);
+    const cached = laneBundle[next];
+    if (cached) {
+      setRecommendations(cached);
+      setRecommendationsLoading(false);
+      return;
+    }
+    setRecommendations(null);
+    setRecommendationsLoading(true);
+    try {
+      const res = await fetch(
+        `/api/session/${sessionId}/recommendations?track=${encodeURIComponent(next)}`
+      );
+      if (res.ok) {
+        const data = (await res.json()) as RecommendationsResponse;
+        setLaneBundle((b) => ({ ...b, [next]: data }));
+        setRecommendations(data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setRecommendationsLoading(false);
+    }
+  }, [sessionId, selectedTrack, laneBundle]);
 
   const handlePlayAgain = useCallback(() => {
     sessionStorage.removeItem("homeState");
     setSessionId(null);
     setRecommendations(null);
     setSelectedMoods([]);
+    setSelectedTrack(null);
+    setLaneBundle({});
+    setRecommendationsLoading(false);
     setGameState("start");
   }, []);
 
@@ -384,7 +447,7 @@ export default function Home() {
 
       <main
         className={`relative z-10 flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 overflow-x-hidden overflow-y-auto min-h-0 ${
-          gameState === "loading-recommendations" || gameState === "results" ? "py-2 md:py-4" : "py-8"
+          gameState === "results" ? "py-2 md:py-4" : "py-8"
         }`}
       >
         {gameState === "start" && (
@@ -655,10 +718,13 @@ export default function Home() {
           <RecommendationTrackPicker sessionId={sessionId} onSelect={handleTrackChosen} />
         )}
 
-        {(gameState === "loading-recommendations" || gameState === "results") && (
+        {gameState === "results" && (
           <ResultsScreen
             recommendations={recommendations}
-            isLoading={gameState === "loading-recommendations"}
+            isLoading={false}
+            inlineRecommendationsLoading={recommendationsLoading}
+            currentTrack={selectedTrack}
+            onSwitchLane={sessionId ? handleSwitchLane : undefined}
             onPlayAgain={handlePlayAgain}
             sessionId={sessionId}
           />
