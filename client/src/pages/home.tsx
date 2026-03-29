@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import type {
   StartSessionResponse,
   RoundPairResponse,
@@ -28,8 +28,23 @@ type GameState =
   | "instructions"
   | "playing"
   | "pick-track"
-  | "loading-recommendations"
   | "results";
+
+function sliceRecommendationsForTrack(
+  resp: RecommendationsResponse,
+  track: RecommendationTrack
+): RecommendationsResponse {
+  const row = track === "mainstream" ? resp.mainstreamRecommendations : resp.indieRecommendations;
+  const recs = row && row.length > 0 ? row : resp.recommendations;
+  const by = resp.preferenceProfileByTrack;
+  const profile =
+    by && by[track] ? by[track] : resp.preferenceProfile;
+  return {
+    ...resp,
+    recommendations: recs,
+    preferenceProfile: profile,
+  };
+}
 
 // Top 8 genres shown by default
 const TOP_GENRE_IDS = ["action", "comedy", "drama", "thriller", "romance", "scifi", "family", "horror"];
@@ -72,12 +87,7 @@ export default function Home() {
     staleTime: 60_000,
   });
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [recommendations, setRecommendations] = useState<RecommendationsResponse | null>(null);
-  const [selectedTrack, setSelectedTrack] = useState<RecommendationTrack | null>(null);
-  const [laneBundle, setLaneBundle] = useState<
-    Partial<Record<RecommendationTrack, RecommendationsResponse>>
-  >({});
-  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [resultsTrack, setResultsTrack] = useState<RecommendationTrack | null>(null);
   const [selectedMoods, setSelectedMoods] = useState<string[]>([]);
   const [showMoreGenres, setShowMoreGenres] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -90,56 +100,42 @@ export default function Home() {
 
     try {
       const parsed = JSON.parse(saved) as {
-        gameState?: GameState;
+        gameState?: GameState | string;
         sessionId?: string | null;
         recommendations?: RecommendationsResponse | null;
         selectedMoods?: string[];
-        selectedTrack?: RecommendationTrack | null;
-        laneBundle?: Partial<Record<RecommendationTrack, RecommendationsResponse>>;
+        resultsTrack?: RecommendationTrack | null;
       };
 
       // Only restore states where we have meaningful data to show.
       // "instructions" is a transient step tied to a live server session — if the
       // server restarted (Render cold start / idle shutdown) the session is gone and
       // the user would be stuck. Always re-enter from "start" in that case.
-      const restorableStates: GameState[] = ["playing", "pick-track", "loading-recommendations", "results"];
+      const restorableStates: GameState[] = ["playing", "pick-track", "results"];
       if ((parsed.gameState as string) === "pick-lane") {
         setGameState("start");
         return;
       }
-      if (parsed.gameState && restorableStates.includes(parsed.gameState)) {
-        let gs = parsed.gameState;
-        if (gs === "loading-recommendations") {
-          gs = "results";
-        }
+      let gs: GameState | undefined =
+        (parsed.gameState as string) === "loading-recommendations"
+          ? "results"
+          : (parsed.gameState as GameState | undefined);
+      if (gs && restorableStates.includes(gs)) {
         setGameState(gs);
         setSessionId(parsed.sessionId ?? null);
-        setRecommendations(parsed.recommendations ?? null);
+        setResultsTrack(parsed.resultsTrack ?? null);
         setSelectedMoods(parsed.selectedMoods ?? []);
-        setSelectedTrack(parsed.selectedTrack ?? null);
-        setLaneBundle(parsed.laneBundle ?? {});
-        if (parsed.gameState === "loading-recommendations") {
-          setRecommendationsLoading(!parsed.recommendations);
+        if (gs === "results" && parsed.sessionId && parsed.recommendations) {
+          queryClient.setQueryData(
+            ["/api/session", parsed.sessionId, "recommendations-bundle"],
+            parsed.recommendations
+          );
         }
       }
     } catch {
       // ignore corrupted state
     }
   }, []);
-
-  useEffect(() => {
-    sessionStorage.setItem(
-      "homeState",
-      JSON.stringify({
-        gameState,
-        sessionId,
-        recommendations,
-        selectedMoods,
-        selectedTrack,
-        laneBundle,
-      })
-    );
-  }, [gameState, sessionId, recommendations, selectedMoods, selectedTrack, laneBundle]);
 
   const toggleMood = useCallback((moodId: string) => {
     setSelectedMoods(prev => 
@@ -177,6 +173,62 @@ export default function Home() {
   });
 
   // Get current round query
+  const recsQuery = useQuery<RecommendationsResponse>({
+    queryKey: ["/api/session", sessionId, "recommendations-bundle"],
+    queryFn: async () => {
+      const tr = resultsTrack ?? "mainstream";
+      const res = await fetch(
+        `/api/session/${sessionId}/recommendations?track=${encodeURIComponent(tr)}`
+      );
+      if (!res.ok) throw new Error(await res.text());
+      return res.json() as Promise<RecommendationsResponse>;
+    },
+    enabled: gameState === "results" && !!sessionId && !!resultsTrack,
+    staleTime: Infinity,
+    refetchInterval: (query) => {
+      const d = query.state.data;
+      if (!d) return false;
+      const hasMain = (d.mainstreamRecommendations?.length ?? 0) > 0;
+      const hasIndie = (d.indieRecommendations?.length ?? 0) > 0;
+      return hasMain && hasIndie ? false : 3000;
+    },
+    refetchIntervalInBackground: true,
+  });
+
+  const prevResultsTrackRef = useRef<RecommendationTrack | null>(null);
+  useEffect(() => {
+    prevResultsTrackRef.current = null;
+  }, [sessionId]);
+  useEffect(() => {
+    if (gameState !== "results" || !sessionId || !resultsTrack) return;
+    const prev = prevResultsTrackRef.current;
+    prevResultsTrackRef.current = resultsTrack;
+    if (prev !== null && prev !== resultsTrack) {
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/session", sessionId, "recommendations-bundle"],
+      });
+    }
+  }, [resultsTrack, sessionId, gameState]);
+
+  const displayRecommendations = useMemo(() => {
+    if (!recsQuery.data || !resultsTrack) return null;
+    return sliceRecommendationsForTrack(recsQuery.data, resultsTrack);
+  }, [recsQuery.data, resultsTrack]);
+
+  const recommendationsBundle = recsQuery.data ?? null;
+  useEffect(() => {
+    sessionStorage.setItem(
+      "homeState",
+      JSON.stringify({
+        gameState,
+        sessionId,
+        recommendations: recommendationsBundle,
+        selectedMoods,
+        resultsTrack,
+      })
+    );
+  }, [gameState, sessionId, recommendationsBundle, selectedMoods, resultsTrack]);
+
   const roundQuery = useQuery<RoundPairResponse>({
     queryKey: ["/api/session", sessionId, "round"],
     queryFn: async () => {
@@ -276,78 +328,23 @@ export default function Home() {
     skipMutation.mutate();
   }, [skipMutation]);
 
-  const handleTrackChosen = useCallback(
-    async (track: RecommendationTrack) => {
-      if (!sessionId) return;
-      setSelectedTrack(track);
-      setGameState("results");
-      const cached = laneBundle[track];
-      if (cached) {
-        setRecommendations(cached);
-        setRecommendationsLoading(false);
-        return;
-      }
-      setRecommendationsLoading(true);
-      try {
-        const res = await fetch(
-          `/api/session/${sessionId}/recommendations?track=${encodeURIComponent(track)}`
-        );
-        if (res.ok) {
-          const data = (await res.json()) as RecommendationsResponse;
-          setLaneBundle((b) => ({ ...b, [track]: data }));
-          setRecommendations(data);
-        } else {
-          console.error("Recommendations failed:", await res.text());
-          setRecommendations(null);
-        }
-      } catch (e) {
-        console.error(e);
-        setRecommendations(null);
-      } finally {
-        setRecommendationsLoading(false);
-      }
-    },
-    [sessionId, laneBundle]
-  );
-
-  const handleSwitchLane = useCallback(async () => {
-    if (!sessionId || !selectedTrack) return;
-    const next: RecommendationTrack = selectedTrack === "mainstream" ? "indie" : "mainstream";
-    setSelectedTrack(next);
-    const cached = laneBundle[next];
-    if (cached) {
-      setRecommendations(cached);
-      setRecommendationsLoading(false);
-      return;
-    }
-    setRecommendations(null);
-    setRecommendationsLoading(true);
-    try {
-      const res = await fetch(
-        `/api/session/${sessionId}/recommendations?track=${encodeURIComponent(next)}`
-      );
-      if (res.ok) {
-        const data = (await res.json()) as RecommendationsResponse;
-        setLaneBundle((b) => ({ ...b, [next]: data }));
-        setRecommendations(data);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setRecommendationsLoading(false);
-    }
-  }, [sessionId, selectedTrack, laneBundle]);
+  const handleTrackChosen = useCallback((track: RecommendationTrack) => {
+    if (!sessionId) return;
+    setResultsTrack(track);
+    setGameState("results");
+  }, [sessionId]);
 
   const handlePlayAgain = useCallback(() => {
+    const sid = sessionId;
     sessionStorage.removeItem("homeState");
+    if (sid) {
+      queryClient.removeQueries({ queryKey: ["/api/session", sid, "recommendations-bundle"] });
+    }
     setSessionId(null);
-    setRecommendations(null);
+    setResultsTrack(null);
     setSelectedMoods([]);
-    setSelectedTrack(null);
-    setLaneBundle({});
-    setRecommendationsLoading(false);
     setGameState("start");
-  }, []);
+  }, [sessionId]);
 
   const handleStartPlaying = useCallback(() => {
     setGameState("playing");
@@ -720,11 +717,19 @@ export default function Home() {
 
         {gameState === "results" && (
           <ResultsScreen
-            recommendations={recommendations}
-            isLoading={false}
-            inlineRecommendationsLoading={recommendationsLoading}
-            currentTrack={selectedTrack}
-            onSwitchLane={sessionId ? handleSwitchLane : undefined}
+            key={`${sessionId}-${resultsTrack ?? ""}`}
+            recommendations={displayRecommendations}
+            isLoading={recsQuery.isLoading}
+            loadingVariant="inline"
+            loadError={recsQuery.isError}
+            activeTrack={resultsTrack ?? "mainstream"}
+            onSwitchLane={(t) => setResultsTrack(t)}
+            canSwitchLane={
+              !!(
+                recsQuery.data?.mainstreamRecommendations?.length &&
+                recsQuery.data?.indieRecommendations?.length
+              )
+            }
             onPlayAgain={handlePlayAgain}
             sessionId={sessionId}
           />

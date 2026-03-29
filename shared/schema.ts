@@ -201,25 +201,34 @@ export const recommendationSchema = z.object({
 
 export type Recommendation = z.infer<typeof recommendationSchema>;
 
+const preferenceProfileSchema = z.object({
+  topGenres: z.array(z.string()),
+  themes: z.array(z.string()),
+  preferredEras: z.array(z.string()).optional(),
+  visualStyle: z.string().optional(),
+  mood: z.string().optional(),
+  /** Short LLM headline above results (human mood line) */
+  headline: z.string().optional(),
+  /** Two-sentence "You leaned… So these picks…" pattern copy */
+  patternSummary: z.string().optional(),
+  /** @deprecated use patternSummary */
+  tagline: z.string().optional(),
+});
+
 // API response for final recommendations
 export const recommendationsResponseSchema = z.object({
   /** Flat list: mainstream row first, then indie row (carousel order) */
   recommendations: z.array(recommendationSchema),
   mainstreamRecommendations: z.array(recommendationSchema).optional(),
   indieRecommendations: z.array(recommendationSchema).optional(),
-  preferenceProfile: z.object({
-    topGenres: z.array(z.string()),
-    themes: z.array(z.string()),
-    preferredEras: z.array(z.string()).optional(),
-    visualStyle: z.string().optional(),
-    mood: z.string().optional(),
-    /** Short LLM headline above results (human mood line) */
-    headline: z.string().optional(),
-    /** Two-sentence "You leaned… So these picks…" pattern copy */
-    patternSummary: z.string().optional(),
-    /** @deprecated use patternSummary */
-    tagline: z.string().optional(),
-  }),
+  preferenceProfile: preferenceProfileSchema,
+  /** Per-lane copy when both tracks are cached (lane switcher) */
+  preferenceProfileByTrack: z
+    .object({
+      mainstream: preferenceProfileSchema,
+      indie: preferenceProfileSchema,
+    })
+    .optional(),
   // True when results have been re-ranked using the user's full vote history
   hasPersonalisation: z.boolean().optional(),
   genreProfileSize: z.number().optional(),

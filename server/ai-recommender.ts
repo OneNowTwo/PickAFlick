@@ -155,28 +155,39 @@ interface PrefetchEntry {
 
 const prefetchBySession = new Map<string, Promise<PrefetchEntry>>();
 
-/** Cached final responses per session + lane (no re-LLM when switching lanes). */
-const sessionTrackCache = new Map<
-  string,
-  Partial<Record<RecommendationTrack, RecommendationsResponse>>
->();
+/** Per-session cache: each lane stores a full response; lane switch must be cache-only. */
+interface SessionLaneCacheEntry {
+  taste?: TasteObservationResult;
+  mood?: SessionMoodProfile;
+  mainstream?: RecommendationsResponse;
+  indie?: RecommendationsResponse;
+}
 
-/** In-flight compute per session+track (dedupe concurrent GETs). */
-const sessionTrackInflight = new Map<string, Promise<RecommendationsResponse>>();
+const sessionLaneCache = new Map<string, SessionLaneCacheEntry>();
+const laneInflight = new Map<string, Promise<RecommendationsResponse>>();
 
-function sessionTrackInflightKey(sessionId: string, track: RecommendationTrack): string {
+function laneInflightKey(sessionId: string, track: RecommendationTrack): string {
   return `${sessionId}:${track}`;
 }
 
-function otherTrack(track: RecommendationTrack): RecommendationTrack {
-  return track === "mainstream" ? "indie" : "mainstream";
+function logRecsTiming(sessionId: string, phase: string, ms: number): void {
+  const id = sessionId.length > 16 ? `${sessionId.slice(0, 8)}…` : sessionId;
+  console.log(`[recs-timing] ${id} ${phase}=${ms}ms`);
 }
 
-function tryClearPrefetchWhenBundleComplete(sessionId: string): void {
-  const bag = sessionTrackCache.get(sessionId);
-  if (bag?.mainstream && bag?.indie) {
-    prefetchBySession.delete(sessionId);
-  }
+function patchSessionLaneMeta(sessionId: string, partial: Partial<SessionLaneCacheEntry>): void {
+  const cur = sessionLaneCache.get(sessionId) ?? {};
+  sessionLaneCache.set(sessionId, { ...cur, ...partial });
+}
+
+function mergeLaneIntoCache(
+  sessionId: string,
+  track: RecommendationTrack,
+  res: RecommendationsResponse
+): void {
+  const cur = sessionLaneCache.get(sessionId) ?? {};
+  cur[track] = res;
+  sessionLaneCache.set(sessionId, cur);
 }
 
 function normalizeTitleKey(title: string): string {
@@ -192,28 +203,9 @@ function parseYearField(y: unknown): number | undefined {
   return undefined;
 }
 
-function countPre1970(recs: { year?: number }[]): number {
-  return recs.filter((r) => typeof r.year === "number" && r.year < 1970).length;
-}
-
-function countYearLeq2010(recs: { year?: number }[]): number {
-  return recs.filter((r) => typeof r.year === "number" && r.year <= 2010).length;
-}
-
 function directorKeyForMovie(movie: { tmdbId: number; director?: string | null }): string {
   const d = (movie.director || "").toLowerCase().trim();
   return d || `__anon_director_${movie.tmdbId}`;
-}
-
-function resolvedEraSpreadOk(recs: Recommendation[]): boolean {
-  const le2010 = recs.filter(
-    (r) => typeof r.movie.year === "number" && r.movie.year <= 2010
-  ).length;
-  return le2010 >= MIN_PICKS_YEAR_LEQ_2010;
-}
-
-function countRecentCollisions(recs: { title: string }[], recentSet: Set<string>): number {
-  return recs.filter((r) => recentSet.has(normalizeTitleKey(r.title))).length;
 }
 
 function formatChoicesBlock(chosenMovies: Movie[]): string {
@@ -520,8 +512,10 @@ function systemPromptForTrack(track: RecommendationTrack): string {
 
 async function callSingleTrackLLM(
   promptText: string,
-  track: RecommendationTrack
+  track: RecommendationTrack,
+  timingSessionId?: string
 ): Promise<SingleTrackLLMResult> {
+  const t0 = Date.now();
   const response = await openai.chat.completions.create({
     model: RECOMMENDATIONS_MODEL,
     messages: [
@@ -532,6 +526,9 @@ async function callSingleTrackLLM(
     max_tokens: 1800,
     temperature: track === "indie" ? 0.95 : 0.84,
   });
+  if (timingSessionId) {
+    logRecsTiming(timingSessionId, `llm_${track}`, Date.now() - t0);
+  }
   const raw = JSON.parse(response.choices[0]?.message?.content || "{}") as Record<string, unknown>;
   return track === "mainstream" ? parseMainstreamTrackResponse(raw) : parseIndieTrackResponse(raw);
 }
@@ -543,7 +540,8 @@ export async function generateSingleTrackPicks(
   track: RecommendationTrack,
   mood: SessionMoodProfile,
   bannedCtx: { bannedSet: Set<string>; bannedTitlesPrompt: string },
-  promptExtra = ""
+  promptExtra = "",
+  timingSessionId?: string
 ): Promise<SingleTrackLLMResult> {
   await ensureRecsLoaded();
   const tasteProfileJson = JSON.stringify(mood);
@@ -558,34 +556,23 @@ export async function generateSingleTrackPicks(
   const extra = promptExtra.trim() ? `\n\n${promptExtra.trim()}` : "";
   const prompt = basePrompt + genreLine + extra;
 
-  const recentTitlesSet = new Set(recentlyRecommendedTitles.map(normalizeTitleKey));
-
   const applyBanned = (r: SingleTrackLLMResult): SingleTrackLLMResult => ({
     ...r,
     picks: filterPicksAgainstBanned(r.picks || [], bannedCtx.bannedSet),
   });
 
-  let result = applyBanned(await callSingleTrackLLM(prompt, track));
+  let result = applyBanned(await callSingleTrackLLM(prompt, track, timingSessionId));
   let picks = result.picks;
 
   if (picks.length < 6) {
+    if (timingSessionId) {
+      logRecsTiming(timingSessionId, `regen_${track}_insufficient_picks`, 0);
+    }
     result = applyBanned(
       await callSingleTrackLLM(
         `${prompt}\n\nRegenerate: complete JSON with ${LLM_PICK_COUNT} picks; all required fields.`,
-        track
-      )
-    );
-    picks = result.picks;
-  }
-
-  const pre1970 = countPre1970(picks);
-  const recentHits = countRecentCollisions(picks, recentTitlesSet);
-  const le2010 = countYearLeq2010(picks);
-  if (pre1970 > MAX_PRE_1970 || recentHits >= 2 || le2010 < MIN_PICKS_YEAR_LEQ_2010) {
-    result = applyBanned(
-      await callSingleTrackLLM(
-        `${prompt}\n\nRegenerate: max ${MAX_PRE_1970} pre-1970; at least ${MIN_PICKS_YEAR_LEQ_2010} picks with year ≤ 2010; avoid recent-session titles; ${LLM_PICK_COUNT} picks; full JSON.`,
-        track
+        track,
+        timingSessionId
       )
     );
     picks = result.picks;
@@ -605,22 +592,22 @@ async function resolveOneRecommendation(
 
     const [movieDetails, tmdbTrailers] = await Promise.all([
       getMovieDetails(searchResult.id),
-      getMovieTrailers(searchResult.id),
+      getMovieTrailers(searchResult.id).catch(() => [] as string[]),
     ]);
 
     if (!movieDetails) return null;
     if (!movieDetails.posterPath?.trim()) return null;
-    if (tmdbTrailers.length === 0) return null;
 
     movieDetails.listSource = "ai-recommendation";
     const reason =
       rec.tag && rec.reason
         ? `${rec.reason} · ${rec.tag}`
         : rec.reason || rec.tag || "";
+    const urls = Array.isArray(tmdbTrailers) ? tmdbTrailers : [];
     return {
       movie: movieDetails,
-      trailerUrl: tmdbTrailers[0],
-      trailerUrls: tmdbTrailers,
+      trailerUrl: urls[0] ?? null,
+      trailerUrls: urls,
       reason,
       pickedAs,
     };
@@ -654,14 +641,16 @@ async function resolvePicksToRecommendations(
   return out;
 }
 
-/** Mood extraction first, then both track prompts (taste_profile JSON + banned_titles). */
+/** Mood extraction first, then both track LLM calls in parallel (no TMDB until a lane is finalized). */
 async function buildPrefetchEntry(
-  _sessionId: string,
+  sessionId: string,
   chosenMovies: Movie[],
   rejectedMovies: Movie[],
   filters: string[]
 ): Promise<PrefetchEntry> {
+  const tMood = Date.now();
   const mood = await extractSessionMood(chosenMovies, rejectedMovies, filters);
+  logRecsTiming(sessionId, "taste_extraction", Date.now() - tMood);
   const taste = moodToTasteObservation(mood, chosenMovies);
   const banned = buildBannedContext(chosenMovies, rejectedMovies);
   return {
@@ -674,15 +663,25 @@ async function buildPrefetchEntry(
       filters,
       "mainstream",
       mood,
-      banned
+      banned,
+      "",
+      sessionId
     ),
-    indie: generateSingleTrackPicks(chosenMovies, rejectedMovies, filters, "indie", mood, banned),
+    indie: generateSingleTrackPicks(
+      chosenMovies,
+      rejectedMovies,
+      filters,
+      "indie",
+      mood,
+      banned,
+      "",
+      sessionId
+    ),
   };
 }
 
-/** Fire when the last A/B choice is recorded — runs taste then both tracks. */
+/** Fire when the last A/B choice is recorded — starts taste + parallel lane LLM prefetch only (no blocking TMDB bundle). */
 export function beginRecommendationPrefetch(sessionId: string): void {
-  if (prefetchBySession.has(sessionId)) return;
   const session = gameSessionStorage.getSession(sessionId);
   if (!session?.isComplete) return;
   const chosen = gameSessionStorage.getChosenMovies(sessionId);
@@ -690,11 +689,16 @@ export function beginRecommendationPrefetch(sessionId: string): void {
   const filters = gameSessionStorage.getSessionFilters(sessionId)?.genres ?? [];
   if (chosen.length === 0) return;
 
-  console.log(`[prefetch] Starting taste + mainstream + indie for ${sessionId}`);
-  prefetchBySession.set(sessionId, buildPrefetchEntry(sessionId, chosen, rejected, filters));
+  if (!prefetchBySession.has(sessionId)) {
+    console.log(`[prefetch] Starting taste + mainstream + indie LLM for ${sessionId}`);
+    prefetchBySession.set(sessionId, buildPrefetchEntry(sessionId, chosen, rejected, filters));
+  }
 }
 
 export async function getTastePreviewForSession(sessionId: string): Promise<TasteObservationResult> {
+  const cachedTaste = sessionLaneCache.get(sessionId)?.taste;
+  if (cachedTaste) return cachedTaste;
+
   let entryPromise = prefetchBySession.get(sessionId);
   if (!entryPromise) {
     const session = gameSessionStorage.getSession(sessionId);
@@ -708,63 +712,31 @@ export async function getTastePreviewForSession(sessionId: string): Promise<Tast
   }
   try {
     const entry = await entryPromise;
-    return await entry.taste;
+    const t = await entry.taste;
+    patchSessionLaneMeta(sessionId, { mood: entry.mood, taste: t });
+    return t;
   } catch {
     const chosen = gameSessionStorage.getChosenMovies(sessionId);
     return fallbackTaste(chosen);
   }
 }
 
-/** Full pipeline for one lane — same steps as before (LLM → resolve → regen rules). */
-async function computeRecommendationsForTrackFromSession(
-  sessionId: string,
+/** TMDB resolve + at most one extra LLM pass when picks or resolve count are critically low. */
+async function finalizeSingleTrackToResponse(
   track: RecommendationTrack,
-  entry: PrefetchEntry | null,
   chosen: Movie[],
   rejected: Movie[],
-  filters: string[]
+  filters: string[],
+  mood: SessionMoodProfile,
+  banned: { bannedSet: Set<string>; bannedTitlesPrompt: string },
+  taste: TasteObservationResult,
+  rawFromPrefetch: SingleTrackLLMResult | null,
+  timingSessionId?: string
 ): Promise<RecommendationsResponse> {
-  let taste: TasteObservationResult;
-  let mood: SessionMoodProfile;
-  let banned: { bannedSet: Set<string>; bannedTitlesPrompt: string };
-  let picks: AIRecommendationResult[] = [];
-  let trackCopy: SingleTrackLLMResult | null = null;
-
-  if (entry) {
-    mood = entry.mood;
-    banned = entry.banned;
-    taste = await entry.taste.catch(() => moodToTasteObservation(mood, chosen));
-    try {
-      const raw = await (track === "mainstream" ? entry.mainstream : entry.indie);
-      picks = raw.picks || [];
-      trackCopy = raw;
-    } catch (e) {
-      console.error("[recs] track prefetch failed", e);
-      picks = [];
-    }
-  } else {
-    mood = await extractSessionMood(chosen, rejected, filters);
-    taste = moodToTasteObservation(mood, chosen);
-    banned = buildBannedContext(chosen, rejected);
-    const raw = await generateSingleTrackPicks(chosen, rejected, filters, track, mood, banned);
-    picks = raw.picks || [];
-    trackCopy = raw;
-  }
+  let picks = rawFromPrefetch?.picks || [];
+  let trackCopy: SingleTrackLLMResult | null = rawFromPrefetch;
 
   if (picks.length < 6) {
-    const raw = await generateSingleTrackPicks(chosen, rejected, filters, track, mood, banned);
-    picks = raw.picks || [];
-    trackCopy = raw;
-  }
-
-  let recommendations = await resolvePicksToRecommendations(picks, chosen, track);
-  if (recommendations.length < TARGET_RESOLVED) {
-    const raw = await generateSingleTrackPicks(chosen, rejected, filters, track, mood, banned);
-    recommendations = await resolvePicksToRecommendations(raw.picks, chosen, track);
-    trackCopy = raw;
-  }
-
-  if (recommendations.length >= TARGET_RESOLVED && !resolvedEraSpreadOk(recommendations)) {
     const raw = await generateSingleTrackPicks(
       chosen,
       rejected,
@@ -772,16 +744,40 @@ async function computeRecommendationsForTrackFromSession(
       track,
       mood,
       banned,
-      `At least ${MIN_PICKS_YEAR_LEQ_2010} picks must be films released in 2010 or earlier (use accurate release years in JSON — TMDB will match them).`
+      "",
+      timingSessionId
     );
-    const alt = await resolvePicksToRecommendations(raw.picks, chosen, track);
-    if (alt.length >= TARGET_RESOLVED && resolvedEraSpreadOk(alt)) {
-      recommendations = alt;
-      trackCopy = raw;
-    }
+    picks = raw.picks || [];
+    trackCopy = raw;
   }
 
-  recordRecommendedTitles(recommendations.map((r) => r.movie.title));
+  const tmdb1 = Date.now();
+  let recommendations = await resolvePicksToRecommendations(picks, chosen, track);
+  if (timingSessionId) {
+    logRecsTiming(timingSessionId, `tmdb_enrichment_${track}_pass1`, Date.now() - tmdb1);
+  }
+
+  if (recommendations.length < TARGET_RESOLVED) {
+    if (timingSessionId) {
+      logRecsTiming(timingSessionId, `regen_${track}_unresolved_tmdb`, 0);
+    }
+    const raw = await generateSingleTrackPicks(
+      chosen,
+      rejected,
+      filters,
+      track,
+      mood,
+      banned,
+      "",
+      timingSessionId
+    );
+    const tmdb2 = Date.now();
+    recommendations = await resolvePicksToRecommendations(raw.picks, chosen, track);
+    if (timingSessionId) {
+      logRecsTiming(timingSessionId, `tmdb_enrichment_${track}_pass2`, Date.now() - tmdb2);
+    }
+    trackCopy = raw;
+  }
 
   const mainstream = track === "mainstream" ? recommendations : [];
   const indie = track === "indie" ? recommendations : [];
@@ -806,75 +802,159 @@ async function computeRecommendationsForTrackFromSession(
   };
 }
 
+function kickWarmOtherLane(sessionId: string, pickedTrack: RecommendationTrack): void {
+  const other: RecommendationTrack = pickedTrack === "mainstream" ? "indie" : "mainstream";
+  if (sessionLaneCache.get(sessionId)?.[other]) return;
+  void ensureLaneReady(sessionId, other).catch((err) =>
+    console.error("[warm-other-lane]", err)
+  );
+}
+
+async function ensureLaneReady(sessionId: string, track: RecommendationTrack): Promise<RecommendationsResponse> {
+  const totalStart = Date.now();
+  await ensureRecsLoaded();
+
+  const cached = sessionLaneCache.get(sessionId)?.[track];
+  if (cached) {
+    logRecsTiming(sessionId, `lane_${track}_cache_hit`, Date.now() - totalStart);
+    return cached;
+  }
+
+  const lk = laneInflightKey(sessionId, track);
+  const inflight = laneInflight.get(lk);
+  if (inflight) {
+    const r = await inflight;
+    logRecsTiming(sessionId, `lane_${track}_inflight_wait`, Date.now() - totalStart);
+    return r;
+  }
+
+  const work = (async (): Promise<RecommendationsResponse> => {
+    const chosen = gameSessionStorage.getChosenMovies(sessionId);
+    const rejected = gameSessionStorage.getRejectedMovies(sessionId);
+    const filters = gameSessionStorage.getSessionFilters(sessionId)?.genres ?? [];
+
+    if (chosen.length === 0) {
+      const r = await fallbackSingleTrack(chosen, track);
+      mergeLaneIntoCache(sessionId, track, r);
+      logRecsTiming(sessionId, `lane_${track}_total`, Date.now() - totalStart);
+      return r;
+    }
+
+    let entryPromise = prefetchBySession.get(sessionId);
+    if (!entryPromise) {
+      entryPromise = buildPrefetchEntry(sessionId, chosen, rejected, filters);
+      prefetchBySession.set(sessionId, entryPromise);
+    }
+
+    let mood: SessionMoodProfile;
+    let banned: { bannedSet: Set<string>; bannedTitlesPrompt: string };
+    let taste: TasteObservationResult;
+    let raw: SingleTrackLLMResult | null = null;
+
+    try {
+      const prefetchWait = Date.now();
+      const entry = await entryPromise;
+      logRecsTiming(sessionId, "prefetch_entry_wait", Date.now() - prefetchWait);
+      mood = entry.mood;
+      banned = entry.banned;
+      taste = await entry.taste.catch(() => moodToTasteObservation(mood, chosen));
+      patchSessionLaneMeta(sessionId, { mood, taste });
+
+      const laneWait = Date.now();
+      raw = await (track === "mainstream" ? entry.mainstream : entry.indie).catch((e) => {
+        console.error(`[prefetch] ${track} track failed`, e);
+        return { picks: [] as AIRecommendationResult[] };
+      });
+      logRecsTiming(sessionId, `llm_raw_wait_${track}`, Date.now() - laneWait);
+    } catch (e) {
+      console.error("[prefetch] entry failed", e);
+      const moodT0 = Date.now();
+      mood = await extractSessionMood(chosen, rejected, filters);
+      logRecsTiming(sessionId, "taste_extraction_cold", Date.now() - moodT0);
+      taste = moodToTasteObservation(mood, chosen);
+      banned = buildBannedContext(chosen, rejected);
+      patchSessionLaneMeta(sessionId, { mood, taste });
+      const coldLlm = Date.now();
+      raw = await generateSingleTrackPicks(
+        chosen,
+        rejected,
+        filters,
+        track,
+        mood,
+        banned,
+        "",
+        sessionId
+      );
+      logRecsTiming(sessionId, `llm_${track}_cold_total`, Date.now() - coldLlm);
+    }
+
+    const finalizeT0 = Date.now();
+    const res = await finalizeSingleTrackToResponse(
+      track,
+      chosen,
+      rejected,
+      filters,
+      mood,
+      banned,
+      taste,
+      raw,
+      sessionId
+    );
+    logRecsTiming(sessionId, `finalize_${track}`, Date.now() - finalizeT0);
+
+    mergeLaneIntoCache(sessionId, track, res);
+    recordRecommendedTitles(res.recommendations.map((r) => r.movie.title));
+
+    const cur = sessionLaneCache.get(sessionId);
+    if (cur?.mainstream && cur?.indie) {
+      prefetchBySession.delete(sessionId);
+    }
+
+    logRecsTiming(sessionId, `lane_${track}_total`, Date.now() - totalStart);
+    return res;
+  })();
+
+  laneInflight.set(lk, work);
+  try {
+    return await work;
+  } finally {
+    laneInflight.delete(lk);
+  }
+}
+
 export async function finalizeRecommendationsForTrack(
   sessionId: string,
   track: RecommendationTrack
 ): Promise<RecommendationsResponse> {
+  const routeStart = Date.now();
   await ensureRecsLoaded();
   const chosen = gameSessionStorage.getChosenMovies(sessionId);
-  const rejected = gameSessionStorage.getRejectedMovies(sessionId);
-  const filters = gameSessionStorage.getSessionFilters(sessionId)?.genres ?? [];
   if (chosen.length === 0) {
     return fallbackSingleTrack(chosen, track);
   }
 
-  const cachedBag = sessionTrackCache.get(sessionId);
-  const cached = cachedBag?.[track];
-  if (cached) {
-    return cached;
-  }
+  const active = await ensureLaneReady(sessionId, track);
+  kickWarmOtherLane(sessionId, track);
 
-  const ik = sessionTrackInflightKey(sessionId, track);
-  let inflight = sessionTrackInflight.get(ik);
-  if (!inflight) {
-    inflight = (async (): Promise<RecommendationsResponse> => {
-      try {
-        let entry: PrefetchEntry | null = null;
-        const entryPromise = prefetchBySession.get(sessionId);
-        if (entryPromise) {
-          try {
-            entry = await entryPromise;
-          } catch (e) {
-            console.error("[finalize] prefetch await failed", e);
-            entry = null;
-          }
-        }
+  const bundle = sessionLaneCache.get(sessionId) ?? {};
+  const m = bundle.mainstream;
+  const i = bundle.indie;
 
-        const result = await computeRecommendationsForTrackFromSession(
-          sessionId,
-          track,
-          entry,
-          chosen,
-          rejected,
-          filters
-        );
+  logRecsTiming(sessionId, "response_total", Date.now() - routeStart);
 
-        const bag = sessionTrackCache.get(sessionId) ?? {};
-        bag[track] = result;
-        sessionTrackCache.set(sessionId, bag);
-        tryClearPrefetchWhenBundleComplete(sessionId);
-
-        const ot = otherTrack(track);
-        if (
-          !sessionTrackCache.get(sessionId)?.[ot] &&
-          !sessionTrackInflight.has(sessionTrackInflightKey(sessionId, ot))
-        ) {
-          queueMicrotask(() => {
-            finalizeRecommendationsForTrack(sessionId, ot).catch((err) =>
-              console.error("[recs] background lane failed", ot, err)
-            );
-          });
-        }
-
-        return result;
-      } finally {
-        sessionTrackInflight.delete(ik);
-      }
-    })();
-    sessionTrackInflight.set(ik, inflight);
-  }
-
-  return await inflight;
+  return {
+    recommendations: active.recommendations,
+    mainstreamRecommendations:
+      m?.recommendations ?? (track === "mainstream" ? active.recommendations : []),
+    indieRecommendations: i?.recommendations ?? (track === "indie" ? active.recommendations : []),
+    preferenceProfile: active.preferenceProfile,
+    preferenceProfileByTrack:
+      m && i
+        ? { mainstream: m.preferenceProfile, indie: i.preferenceProfile }
+        : undefined,
+    hasPersonalisation: false,
+    genreProfileSize: 0,
+  };
 }
 
 async function fallbackSingleTrack(chosenMovies: Movie[], track: RecommendationTrack): Promise<RecommendationsResponse> {

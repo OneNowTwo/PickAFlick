@@ -1,12 +1,26 @@
 import type {
   RecommendationsResponse,
-  RecommendationTrack,
   WatchProvidersResponse,
   Recommendation,
+  RecommendationTrack,
 } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Play, RefreshCw, Film, ChevronLeft, ChevronRight, Bookmark, Tv, Brain, Eye, Share2, Check } from "lucide-react";
+import {
+  Loader2,
+  Play,
+  RefreshCw,
+  Film,
+  ChevronLeft,
+  ChevronRight,
+  Bookmark,
+  Tv,
+  Brain,
+  Eye,
+  EyeOff,
+  Share2,
+  Check,
+} from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -29,11 +43,11 @@ function tasteHeadline(profile: RecommendationsResponse["preferenceProfile"] | u
 interface ResultsScreenProps {
   recommendations: RecommendationsResponse | null;
   isLoading: boolean;
-  /** Inline skeleton + copy while recommendations fetch (not full-screen). */
-  inlineRecommendationsLoading?: boolean;
-  currentTrack?: RecommendationTrack | null;
-  /** Switch to the other pre-generated lane (no extra LLM when server cache hits). */
-  onSwitchLane?: () => void;
+  loadingVariant?: "fullscreen" | "inline";
+  activeTrack?: RecommendationTrack;
+  onSwitchLane?: (track: RecommendationTrack) => void;
+  canSwitchLane?: boolean;
+  loadError?: boolean;
   onPlayAgain: () => void;
   sessionId?: string | null;
   suppressTrailer?: boolean; // hide iframe when an overlay modal is open (YouTube z-index fix)
@@ -42,9 +56,11 @@ interface ResultsScreenProps {
 export function ResultsScreen({
   recommendations,
   isLoading,
-  inlineRecommendationsLoading = false,
-  currentTrack = null,
+  loadingVariant = "fullscreen",
+  activeTrack = "mainstream",
   onSwitchLane,
+  canSwitchLane = false,
+  loadError = false,
   onPlayAgain,
   sessionId,
   suppressTrailer = false,
@@ -72,7 +88,7 @@ export function ResultsScreen({
 
   // Track when results screen loads with recommendations
   useEffect(() => {
-    if (!isLoading && !inlineRecommendationsLoading && recommendations) {
+    if (!isLoading && recommendations) {
       if (typeof window !== 'undefined' && window.posthog) {
         window.posthog.capture("completed_flow");
       }
@@ -81,7 +97,7 @@ export function ResultsScreen({
         sessionStorage.setItem("signup_nudge_flows_since", String(since));
       }
     }
-  }, [isLoading, inlineRecommendationsLoading, recommendations, user]);
+  }, [isLoading, recommendations, user]);
 
   // Reset trailer state when changing movies
   useEffect(() => {
@@ -91,7 +107,7 @@ export function ResultsScreen({
 
   // Staged messages only - no percentage. Smooth continuous progress bar.
   useEffect(() => {
-    if (!isLoading && !inlineRecommendationsLoading) {
+    if (!isLoading) {
       setLoadingProgress(0);
       setLoadingStage("Analyzing your choices…");
       return;
@@ -125,17 +141,13 @@ export function ResultsScreen({
       clearInterval(stageInterval);
       clearInterval(progressInterval);
     };
-  }, [isLoading, inlineRecommendationsLoading]);
+  }, [isLoading]);
 
   // Initialize local recs from recommendations
   useEffect(() => {
     if (recommendations?.recommendations) {
       setLocalRecs([...recommendations.recommendations]);
     }
-  }, [recommendations]);
-
-  useEffect(() => {
-    setCurrentIndex(0);
   }, [recommendations]);
 
   // Mutation to get a replacement recommendation
@@ -164,8 +176,8 @@ export function ResultsScreen({
     },
   });
 
-  // Filter out "seen it" movies for display
-  const displayRecs = localRecs.filter(r => !seenMovies.has(r.movie.tmdbId));
+  /** Keep seen titles in the row so the Seen control can toggle off; dim in UI instead of removing. */
+  const displayRecs = localRecs;
   const currentRec = displayRecs[currentIndex];
   const currentTmdbId = currentRec?.movie.tmdbId;
 
@@ -225,34 +237,29 @@ export function ResultsScreen({
     enabled: (showWatchProviders || !!currentTmdbId) && !!currentRec,
   });
 
-  // Handle "Seen It" - remove current and fetch replacement
-  const handleSeenIt = () => {
+  /** Seen toggle: on → mark + request replacement once; off → clear mark (no second API). */
+  const handleSeenToggle = () => {
     if (!currentRec || !sessionId) return;
-    
-    // Add to seen set
     const tmdbId = currentRec.movie.tmdbId;
-    const newSeenMovies = new Set(seenMovies);
-    newSeenMovies.add(tmdbId);
-    setSeenMovies(newSeenMovies);
-    
-    // Build list of all tmdbIds to exclude (including previously seen and current recs)
+    if (seenMovies.has(tmdbId)) {
+      setSeenMovies((prev) => {
+        const n = new Set(prev);
+        n.delete(tmdbId);
+        return n;
+      });
+      setAutoPlayTrailer(true);
+      return;
+    }
+    setSeenMovies((prev) => new Set(prev).add(tmdbId));
     const allExcludedIds = [
       ...Array.from(seenMovies),
       tmdbId,
-      ...localRecs.map(r => r.movie.tmdbId),
+      ...localRecs.map((r) => r.movie.tmdbId),
     ];
-    
     replacementMutation.mutate({
       excludeTmdbIds: allExcludedIds,
       track: currentRec.pickedAs ?? "mainstream",
     });
-    
-    // Adjust index if we were at the end
-    const newDisplayRecs = displayRecs.filter(r => r.movie.tmdbId !== tmdbId);
-    if (currentIndex >= newDisplayRecs.length && newDisplayRecs.length > 0) {
-      setCurrentIndex(newDisplayRecs.length - 1);
-    }
-    
     setAutoPlayTrailer(true);
   };
 
@@ -316,11 +323,48 @@ export function ResultsScreen({
     },
   });
 
-  if (isLoading && !inlineRecommendationsLoading) {
+  if (loadError && !recommendations) {
+    return (
+      <div className="flex flex-col items-center gap-4 py-12 px-4 max-w-md mx-auto text-center">
+        <p className="text-white/90">Couldn&apos;t load recommendations.</p>
+        <Button size="lg" onClick={onPlayAgain} data-testid="button-retry-recs">
+          <RefreshCw className="w-4 h-4 mr-2" />
+          Try again
+        </Button>
+      </div>
+    );
+  }
+
+  if (isLoading && !recommendations && loadingVariant === "inline") {
+    return (
+      <div
+        className="w-full max-w-4xl mx-auto px-4 py-8 space-y-6"
+        data-testid="loading-recommendations-inline"
+      >
+        <div className="text-center space-y-2">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
+          <p className="text-white text-sm font-medium">Finalising your picks...</p>
+          <p className="text-white/45 text-xs">This usually takes a few seconds</p>
+        </div>
+        <div className="grid grid-cols-3 gap-2 max-w-sm mx-auto opacity-80">
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="aspect-[2/3] rounded-xl bg-gradient-to-b from-white/15 to-white/5 border border-white/10 animate-pulse"
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center gap-6 min-h-[60vh]" data-testid="loading-recommendations">
+        {/* Dark backdrop for better text visibility */}
         <div className="bg-black/60 backdrop-blur-sm rounded-2xl p-8 flex flex-col items-center gap-6 min-w-[320px] max-w-md">
           <div className="relative" style={{ width: 120, height: 120 }}>
+            {/* Animated closing ring */}
             <svg className="transform -rotate-90" width={120} height={120}>
               <circle
                 cx={60}
@@ -353,53 +397,16 @@ export function ResultsScreen({
           <div className="text-center w-full px-4">
             <h2 className="text-xl md:text-2xl font-bold text-white mb-2">Hold a tic...</h2>
             <p className="text-white/80 text-sm md:text-base mb-4">{loadingStage}</p>
+            
+            {/* Smooth progress bar - no percentage */}
             <div className="w-full bg-white/20 rounded-full h-2 overflow-hidden">
-              <div
+              <div 
                 className="h-full bg-gradient-to-r from-primary via-primary/80 to-primary/60 rounded-full transition-all duration-300 ease-out"
                 style={{ width: `${loadingProgress}%` }}
               />
             </div>
             <p className="text-white/60 text-xs mt-3">This usually takes a few seconds</p>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  const otherLane: RecommendationTrack | null =
-    currentTrack === "mainstream" ? "indie" : currentTrack === "indie" ? "mainstream" : null;
-  const switchLabel =
-    otherLane === "indie" ? "See Indie picks" : otherLane === "mainstream" ? "See Mainstream picks" : null;
-  const laneBadgeLabel = currentTrack === "mainstream" ? "Mainstream" : currentTrack === "indie" ? "Indie" : null;
-
-  if (inlineRecommendationsLoading && !recommendations) {
-    return (
-      <div
-        className="flex flex-col items-center gap-4 w-full max-w-7xl mx-auto px-2 md:px-4 pt-4 pb-8"
-        data-testid="inline-loading-recommendations"
-      >
-        <div className="text-center max-w-xl px-3 space-y-1">
-          <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-2" />
-          <h2 className="text-base md:text-lg font-semibold text-white">Finalising your picks…</h2>
-          <p className="text-xs md:text-sm text-white/50">This usually takes just a moment</p>
-        </div>
-        {laneBadgeLabel && switchLabel && onSwitchLane && (
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <span className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide bg-primary/20 text-primary border border-primary/35">
-              {laneBadgeLabel}
-            </span>
-            <span className="text-white/25 text-sm">·</span>
-            <span className="text-xs text-white/35">{switchLabel}</span>
-          </div>
-        )}
-        <div className="w-full max-w-4xl mx-auto aspect-video rounded-xl bg-white/[0.06] border border-white/10 animate-pulse" />
-        <div className="flex gap-2 justify-center flex-wrap">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div
-              key={i}
-              className="w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg bg-white/[0.08] animate-pulse border border-white/5"
-            />
-          ))}
         </div>
       </div>
     );
@@ -425,6 +432,11 @@ export function ResultsScreen({
   const headline = tasteHeadline(preferenceProfile);
   const patternSummary =
     preferenceProfile?.patternSummary?.trim() || preferenceProfile?.tagline?.trim();
+
+  const isCurrentSeen = currentRec ? seenMovies.has(currentRec.movie.tmdbId) : false;
+  const otherTrack: RecommendationTrack = activeTrack === "mainstream" ? "indie" : "mainstream";
+  const switchLabel =
+    otherTrack === "mainstream" ? "See Mainstream picks" : "See Indie picks";
 
   const mainstreamThumbs = displayRecs.filter((r) => r.pickedAs !== "indie");
   const indieThumbs = displayRecs.filter((r) => r.pickedAs === "indie");
@@ -513,26 +525,15 @@ export function ResultsScreen({
         )}
       </div>
 
-      {/* Personalisation indicator — only visible for logged-in users with history */}
-      {hasPersonalisation && (
-        <p className="text-xs text-white/30 text-center" data-testid="personalisation-label">
-          Based on your taste profile
-        </p>
-      )}
-
-      {laneBadgeLabel && switchLabel && onSwitchLane && (
-        <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3 w-full px-2">
-          <span
-            className="rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-black/50 text-white/90 border border-white/15 backdrop-blur-md"
-            data-testid="lane-badge-current"
-          >
-            {laneBadgeLabel}
+      {canSwitchLane && onSwitchLane && (
+        <div className="flex flex-wrap items-center justify-center gap-2 px-3">
+          <span className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-white/85">
+            {activeTrack === "mainstream" ? "Mainstream" : "Indie"}
           </span>
           <button
             type="button"
-            onClick={onSwitchLane}
-            disabled={inlineRecommendationsLoading}
-            className="text-sm font-semibold text-primary hover:text-primary/90 underline-offset-4 hover:underline disabled:opacity-40 disabled:no-underline transition-colors"
+            onClick={() => onSwitchLane(otherTrack)}
+            className="text-sm font-medium text-primary hover:text-primary/90 underline-offset-4 hover:underline transition-colors"
             data-testid="button-switch-lane"
           >
             {switchLabel}
@@ -540,8 +541,15 @@ export function ResultsScreen({
         </div>
       )}
 
+      {/* Personalisation indicator — only visible for logged-in users with history */}
+      {hasPersonalisation && (
+        <p className="text-xs text-white/30 text-center" data-testid="personalisation-label">
+          Based on your taste profile
+        </p>
+      )}
+
       {/* Trailer card with nav - row on desktop, stacked on mobile */}
-      <div className="relative flex flex-col md:flex-row md:items-stretch gap-2 md:gap-3 w-full max-w-7xl">
+      <div className="flex flex-col md:flex-row md:items-stretch gap-2 md:gap-3 w-full max-w-7xl mt-1">
         {/* Previous - hidden on mobile, shown beside card on desktop */}
         <Button
           variant="default"
@@ -557,7 +565,9 @@ export function ResultsScreen({
 
         {/* Card */}
         <div 
-          className="w-full md:flex-1 md:min-w-0 bg-card/50 border border-border/50 rounded-xl md:rounded-2xl overflow-hidden backdrop-blur-sm"
+          className={`w-full md:flex-1 md:min-w-0 bg-card/50 border border-border/50 rounded-xl md:rounded-2xl overflow-hidden backdrop-blur-sm transition-opacity duration-300 ${
+            isCurrentSeen ? "opacity-55" : ""
+          }`}
           data-testid={`recommendation-card-${currentIndex}`}
         >
           {/* Trailer - 16:9 */}
@@ -726,48 +736,50 @@ export function ResultsScreen({
         </Button>
       </div>
 
-      {/* Save / Seen / Share — compact glass pills (secondary to Watch now) */}
-      <div className="flex items-center justify-center gap-2 md:gap-2.5 w-full flex-wrap py-2">
+      {/* Save, Seen, Share — compact glass pills */}
+      <div className="flex items-center justify-center gap-2 w-full flex-wrap py-3">
         <button
           type="button"
           onClick={handleLike}
           className={`
-            inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold border transition-all duration-200 ease-out
-            backdrop-blur-md shadow-sm active:scale-[0.96]
-            hover:scale-[1.04] hover:shadow-[0_0_20px_rgba(220,38,38,0.22)]
+            inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold
+            border backdrop-blur-md transition-all duration-200
+            hover:scale-[1.04] hover:shadow-[0_0_20px_rgba(255,255,255,0.12)] active:scale-[0.97]
             ${
               isLiked
-                ? "bg-primary text-primary-foreground border-primary/80"
-                : "bg-black/45 text-white/90 border-white/15 hover:border-primary/40 hover:bg-black/60"
+                ? "bg-emerald-500/90 text-white border-emerald-400/50 shadow-[0_0_16px_rgba(16,185,129,0.35)]"
+                : "bg-black/45 text-white/90 border-white/15 hover:border-white/30 hover:bg-black/55"
             }
           `}
           data-testid="button-save-watchlist"
         >
-          <Bookmark className={`w-3.5 h-3.5 shrink-0 ${isLiked ? "fill-current" : ""}`} />
+          <Bookmark className={`w-3.5 h-3.5 ${isLiked ? "fill-current" : ""}`} />
           Save
         </button>
 
         <button
           type="button"
-          onClick={handleSeenIt}
+          onClick={handleSeenToggle}
           disabled={replacementMutation.isPending || !sessionId}
-          aria-pressed={replacementMutation.isPending}
           className={`
-            inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold border transition-all duration-200 ease-out
-            backdrop-blur-md shadow-sm active:scale-[0.96] disabled:opacity-45
-            hover:scale-[1.04]
+            inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold
+            border backdrop-blur-md transition-all duration-200
+            hover:scale-[1.04] hover:shadow-[0_0_20px_rgba(251,191,36,0.15)] active:scale-[0.97]
+            disabled:opacity-50 disabled:pointer-events-none
             ${
-              replacementMutation.isPending
-                ? "bg-amber-500/25 text-amber-100 border-amber-400/50 shadow-[0_0_16px_rgba(245,158,11,0.2)]"
+              isCurrentSeen || replacementMutation.isPending
+                ? "bg-amber-500/25 text-amber-100 border-amber-400/40 shadow-[0_0_14px_rgba(245,158,11,0.25)]"
                 : "bg-black/45 text-white/90 border-white/15 hover:border-amber-400/35 hover:bg-amber-500/10"
             }
           `}
           data-testid="button-seen-it"
         >
           {replacementMutation.isPending ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : isCurrentSeen ? (
+            <EyeOff className="w-3.5 h-3.5" />
           ) : (
-            <Eye className="w-3.5 h-3.5 shrink-0" />
+            <Eye className="w-3.5 h-3.5" />
           )}
           Seen
         </button>
@@ -776,18 +788,19 @@ export function ResultsScreen({
           type="button"
           onClick={() => shareMutation.mutate()}
           disabled={shareMutation.isPending}
-          className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold border transition-all duration-200 ease-out
-            bg-black/45 text-white/90 border-white/15 backdrop-blur-md shadow-sm
-            hover:scale-[1.04] hover:border-white/30 hover:bg-white/10 hover:shadow-[0_0_18px_rgba(255,255,255,0.08)]
-            active:scale-[0.96] disabled:opacity-45"
+          className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold
+            border border-white/15 bg-black/45 text-white/90 backdrop-blur-md
+            transition-all duration-200 hover:scale-[1.04] hover:border-white/28 hover:bg-black/55
+            hover:shadow-[0_0_18px_rgba(255,255,255,0.08)] active:scale-[0.97]
+            disabled:opacity-50"
           data-testid="button-share"
         >
           {shareMutation.isPending ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
           ) : copied ? (
-            <Check className="w-3.5 h-3.5 shrink-0 text-green-400" />
+            <Check className="w-3.5 h-3.5 text-emerald-400" />
           ) : (
-            <Share2 className="w-3.5 h-3.5 shrink-0" />
+            <Share2 className="w-3.5 h-3.5" />
           )}
           Share
         </button>
@@ -813,6 +826,7 @@ export function ResultsScreen({
                         : `https://image.tmdb.org/t/p/w154${rec.movie.posterPath}`
                       : null;
                     const isActive = i === currentIndex;
+                    const isSeenThumb = seenMovies.has(rec.movie.tmdbId);
                     return (
                       <div key={rec.movie.tmdbId} className="flex flex-col items-center gap-1 shrink-0">
                         <span
@@ -831,7 +845,7 @@ export function ResultsScreen({
                             isActive
                               ? "border-primary ring-2 ring-primary/30 scale-105"
                               : "border-transparent opacity-70 hover:opacity-100"
-                          }`}
+                          } ${isSeenThumb ? "opacity-45 grayscale" : ""}`}
                           data-testid={`thumbnail-${i}`}
                           type="button"
                         >
@@ -859,6 +873,7 @@ export function ResultsScreen({
                   : `https://image.tmdb.org/t/p/w154${rec.movie.posterPath}`
                 : null;
               const isActive = i === currentIndex;
+              const isSeenThumb = seenMovies.has(rec.movie.tmdbId);
               return (
                 <div key={rec.movie.tmdbId} className="flex flex-col items-center gap-1 shrink-0">
                   <span
@@ -877,7 +892,7 @@ export function ResultsScreen({
                       isActive
                         ? "border-primary ring-2 ring-primary/30 scale-105"
                         : "border-transparent opacity-70 hover:opacity-100"
-                    }`}
+                    } ${isSeenThumb ? "opacity-45 grayscale" : ""}`}
                     data-testid={`thumbnail-${i}`}
                     type="button"
                   >
@@ -1073,7 +1088,7 @@ export function ResultsScreen({
       )}
 
       {/* Post-recommendation sign-up nudge — soft bottom sheet, shown after 2s for logged-out users */}
-      {!user && !isLoading && !inlineRecommendationsLoading && recommendations && (
+      {!user && !isLoading && recommendations && (
         <SignUpNudge movieTitle={currentRec?.movie.title} />
       )}
     </div>
