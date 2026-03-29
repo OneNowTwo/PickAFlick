@@ -208,9 +208,30 @@ Rules:
 
 function laneRules(track: RecommendationTrack): string {
   if (track === "mainstream") {
-    return `LANE — Mainstream: lean toward accessible, high-confidence picks that are easy to watch tonight, but avoid generic blockbuster sameness and repeated default titles.`;
+    return `LANE — Mainstream / big night: crowd-pleasing films general audiences know or can find easily — studios, streaming A-titles, stars, clear hooks (action, comedy, thriller, drama). English or widely available dubs OK. This lane should feel like "we're going big and accessible" — NOT like a muted indie list with famous names. Still: do not output six near-identical Oscar-bait dramas; stretch across decades, tones, and countries (include accessible non-English hits when they fit).`;
   }
-  return `LANE — Less obvious: prioritise strong, less predictable films. Avoid default or commonly recommended titles. Favour more specific, distinctive picks that still match the taste. Shun the usual prestige/blockbuster names that appear on every generic list unless the funnel is an extremely strong match.`;
+  return `LANE — Indie / lesser-known: deliberately under-exposed picks — the opposite profile from a mainstream blockbuster night. Prioritise films a casual viewer has probably not seen discussed everywhere. Lean hard on international cinema, festival breakouts, cult and mid-budget gems, strong second-tier directors, pre-2000 titles, and micro-budget standouts that still honour the funnel. If a pick could sit just as easily on a generic "best movies ever" Reddit thread, replace it with something more specific. This list must feel obviously different from what the mainstream lane would output for the same funnel — not a slightly edgier clone.`;
+}
+
+function catalogueBreadthBlock(track: RecommendationTrack): string {
+  const antiCollapse =
+    "CAST A WIDE NET: Language models collapse onto the same ~50–100 \"default\" recommendation titles. Fight that: vary country, decade, primary genre, budget tier, and director. Before finalising each pick, ask whether you are reaching past the first obvious answer.";
+
+  if (track === "mainstream") {
+    return `${antiCollapse}
+
+MAINSTREAM-SPECIFIC BREADTH:
+- Include at least one pre-2005 title and at least one pick that is primarily comedy, thriller, or action (if the funnel allows — if not, widen mood within drama).
+- At least one pick should be a non-US film that still played widely (streaming or cinema) — not only US studio fare.
+- No more than half the picks should be from the same 15-year window (e.g. not all 2015–2023).`;
+  }
+
+  return `${antiCollapse}
+
+INDIE-SPECIFIC BREADTH (harder separation from mainstream):
+- At least 4 picks must satisfy at least one of: non-English primary language, release year before 2000, or director without a recent Hollywood tentpole to their name.
+- At least 2 picks should be from outside the US/UK if the funnel allows.
+- Favour titles that are critically strong but not household names — dig past the usual prestige shortlist the model always repeats.`;
 }
 
 function buildSingleTrackPrompt(
@@ -258,6 +279,8 @@ ${genreFilterLine}
 
 ${laneRules(track)}
 
+${catalogueBreadthBlock(track)}
+
 ${explorationSlot}Shared (tight):
 - Exactly ${LLM_PICK_COUNT} films in "picks" (extras help after title lookup). We show 6 — make them feel distinct, not six of the same cluster.
 - Decades (use each pick's "year" field): at least ${MIN_PICKS_YEAR_LEQ_2010} picks with year ≤ 2010; at most ${MAX_PRE_1970} with year < 1970; include a 2020+ if it fits the funnel.
@@ -273,20 +296,23 @@ ${extra}Reasons: short; tie to overall funnel pattern only; never name a funnel 
 JSON only: {"picks":[{"title":"","year":2020,"reason":""}, ... ${LLM_PICK_COUNT} entries]}`;
 }
 
+function systemPromptForTrack(track: RecommendationTrack): string {
+  if (track === "mainstream") {
+    return "PickAFlick MAINSTREAM lane. JSON only. Accessible, big-audience films — but maximise real catalogue breadth; resist the model's habit of repeating the same small set of famous titles. Obey user prompt constraints.";
+  }
+  return "PickAFlick INDIE / left-field lane. JSON only. Under-known and geographically diverse picks. If output resembles a mainstream list with slightly artsier names, you failed — go more specific, foreign, older, or festival-level. Obey user prompt constraints.";
+}
+
 async function callSingleTrackLLM(promptText: string, track: RecommendationTrack): Promise<SingleTrackLLMResult> {
   const response = await openai.chat.completions.create({
     model: RECOMMENDATIONS_MODEL,
     messages: [
-      {
-        role: "system",
-        content:
-          "PickAFlick. JSON only. Obey lane rules. Reject safe-list defaults; enforce variety across picks.",
-      },
+      { role: "system", content: systemPromptForTrack(track) },
       { role: "user", content: promptText },
     ],
     response_format: { type: "json_object" },
     max_tokens: 1500,
-    temperature: track === "indie" ? 0.92 : 0.74,
+    temperature: track === "indie" ? 0.95 : 0.84,
   });
   return JSON.parse(response.choices[0]?.message?.content || "{}") as SingleTrackLLMResult;
 }
