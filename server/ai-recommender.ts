@@ -65,14 +65,90 @@ export interface TasteObservationResult {
   preferredEras: string[];
 }
 
-interface AIRecommendationResult { title: string; year?: number; reason: string; }
+/** Structured mood from A/B session — source of truth for recommendation prompts. */
+export interface SessionMoodProfile {
+  preferred_tone: string;
+  rejected_tone: string;
+  pacing: string;
+  darkness_level: string;
+  realism_vs_stylised: string;
+  complexity: string;
+  emotional_texture: string;
+  what_they_want: string[];
+  what_they_avoid: string[];
+}
+
+interface AIRecommendationResult {
+  title: string;
+  year?: number;
+  reason: string;
+  tag?: string;
+}
 
 interface SingleTrackLLMResult {
   picks: AIRecommendationResult[];
+  line_what_they_want?: string;
+  line_what_they_avoid?: string;
+  line_cinema_suggested?: string;
+  line_trap_avoided?: string;
 }
+
+/** Model-collapse / overused titles — never recommend (plus recent + funnel bans). */
+const OVERUSED_CANON_BANNED: string[] = [
+  "Oldboy",
+  "Prisoners",
+  "No Country for Old Men",
+  "Parasite",
+  "Jojo Rabbit",
+  "Fight Club",
+  "Pulp Fiction",
+  "The Shawshank Redemption",
+  "The Dark Knight",
+  "Inception",
+  "Interstellar",
+  "Forrest Gump",
+  "The Godfather",
+  "The Godfather Part II",
+  "Schindler's List",
+  "The Matrix",
+  "Goodfellas",
+  "Se7en",
+  "Silence of the Lambs",
+  "Whiplash",
+  "Nightcrawler",
+  "Drive",
+  "Blade Runner 2049",
+  "Arrival",
+  "Dune",
+  "Everything Everywhere All at Once",
+  "Get Out",
+  "Hereditary",
+  "Midsommar",
+  "The Witch",
+  "Uncut Gems",
+  "There Will Be Blood",
+  "Zodiac",
+  "Gone Girl",
+  "The Social Network",
+  "La La Land",
+  "Moonlight",
+  "Spotlight",
+  "Birdman",
+  "12 Years a Slave",
+  "The Revenant",
+  "Mad Max: Fury Road",
+  "Django Unchained",
+  "Inglourious Basterds",
+  "The Prestige",
+  "Memento",
+  "Shutter Island",
+  "The Departed",
+];
 
 interface PrefetchEntry {
   taste: Promise<TasteObservationResult>;
+  mood: SessionMoodProfile;
+  banned: { bannedSet: Set<string>; bannedTitlesPrompt: string };
   mainstream: Promise<SingleTrackLLMResult>;
   indie: Promise<SingleTrackLLMResult>;
 }
@@ -83,19 +159,21 @@ function normalizeTitleKey(title: string): string {
   return title.toLowerCase().trim().replace(/^the\s+/i, "");
 }
 
+function parseYearField(y: unknown): number | undefined {
+  if (typeof y === "number" && Number.isFinite(y)) return Math.round(y);
+  if (typeof y === "string") {
+    const n = parseInt(y, 10);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return undefined;
+}
+
 function countPre1970(recs: { year?: number }[]): number {
   return recs.filter((r) => typeof r.year === "number" && r.year < 1970).length;
 }
 
 function countYearLeq2010(recs: { year?: number }[]): number {
   return recs.filter((r) => typeof r.year === "number" && r.year <= 2010).length;
-}
-
-/** 1-based index into the LLM pick list for the per-session exploration slot. */
-function explorationPickIndex(sessionId: string): number {
-  let h = 0;
-  for (let i = 0; i < sessionId.length; i++) h = (h * 31 + sessionId.charCodeAt(i)) >>> 0;
-  return h % LLM_PICK_COUNT;
 }
 
 function directorKeyForMovie(movie: { tmdbId: number; director?: string | null }): string {
@@ -143,167 +221,283 @@ function fallbackTaste(chosenMovies: Movie[]): TasteObservationResult {
   };
 }
 
-// ── Taste headline + two-sentence pattern (picker + results top) ─────────────
+function fallbackMood(): SessionMoodProfile {
+  return {
+    preferred_tone: "Something engaging that fits the night",
+    rejected_tone: "What felt off in the passes",
+    pacing: "moderate",
+    darkness_level: "balanced",
+    realism_vs_stylised: "mixed",
+    complexity: "medium",
+    emotional_texture: "grounded",
+    what_they_want: ["a satisfying watch", "clear story stakes", "tone that matches tonight"],
+    what_they_avoid: ["misaligned mood", "pacing that drags", "tone clashes"],
+  };
+}
 
-export async function buildTasteObservation(
+function moodToTasteObservation(mood: SessionMoodProfile, chosenMovies: Movie[]): TasteObservationResult {
+  const want = (mood.what_they_want || []).filter(Boolean).slice(0, 3).join("; ");
+  const avoid = (mood.what_they_avoid || []).filter(Boolean).slice(0, 3).join("; ");
+  return {
+    headline: (mood.preferred_tone || "").trim() || fallbackTaste(chosenMovies).headline,
+    patternSummary: [want && `Leaning toward: ${want}.`, avoid && `Steering clear of: ${avoid}.`]
+      .filter(Boolean)
+      .join(" ")
+      .trim() || fallbackTaste(chosenMovies).patternSummary,
+    topGenres: extractTopGenres(chosenMovies),
+    themes: [mood.emotional_texture, mood.pacing, mood.complexity].filter(Boolean),
+    preferredEras: [],
+  };
+}
+
+/** Funnel + rejected + canon overuse + recent sessions — prompts and post-filter. */
+function buildBannedContext(chosenMovies: Movie[], rejectedMovies: Movie[]): {
+  bannedSet: Set<string>;
+  bannedTitlesPrompt: string;
+} {
+  const bannedSet = new Set<string>();
+  const labels: string[] = [];
+
+  const addTitle = (raw: string) => {
+    const k = normalizeTitleKey(raw);
+    if (!k) return;
+    if (bannedSet.has(k)) return;
+    bannedSet.add(k);
+    labels.push(raw.trim());
+  };
+
+  for (const m of chosenMovies) addTitle(m.title);
+  for (const m of rejectedMovies) addTitle(m.title);
+  for (const t of OVERUSED_CANON_BANNED) addTitle(t);
+  for (const k of recentlyRecommendedTitles.slice(-RECENT_EXCLUSIONS_PROMPT_COUNT)) {
+    if (!bannedSet.has(k)) {
+      bannedSet.add(k);
+      labels.push(k);
+    }
+  }
+
+  const bannedTitlesPrompt = labels.slice(0, 100).join("; ");
+  return { bannedSet, bannedTitlesPrompt };
+}
+
+function filterPicksAgainstBanned(
+  picks: AIRecommendationResult[],
+  bannedSet: Set<string>
+): AIRecommendationResult[] {
+  return picks.filter((p) => p.title && !bannedSet.has(normalizeTitleKey(p.title)));
+}
+
+// ── 1) Taste extraction (run first; winners vs losers; no film titles in output) ─
+
+export async function extractSessionMood(
   chosenMovies: Movie[],
   rejectedMovies: Movie[],
   initialGenreFilters: string[] = []
-): Promise<TasteObservationResult> {
-  const choicesBlock = formatChoicesBlock(chosenMovies);
-  const rejectsBlock = formatRejectsBlock(rejectedMovies, chosenMovies);
+): Promise<SessionMoodProfile> {
+  const winners = formatChoicesBlock(chosenMovies);
+  const losers = formatRejectsBlock(rejectedMovies, chosenMovies);
   const genreLine = initialGenreFilters.length > 0
-    ? `Session genre hints (optional): ${initialGenreFilters.join(", ")}.`
+    ? `Optional session genre hints: ${initialGenreFilters.join(", ")}.`
     : "";
 
-  const prompt = `Read this 7-round movie A/B funnel. Write copy for a friend — not marketing, not a robot.
+  const prompt = `You are analysing a movie A/B voting session.
 
-CHOSEN:
-${choicesBlock}
+Input:
+- winners:
+${winners}
 
-PASSED ON:
-${rejectsBlock}
+- losers:
+${losers}
 ${genreLine}
 
-Output JSON only:
+Infer the user's CURRENT viewing mood for TONIGHT (not general lifelong taste).
+
+Return JSON only:
 {
-  "headline": "string — ONE short line only. A human observation of their mood or appetite tonight. Examples of tone (do not copy verbatim): You're in a darker mood tonight. / You want something with a bit of weight. / You're chasing something gripping. / You're leaning playful but still want a story. / You kept tilting toward grounded, adult drama.",
-  "patternSummary": "string — EXACTLY two sentences in one paragraph. First sentence: what the pattern of wins/losses suggests (start with You leaned… OR You favoured… OR You kept choosing… OR You mixed… — vary this). Second sentence: MUST start with So these picks and explains how the recommendation list will honour that pattern. Be specific to THIS funnel (tones, pacing, realism vs spectacle, moral complexity, humour level, era bias if clear). No genre soup.",
-  "topGenres": ["","",""],
-  "themes": ["",""],
-  "preferredEras": ["",""]
+  "preferred_tone": "",
+  "rejected_tone": "",
+  "pacing": "",
+  "darkness_level": "",
+  "realism_vs_stylised": "",
+  "complexity": "",
+  "emotional_texture": "",
+  "what_they_want": ["", "", ""],
+  "what_they_avoid": ["", "", ""]
 }
 
 Rules:
-- No em dashes. No words: delve, tapestry, landscape, journey (as metaphor), unlock, resonate.
-- Do not name or quote any film title from the funnel in headline or patternSummary.
-- Sound like a sharp human who watched their choices — not a template.`;
+- Use winners AGAINST losers (contrast passes, not only wins).
+- Be specific (e.g. "controlled tension" not "thriller").
+- Do not mention any specific movie title in any field.
+- This is tonight's mood only.`;
 
   try {
     const response = await openai.chat.completions.create({
       model: RECOMMENDATIONS_MODEL,
       messages: [
-        { role: "system", content: "You write short, natural taste copy. JSON only." },
+        { role: "system", content: "PickAFlick mood analyst. JSON only. No film titles in output." },
         { role: "user", content: prompt },
       ],
       response_format: { type: "json_object" },
-      max_tokens: 450,
-      temperature: 0.88,
+      max_tokens: 550,
+      temperature: 0.75,
     });
-    const raw = JSON.parse(response.choices[0]?.message?.content || "{}") as TasteObservationResult;
+    const raw = JSON.parse(response.choices[0]?.message?.content || "{}") as SessionMoodProfile;
     return {
-      headline: (raw.headline || "").trim(),
-      patternSummary: (raw.patternSummary || "").trim(),
-      topGenres: raw.topGenres || [],
-      themes: raw.themes || [],
-      preferredEras: raw.preferredEras || [],
+      preferred_tone: String(raw.preferred_tone || "").trim(),
+      rejected_tone: String(raw.rejected_tone || "").trim(),
+      pacing: String(raw.pacing || "").trim(),
+      darkness_level: String(raw.darkness_level || "").trim(),
+      realism_vs_stylised: String(raw.realism_vs_stylised || "").trim(),
+      complexity: String(raw.complexity || "").trim(),
+      emotional_texture: String(raw.emotional_texture || "").trim(),
+      what_they_want: Array.isArray(raw.what_they_want) ? raw.what_they_want.map(String) : [],
+      what_they_avoid: Array.isArray(raw.what_they_avoid) ? raw.what_they_avoid.map(String) : [],
     };
   } catch (e) {
-    console.error("[taste-observation]", e);
-    return fallbackTaste(chosenMovies);
+    console.error("[session-mood]", e);
+    return fallbackMood();
   }
 }
 
-// ── Single track: 8 LLM picks → resolve to 6 for display ─────────────────────
-
-function laneRules(track: RecommendationTrack): string {
-  if (track === "mainstream") {
-    return `LANE — Mainstream / big night: crowd-pleasing films general audiences know or can find easily — studios, streaming A-titles, stars, clear hooks (action, comedy, thriller, drama). English or widely available dubs OK. This lane should feel like "we're going big and accessible" — NOT like a muted indie list with famous names. Still: do not output six near-identical Oscar-bait dramas; stretch across decades, tones, and countries (include accessible non-English hits when they fit).`;
-  }
-  return `LANE — Indie / lesser-known: deliberately under-exposed picks — the opposite profile from a mainstream blockbuster night. Prioritise films a casual viewer has probably not seen discussed everywhere. Lean hard on international cinema, festival breakouts, cult and mid-budget gems, strong second-tier directors, pre-2000 titles, and micro-budget standouts that still honour the funnel. If a pick could sit just as easily on a generic "best movies ever" Reddit thread, replace it with something more specific. This list must feel obviously different from what the mainstream lane would output for the same funnel — not a slightly edgier clone.`;
+/** Taste preview + legacy shape: mood extraction mapped for UI. */
+export async function buildTasteObservation(
+  chosenMovies: Movie[],
+  rejectedMovies: Movie[],
+  initialGenreFilters: string[] = []
+): Promise<TasteObservationResult> {
+  const mood = await extractSessionMood(chosenMovies, rejectedMovies, initialGenreFilters);
+  return moodToTasteObservation(mood, chosenMovies);
 }
 
-function catalogueBreadthBlock(track: RecommendationTrack): string {
-  const antiCollapse =
-    "CAST A WIDE NET: Language models collapse onto the same ~50–100 \"default\" recommendation titles. Fight that: vary country, decade, primary genre, budget tier, and director. Before finalising each pick, ask whether you are reaching past the first obvious answer.";
+const REC_TRACK_IMPL_NOTES = `Implementation (obey):
+- Mood JSON was extracted in a prior step; it is taste_profile.
+- banned_titles includes funnel films, rejected films, a static overused list, and recent-session recommendations — never output them.
+- No duplicate directors across picks; diversify era, country, and style.
+- Exactly ${LLM_PICK_COUNT} objects in "picks" (buffer for lookup; product shows 6).`;
 
-  if (track === "mainstream") {
-    return `${antiCollapse}
+function buildMainstreamTrackPrompt(tasteProfileJson: string, bannedTitles: string): string {
+  return `You are a film-obsessed recommender.
 
-MAINSTREAM-SPECIFIC BREADTH:
-- Include at least one pre-2005 title and at least one pick that is primarily comedy, thriller, or action (if the funnel allows — if not, widen mood within drama).
-- At least one pick should be a non-US film that still played widely (streaming or cinema) — not only US studio fare.
-- No more than half the picks should be from the same 15-year window (e.g. not all 2015–2023).`;
-  }
+You are generating MAINSTREAM picks for THIS specific session only.
 
-  return `${antiCollapse}
+Inputs:
+- taste_profile (JSON, source of truth):
+${tasteProfileJson}
 
-INDIE-SPECIFIC BREADTH (harder separation from mainstream):
-- At least 4 picks must satisfy at least one of: non-English primary language, release year before 2000, or director without a recent Hollywood tentpole to their name.
-- At least 2 picks should be from outside the US/UK if the funnel allows.
-- Favour titles that are critically strong but not household names — dig past the usual prestige shortlist the model always repeats.`;
+- banned_titles:
+${bannedTitles}
+
+Definition of MAINSTREAM:
+- accessible, highly watchable tonight, broadly satisfying, easy-entry films
+- still tailored to taste_profile
+
+Critical rules:
+- Do NOT default to overused prestige titles
+- Avoid banned_titles completely (including close variants)
+- taste_profile is authoritative — reflect BOTH what_they_want AND what_they_avoid
+- No repeated directors
+- Do not cluster all picks into the same vibe
+- At least 3 picks should feel less overexposed than typical "top 100" movies
+- Favour films realistically available to stream in Australia
+- Decades: at least ${MIN_PICKS_YEAR_LEQ_2010} picks with year ≤ 2010; at most ${MAX_PRE_1970} with year < 1970
+
+${REC_TRACK_IMPL_NOTES}
+
+Output JSON only:
+{
+  "line_what_they_want": "one short sentence: mood they want tonight",
+  "line_what_they_avoid": "one short sentence: what they are avoiding",
+  "picks": [{"title":"","year":2020,"reason":"short, tied to taste_profile"}]
+}`;
 }
 
-function buildSingleTrackPrompt(
-  track: RecommendationTrack,
-  choicesBlock: string,
-  rejectsBlock: string,
-  chosenTitles: string,
-  recentExclusions: string[],
-  genreFilterLine: string,
-  tasteContext: TasteObservationResult | null,
-  sessionId: string | undefined,
-  promptExtra: string
-): string {
-  const exclusionsLine = recentExclusions.length > 0
-    ? `Also avoid these (recent sessions): ${recentExclusions.join("; ")}.`
-    : "";
+function buildIndieTrackPrompt(tasteProfileJson: string, bannedTitles: string): string {
+  return `You are a serious movie buff creating a LEFT-FIELD recommendation row for THIS session only.
 
-  const tasteBlock = tasteContext
-    ? `FUNNEL READ (every pick must fit this — not a generic good-film list):
-- Headline: ${tasteContext.headline}
-- Pattern: ${tasteContext.patternSummary}
-- Genres: ${(tasteContext.topGenres || []).slice(0, 5).join(", ") || "—"}
-- Themes: ${(tasteContext.themes || []).slice(0, 4).join(", ") || "—"}
-- Era lean: ${(tasteContext.preferredEras || []).slice(0, 3).join(", ") || "—"}
+Inputs:
+- taste_profile (JSON, source of truth):
+${tasteProfileJson}
 
-`
-    : "";
+- banned_titles:
+${bannedTitles}
 
-  const explorationSlot = sessionId
-    ? `EXPLORATION SLOT: In your ordered "picks" array, position ${
-        explorationPickIndex(sessionId) + 1
-      } (1-based) must be the most off-the-beaten-path title that still matches the funnel — e.g. non-English, older gem, or strong but lesser-known director — not a film that appears on every generic list.\n\n`
-    : "";
+Definition of INDIE / LEFT-FIELD:
+- less obvious, under-seen or under-recommended
+- festival / auteur / cult / arthouse / singular films
+- NOT just foreign (English-language indie is fine)
 
-  const extra = promptExtra.trim() ? `${promptExtra.trim()}\n\n` : "";
+Critical rules:
+- Do NOT default to prestige-canon films
+- Avoid banned_titles completely
+- taste_profile is authoritative
+- At least 4 of ${LLM_PICK_COUNT} picks must be meaningfully less mainstream than typical blockbusters
+- No more than 2 widely obvious / household-name films
+- No repeated directors
+- Prioritise originality over safety; picks must still be enjoyable, not obscure for its own sake
+- Each pick includes "tag" (e.g. "bleak crime", "festival sci-fi", "surreal drama")
+- Decades: at least ${MIN_PICKS_YEAR_LEQ_2010} picks with year ≤ 2010; at most ${MAX_PRE_1970} with year < 1970
 
-  return `Recommend films for tonight from this A/B funnel. The signal is CHOSEN vs PASSED ON (rounds marked * count more).
+${REC_TRACK_IMPL_NOTES}
 
-${tasteBlock}CHOSEN:
-${choicesBlock}
+Output JSON only:
+{
+  "line_cinema_suggested": "one short sentence: what kind of cinema this session suggests",
+  "line_trap_avoided": "one short sentence: obvious recommendation trap you avoided",
+  "picks": [{"title":"","year":2020,"reason":"short, tied to taste_profile","tag":""}]
+}`;
+}
 
-PASSED ON:
-${rejectsBlock}
-${genreFilterLine}
+function parseMainstreamTrackResponse(raw: Record<string, unknown>): SingleTrackLLMResult {
+  const picksIn = Array.isArray(raw.picks) ? raw.picks : [];
+  const picks: AIRecommendationResult[] = picksIn
+    .map((p: unknown) => {
+      const o = p as Record<string, unknown>;
+      return {
+        title: String(o.title || "").trim(),
+        year: parseYearField(o.year),
+        reason: String(o.reason || "").trim(),
+      };
+    })
+    .filter((p) => p.title);
+  return {
+    line_what_they_want: String(raw.line_what_they_want || "").trim(),
+    line_what_they_avoid: String(raw.line_what_they_avoid || "").trim(),
+    picks,
+  };
+}
 
-${laneRules(track)}
-
-${catalogueBreadthBlock(track)}
-
-${explorationSlot}Shared (tight):
-- Exactly ${LLM_PICK_COUNT} films in "picks" (extras help after title lookup). We show 6 — make them feel distinct, not six of the same cluster.
-- Decades (use each pick's "year" field): at least ${MIN_PICKS_YEAR_LEQ_2010} picks with year ≤ 2010; at most ${MAX_PRE_1970} with year < 1970; include a 2020+ if it fits the funnel.
-- Primary genre: no more than 2 picks may share the same first-listed genre (spread subgenres and moods).
-- Australia-available. No duplicate directors in the list (each director once).
-- Obviousness: avoid over-recommended "internet default" films unless an extremely strong funnel match. Prioritise specificity and fit over raw popularity.
-- Use the funnel pattern — do not substitute a generic good-film list.
-- Not funnel picks: ${chosenTitles}
-${exclusionsLine}
-
-${extra}Reasons: short; tie to overall funnel pattern only; never name a funnel film.
-
-JSON only: {"picks":[{"title":"","year":2020,"reason":""}, ... ${LLM_PICK_COUNT} entries]}`;
+function parseIndieTrackResponse(raw: Record<string, unknown>): SingleTrackLLMResult {
+  const picksIn = Array.isArray(raw.picks) ? raw.picks : [];
+  const picks: AIRecommendationResult[] = picksIn
+    .map((p: unknown) => {
+      const o = p as Record<string, unknown>;
+      return {
+        title: String(o.title || "").trim(),
+        year: parseYearField(o.year),
+        reason: String(o.reason || "").trim(),
+        tag: String(o.tag || "").trim() || undefined,
+      };
+    })
+    .filter((p) => p.title);
+  return {
+    line_cinema_suggested: String(raw.line_cinema_suggested || "").trim(),
+    line_trap_avoided: String(raw.line_trap_avoided || "").trim(),
+    picks,
+  };
 }
 
 function systemPromptForTrack(track: RecommendationTrack): string {
   if (track === "mainstream") {
-    return "PickAFlick MAINSTREAM lane. JSON only. Accessible, big-audience films — but maximise real catalogue breadth; resist the model's habit of repeating the same small set of famous titles. Obey user prompt constraints.";
+    return "PickAFlick MAINSTREAM. JSON only. Accessible picks; obey taste_profile and banned_titles; no director repeats.";
   }
-  return "PickAFlick INDIE / left-field lane. JSON only. Under-known and geographically diverse picks. If output resembles a mainstream list with slightly artsier names, you failed — go more specific, foreign, older, or festival-level. Obey user prompt constraints.";
+  return "PickAFlick INDIE / left-field. JSON only. Under-seen and distinctive; obey taste_profile and banned_titles; include tags on picks.";
 }
 
-async function callSingleTrackLLM(promptText: string, track: RecommendationTrack): Promise<SingleTrackLLMResult> {
+async function callSingleTrackLLM(
+  promptText: string,
+  track: RecommendationTrack
+): Promise<SingleTrackLLMResult> {
   const response = await openai.chat.completions.create({
     model: RECOMMENDATIONS_MODEL,
     messages: [
@@ -311,10 +505,11 @@ async function callSingleTrackLLM(promptText: string, track: RecommendationTrack
       { role: "user", content: promptText },
     ],
     response_format: { type: "json_object" },
-    max_tokens: 1500,
+    max_tokens: 1800,
     temperature: track === "indie" ? 0.95 : 0.84,
   });
-  return JSON.parse(response.choices[0]?.message?.content || "{}") as SingleTrackLLMResult;
+  const raw = JSON.parse(response.choices[0]?.message?.content || "{}") as Record<string, unknown>;
+  return track === "mainstream" ? parseMainstreamTrackResponse(raw) : parseIndieTrackResponse(raw);
 }
 
 export async function generateSingleTrackPicks(
@@ -322,51 +517,57 @@ export async function generateSingleTrackPicks(
   rejectedMovies: Movie[],
   initialGenreFilters: string[],
   track: RecommendationTrack,
-  tasteContext: TasteObservationResult | null = null,
-  sessionId?: string,
+  mood: SessionMoodProfile,
+  bannedCtx: { bannedSet: Set<string>; bannedTitlesPrompt: string },
   promptExtra = ""
 ): Promise<SingleTrackLLMResult> {
   await ensureRecsLoaded();
-  const choicesBlock = formatChoicesBlock(chosenMovies);
-  const rejectsBlock = formatRejectsBlock(rejectedMovies, chosenMovies);
-  const chosenTitles = chosenMovies.map((m) => `"${m.title}"`).join(", ");
-  const recentExclusions = recentlyRecommendedTitles.slice(-RECENT_EXCLUSIONS_PROMPT_COUNT);
+  const tasteProfileJson = JSON.stringify(mood);
+  const basePrompt =
+    track === "mainstream"
+      ? buildMainstreamTrackPrompt(tasteProfileJson, bannedCtx.bannedTitlesPrompt)
+      : buildIndieTrackPrompt(tasteProfileJson, bannedCtx.bannedTitlesPrompt);
+  const genreLine =
+    initialGenreFilters.length > 0
+      ? `\n\nOptional genre hints: ${initialGenreFilters.join(", ")}.`
+      : "";
+  const extra = promptExtra.trim() ? `\n\n${promptExtra.trim()}` : "";
+  const prompt = basePrompt + genreLine + extra;
+
   const recentTitlesSet = new Set(recentlyRecommendedTitles.map(normalizeTitleKey));
-  const genreFilterLine = initialGenreFilters.length > 0
-    ? `Optional genre hints: ${initialGenreFilters.join(", ")}.`
-    : "";
 
-  const prompt = buildSingleTrackPrompt(
-    track,
-    choicesBlock,
-    rejectsBlock,
-    chosenTitles,
-    recentExclusions,
-    genreFilterLine,
-    tasteContext,
-    sessionId,
-    promptExtra
-  );
+  const applyBanned = (r: SingleTrackLLMResult): SingleTrackLLMResult => ({
+    ...r,
+    picks: filterPicksAgainstBanned(r.picks || [], bannedCtx.bannedSet),
+  });
 
-  let result = await callSingleTrackLLM(prompt, track);
-  let picks = result.picks || [];
+  let result = applyBanned(await callSingleTrackLLM(prompt, track));
+  let picks = result.picks;
+
   if (picks.length < 6) {
-    result = await callSingleTrackLLM(`${prompt}\n\nRegenerate: ${LLM_PICK_COUNT} picks; JSON only.`, track);
-    picks = result.picks || [];
+    result = applyBanned(
+      await callSingleTrackLLM(
+        `${prompt}\n\nRegenerate: complete JSON with ${LLM_PICK_COUNT} picks; all required fields.`,
+        track
+      )
+    );
+    picks = result.picks;
   }
 
   const pre1970 = countPre1970(picks);
   const recentHits = countRecentCollisions(picks, recentTitlesSet);
   const le2010 = countYearLeq2010(picks);
   if (pre1970 > MAX_PRE_1970 || recentHits >= 2 || le2010 < MIN_PICKS_YEAR_LEQ_2010) {
-    result = await callSingleTrackLLM(
-      `${prompt}\n\nRegenerate: max ${MAX_PRE_1970} pre-1970; at least ${MIN_PICKS_YEAR_LEQ_2010} picks with year ≤ 2010; avoid recent list; ${LLM_PICK_COUNT} picks; JSON only.`,
-      track
+    result = applyBanned(
+      await callSingleTrackLLM(
+        `${prompt}\n\nRegenerate: max ${MAX_PRE_1970} pre-1970; at least ${MIN_PICKS_YEAR_LEQ_2010} picks with year ≤ 2010; avoid recent-session titles; ${LLM_PICK_COUNT} picks; full JSON.`,
+        track
+      )
     );
-    picks = result.picks || [];
+    picks = result.picks;
   }
 
-  return { picks };
+  return result;
 }
 
 async function resolveOneRecommendation(
@@ -388,11 +589,15 @@ async function resolveOneRecommendation(
     if (tmdbTrailers.length === 0) return null;
 
     movieDetails.listSource = "ai-recommendation";
+    const reason =
+      rec.tag && rec.reason
+        ? `${rec.reason} · ${rec.tag}`
+        : rec.reason || rec.tag || "";
     return {
       movie: movieDetails,
       trailerUrl: tmdbTrailers[0],
       trailerUrls: tmdbTrailers,
-      reason: rec.reason,
+      reason,
       pickedAs,
     };
   } catch {
@@ -425,25 +630,29 @@ async function resolvePicksToRecommendations(
   return out;
 }
 
-/** Taste first, then both tracks (each pick prompt includes the taste read + session exploration slot). */
+/** Mood extraction first, then both track prompts (taste_profile JSON + banned_titles). */
 async function buildPrefetchEntry(
-  sessionId: string,
+  _sessionId: string,
   chosenMovies: Movie[],
   rejectedMovies: Movie[],
   filters: string[]
 ): Promise<PrefetchEntry> {
-  const taste = await buildTasteObservation(chosenMovies, rejectedMovies, filters);
+  const mood = await extractSessionMood(chosenMovies, rejectedMovies, filters);
+  const taste = moodToTasteObservation(mood, chosenMovies);
+  const banned = buildBannedContext(chosenMovies, rejectedMovies);
   return {
     taste: Promise.resolve(taste),
+    mood,
+    banned,
     mainstream: generateSingleTrackPicks(
       chosenMovies,
       rejectedMovies,
       filters,
       "mainstream",
-      taste,
-      sessionId
+      mood,
+      banned
     ),
-    indie: generateSingleTrackPicks(chosenMovies, rejectedMovies, filters, "indie", taste, sessionId),
+    indie: generateSingleTrackPicks(chosenMovies, rejectedMovies, filters, "indie", mood, banned),
   };
 }
 
@@ -495,42 +704,56 @@ export async function finalizeRecommendationsForTrack(
   }
 
   let taste: TasteObservationResult;
+  let mood: SessionMoodProfile;
+  let banned: { bannedSet: Set<string>; bannedTitlesPrompt: string };
   let picks: AIRecommendationResult[] = [];
+  let trackCopy: SingleTrackLLMResult | null = null;
 
   const entryPromise = prefetchBySession.get(sessionId);
   if (entryPromise) {
     try {
       const entry = await entryPromise;
-      taste = await entry.taste.catch(() => fallbackTaste(chosen));
+      mood = entry.mood;
+      banned = entry.banned;
+      taste = await entry.taste.catch(() => moodToTasteObservation(mood, chosen));
       try {
         const raw = await (track === "mainstream" ? entry.mainstream : entry.indie);
         picks = raw.picks || [];
+        trackCopy = raw;
       } catch (e) {
         console.error("[finalize] track prefetch failed", e);
         picks = [];
       }
     } catch (e) {
       console.error("[finalize] prefetch failed", e);
-      taste = await buildTasteObservation(chosen, rejected, filters);
-      const raw = await generateSingleTrackPicks(chosen, rejected, filters, track, taste, sessionId);
+      mood = await extractSessionMood(chosen, rejected, filters);
+      taste = moodToTasteObservation(mood, chosen);
+      banned = buildBannedContext(chosen, rejected);
+      const raw = await generateSingleTrackPicks(chosen, rejected, filters, track, mood, banned);
       picks = raw.picks || [];
+      trackCopy = raw;
     }
     prefetchBySession.delete(sessionId);
   } else {
-    taste = await buildTasteObservation(chosen, rejected, filters);
-    const raw = await generateSingleTrackPicks(chosen, rejected, filters, track, taste, sessionId);
+    mood = await extractSessionMood(chosen, rejected, filters);
+    taste = moodToTasteObservation(mood, chosen);
+    banned = buildBannedContext(chosen, rejected);
+    const raw = await generateSingleTrackPicks(chosen, rejected, filters, track, mood, banned);
     picks = raw.picks || [];
+    trackCopy = raw;
   }
 
   if (picks.length < 6) {
-    const raw = await generateSingleTrackPicks(chosen, rejected, filters, track, taste, sessionId);
+    const raw = await generateSingleTrackPicks(chosen, rejected, filters, track, mood, banned);
     picks = raw.picks || [];
+    trackCopy = raw;
   }
 
   let recommendations = await resolvePicksToRecommendations(picks, chosen, track);
   if (recommendations.length < TARGET_RESOLVED) {
-    const raw = await generateSingleTrackPicks(chosen, rejected, filters, track, taste, sessionId);
+    const raw = await generateSingleTrackPicks(chosen, rejected, filters, track, mood, banned);
     recommendations = await resolvePicksToRecommendations(raw.picks, chosen, track);
+    trackCopy = raw;
   }
 
   if (recommendations.length >= TARGET_RESOLVED && !resolvedEraSpreadOk(recommendations)) {
@@ -539,13 +762,14 @@ export async function finalizeRecommendationsForTrack(
       rejected,
       filters,
       track,
-      taste,
-      sessionId,
+      mood,
+      banned,
       `At least ${MIN_PICKS_YEAR_LEQ_2010} picks must be films released in 2010 or earlier (use accurate release years in JSON — TMDB will match them).`
     );
     const alt = await resolvePicksToRecommendations(raw.picks, chosen, track);
     if (alt.length >= TARGET_RESOLVED && resolvedEraSpreadOk(alt)) {
       recommendations = alt;
+      trackCopy = raw;
     }
   }
 
@@ -553,6 +777,11 @@ export async function finalizeRecommendationsForTrack(
 
   const mainstream = track === "mainstream" ? recommendations : [];
   const indie = track === "indie" ? recommendations : [];
+
+  const patternFromTrack =
+    track === "mainstream"
+      ? [trackCopy?.line_what_they_want, trackCopy?.line_what_they_avoid].filter(Boolean).join(" ")
+      : [trackCopy?.line_cinema_suggested, trackCopy?.line_trap_avoided].filter(Boolean).join(" ");
 
   return {
     recommendations,
@@ -563,7 +792,7 @@ export async function finalizeRecommendationsForTrack(
       themes: taste.themes || [],
       preferredEras: taste.preferredEras || [],
       headline: taste.headline,
-      patternSummary: taste.patternSummary,
+      patternSummary: patternFromTrack.trim() || taste.patternSummary,
       tagline: "",
     },
   };
