@@ -3,6 +3,7 @@ import type {
   WatchProvidersResponse,
   Recommendation,
   RecommendationTrack,
+  TastePreview,
 } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,11 +16,11 @@ import {
   ChevronRight,
   Bookmark,
   Tv,
-  Brain,
   Eye,
   EyeOff,
   Share2,
   Check,
+  ArrowLeftRight,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -38,6 +39,40 @@ function tasteHeadline(profile: RecommendationsResponse["preferenceProfile"] | u
   if (g.length >= 2) return `Tonight: ${g[0].toLowerCase()} with a ${g[1].toLowerCase()} edge.`;
   if (g.length === 1) return `Tonight leans ${g[0].toLowerCase()}.`;
   return "Here’s what matched your picks.";
+}
+
+/** Display-only: shift common third-person / label phrasing to second-person for results copy. */
+function supportCopyYouVoice(summary: string): string {
+  let s = summary.trim();
+  if (!s) return s;
+  if (/leaning toward:/i.test(s) || /steering clear of:/i.test(s)) {
+    s = s.replace(/\s*steering clear of:\s*/gi, " You want to avoid ");
+    s = s.replace(/^leaning toward:\s*/i, "You're looking for ");
+    s = s.replace(/\.\s*leaning toward:\s*/gi, ". You're looking for ");
+  } else {
+    s = s
+      .replace(/^they are /i, "You're ")
+      .replace(/^they're /i, "You're ")
+      .replace(/^they want /i, "You want ")
+      .replace(/^they prefer /i, "You prefer ")
+      .replace(/^they /i, "You ");
+  }
+  return s.replace(/\s+/g, " ").trim();
+}
+
+function loadingHeadlineFromPreview(p: TastePreview | undefined): string {
+  const h = p?.headline?.trim();
+  if (h) return h;
+  const g = p?.topGenres?.filter(Boolean) ?? [];
+  if (g.length >= 2) return `${g[0]} · ${g[1]}`;
+  if (g.length === 1) return g[0];
+  return "Your mood tonight";
+}
+
+function loadingBodyFromPreview(p: TastePreview | undefined): string {
+  const raw = p?.patternSummary?.trim() ?? "";
+  if (raw) return supportCopyYouVoice(raw);
+  return "We’re lining up films that match how you voted.";
 }
 
 interface ResultsScreenProps {
@@ -80,7 +115,6 @@ export function ResultsScreen({
   const [showShareCard, setShowShareCard] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [loadingProgress, setLoadingProgress] = useState(0);
-  const [loadingStage, setLoadingStage] = useState("Analyzing your choices…");
   const [hasInteracted, setHasInteracted] = useState(false); // Track if user has clicked anything
   const { toast } = useToast();
   /** Dedupes recommendation_served if this effect runs twice (e.g. React Strict Mode) */
@@ -105,43 +139,41 @@ export function ResultsScreen({
     setAllTrailersFailed(false);
   }, [currentIndex]);
 
-  // Staged messages only - no percentage. Smooth continuous progress bar.
+  // Smooth progress bar while recommendations load (indeterminate feel; caps at ~92% until data arrives).
   useEffect(() => {
     if (!isLoading) {
       setLoadingProgress(0);
-      setLoadingStage("Analyzing your choices…");
       return;
     }
 
-    const stages = [
-      "Analyzing your choices…",
-      "Matching your taste…",
-      "Finding the best options…",
-    ];
-
-    let currentStage = 0;
-    const stageInterval = setInterval(() => {
-      if (currentStage < stages.length) {
-        setLoadingStage(stages[currentStage]);
-        currentStage++;
-      }
-    }, 1500);
-
-    // Smooth continuous progress bar (0→100 over ~5s)
     const start = Date.now();
-    const durationMs = 5000;
+    const durationMs = 8000;
     const progressInterval = setInterval(() => {
       const elapsed = Date.now() - start;
-      const p = Math.min(100, (elapsed / durationMs) * 100);
+      const p = Math.min(92, (elapsed / durationMs) * 100);
       setLoadingProgress(p);
-      if (p >= 100) clearInterval(progressInterval);
     }, 100);
 
-    return () => {
-      clearInterval(stageInterval);
-      clearInterval(progressInterval);
-    };
+    return () => clearInterval(progressInterval);
   }, [isLoading]);
+
+  useEffect(() => {
+    if (!isLoading && recommendations) {
+      setLoadingProgress(100);
+    }
+  }, [isLoading, recommendations]);
+
+  const { data: tastePreview } = useQuery<TastePreview>({
+    queryKey: ["/api/session", sessionId, "taste-preview"],
+    queryFn: async () => {
+      const res = await fetch(`/api/session/${sessionId}/taste-preview`);
+      if (!res.ok) throw new Error("Failed to load taste preview");
+      return res.json() as TastePreview;
+    },
+    enabled: !!sessionId && isLoading,
+    retry: 1,
+    staleTime: 60_000,
+  });
 
   // Initialize local recs from recommendations
   useEffect(() => {
@@ -335,78 +367,57 @@ export function ResultsScreen({
     );
   }
 
+  const loadingMoodHeadline = loadingHeadlineFromPreview(tastePreview);
+  const loadingMoodBody = loadingBodyFromPreview(tastePreview);
+
+  const loadingProgressBar = (
+    <div className="w-full max-w-md mx-auto bg-white/15 rounded-full h-1.5 overflow-hidden">
+      <div
+        className="h-full bg-gradient-to-r from-primary via-primary/85 to-primary/70 rounded-full transition-all duration-300 ease-out"
+        style={{ width: `${loadingProgress}%` }}
+      />
+    </div>
+  );
+
   if (isLoading && !recommendations && loadingVariant === "inline") {
     return (
       <div
-        className="w-full max-w-4xl mx-auto px-4 py-8 space-y-6"
+        className="w-full max-w-2xl mx-auto px-4 py-10 md:py-14 flex flex-col items-center text-center gap-6"
         data-testid="loading-recommendations-inline"
       >
-        <div className="text-center space-y-2">
-          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
-          <p className="text-white text-sm font-medium">Finalising your picks...</p>
-          <p className="text-white/45 text-xs">This usually takes a few seconds</p>
+        <div className="space-y-3 md:space-y-4 max-w-lg">
+          <h2 className="text-xl md:text-3xl lg:text-4xl font-bold text-white uppercase tracking-[0.08em] leading-tight">
+            {loadingMoodHeadline}
+          </h2>
+          <p className="text-sm md:text-base text-white/70 leading-relaxed">{loadingMoodBody}</p>
+          <p className="text-xs md:text-sm text-white/50 pt-1">
+            While we fetch your tailored picks for tonight…
+          </p>
         </div>
-        <div className="grid grid-cols-3 gap-2 max-w-sm mx-auto opacity-80">
-          {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="aspect-[2/3] rounded-xl bg-gradient-to-b from-white/15 to-white/5 border border-white/10 animate-pulse"
-            />
-          ))}
-        </div>
+        {loadingProgressBar}
+        <p className="text-[11px] md:text-xs text-white/40">This usually only takes a moment.</p>
       </div>
     );
   }
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center gap-6 min-h-[60vh]" data-testid="loading-recommendations">
-        {/* Dark backdrop for better text visibility */}
-        <div className="bg-black/60 backdrop-blur-sm rounded-2xl p-8 flex flex-col items-center gap-6 min-w-[320px] max-w-md">
-          <div className="relative" style={{ width: 120, height: 120 }}>
-            {/* Animated closing ring */}
-            <svg className="transform -rotate-90" width={120} height={120}>
-              <circle
-                cx={60}
-                cy={60}
-                r={54}
-                stroke="currentColor"
-                strokeWidth={8}
-                fill="none"
-                className="text-white/30"
-              />
-              <circle
-                cx={60}
-                cy={60}
-                r={54}
-                stroke="currentColor"
-                strokeWidth={8}
-                fill="none"
-                strokeLinecap="round"
-                className="text-white transition-all duration-500 ease-out"
-                style={{
-                  strokeDasharray: 339.292,
-                  strokeDashoffset: 339.292 * (1 - loadingProgress / 100),
-                }}
-              />
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Brain className="w-10 h-10 text-white animate-pulse" />
-            </div>
+      <div
+        className="flex flex-col items-center justify-center gap-8 min-h-[60vh] px-4"
+        data-testid="loading-recommendations"
+      >
+        <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-black/50 backdrop-blur-md px-6 py-10 md:px-10 md:py-12 flex flex-col items-center gap-6">
+          <div className="space-y-3 md:space-y-4 text-center w-full">
+            <h2 className="text-xl md:text-3xl font-bold text-white uppercase tracking-[0.08em] leading-tight">
+              {loadingMoodHeadline}
+            </h2>
+            <p className="text-sm md:text-base text-white/70 leading-relaxed">{loadingMoodBody}</p>
+            <p className="text-xs md:text-sm text-white/50">
+              While we fetch your tailored picks for tonight…
+            </p>
           </div>
-          <div className="text-center w-full px-4">
-            <h2 className="text-xl md:text-2xl font-bold text-white mb-2">Hold a tic...</h2>
-            <p className="text-white/80 text-sm md:text-base mb-4">{loadingStage}</p>
-            
-            {/* Smooth progress bar - no percentage */}
-            <div className="w-full bg-white/20 rounded-full h-2 overflow-hidden">
-              <div 
-                className="h-full bg-gradient-to-r from-primary via-primary/80 to-primary/60 rounded-full transition-all duration-300 ease-out"
-                style={{ width: `${loadingProgress}%` }}
-              />
-            </div>
-            <p className="text-white/60 text-xs mt-3">This usually takes a few seconds</p>
-          </div>
+          {loadingProgressBar}
+          <p className="text-[11px] text-white/40 text-center">This usually only takes a moment.</p>
         </div>
       </div>
     );
@@ -435,8 +446,8 @@ export function ResultsScreen({
 
   const isCurrentSeen = currentRec ? seenMovies.has(currentRec.movie.tmdbId) : false;
   const otherTrack: RecommendationTrack = activeTrack === "mainstream" ? "indie" : "mainstream";
-  const switchLabel =
-    otherTrack === "mainstream" ? "See Mainstream picks" : "See Indie picks";
+  const switchLaneButtonLabel =
+    otherTrack === "indie" ? "Switch to Indie picks" : "Switch to Mainstream picks";
 
   const mainstreamThumbs = displayRecs.filter((r) => r.pickedAs !== "indie");
   const indieThumbs = displayRecs.filter((r) => r.pickedAs === "indie");
@@ -513,33 +524,20 @@ export function ResultsScreen({
 
   return (
     <div className="flex flex-col items-center gap-1 md:gap-2 w-full max-w-7xl mx-auto px-2 md:px-4 pt-4 md:pt-2 pb-4 md:pb-6">
-      {/* Mood line + pattern from funnel */}
-      <div className="text-center max-w-xl md:max-w-2xl px-3">
-        <h2 className="text-base md:text-lg font-semibold text-white leading-snug">
+      {/* Mood headline + supporting copy (second-person in UI) */}
+      <div className="text-center max-w-xl md:max-w-3xl px-3 pt-1 pb-2">
+        <h2 className="text-2xl md:text-4xl lg:text-[2.75rem] font-bold text-white uppercase tracking-[0.06em] leading-[1.15]">
           {headline}
         </h2>
         {patternSummary && (
-          <p className="text-xs md:text-sm text-white/60 mt-2 leading-relaxed" data-testid="taste-profile">
-            {patternSummary}
+          <p
+            className="text-sm md:text-base text-white/65 mt-3 md:mt-4 leading-relaxed max-w-2xl mx-auto"
+            data-testid="taste-profile"
+          >
+            {supportCopyYouVoice(patternSummary)}
           </p>
         )}
       </div>
-
-      {canSwitchLane && onSwitchLane && (
-        <div className="flex flex-wrap items-center justify-center gap-2 px-3">
-          <span className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-white/85">
-            {activeTrack === "mainstream" ? "Mainstream" : "Indie"}
-          </span>
-          <button
-            type="button"
-            onClick={() => onSwitchLane(otherTrack)}
-            className="text-sm font-medium text-primary hover:text-primary/90 underline-offset-4 hover:underline transition-colors"
-            data-testid="button-switch-lane"
-          >
-            {switchLabel}
-          </button>
-        </div>
-      )}
 
       {/* Personalisation indicator — only visible for logged-in users with history */}
       {hasPersonalisation && (
@@ -804,6 +802,21 @@ export function ResultsScreen({
           )}
           Share
         </button>
+
+        {canSwitchLane && onSwitchLane && (
+          <button
+            type="button"
+            onClick={() => onSwitchLane(otherTrack)}
+            className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold
+              border border-primary/35 bg-primary/10 text-white/95 backdrop-blur-md
+              transition-all duration-200 hover:scale-[1.04] hover:border-primary/50 hover:bg-primary/18
+              hover:shadow-[0_0_18px_rgba(220,38,38,0.2)] active:scale-[0.97]"
+            data-testid="button-switch-lane"
+          >
+            <ArrowLeftRight className="w-3.5 h-3.5 text-primary/90 shrink-0" />
+            {switchLaneButtonLabel}
+          </button>
+        )}
       </div>
 
       <div className="flex flex-col gap-4 w-full max-w-4xl mx-auto pb-2">

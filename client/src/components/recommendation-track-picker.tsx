@@ -30,8 +30,9 @@ export function RecommendationTrackPicker({ sessionId, onSelect }: Recommendatio
   const renderLaneCard = (
     side: "left" | "right",
     track: RecommendationTrack,
-    title: string,
-    subtitleLines: string[],
+    topLabel: string,
+    headline: string,
+    supportingLine: string,
     testId: string
   ) => {
     const isWinner = activeSelection === side;
@@ -62,20 +63,22 @@ export function RecommendationTrackPicker({ sessionId, onSelect }: Recommendatio
           `}
           data-testid={testId}
         >
-          <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent" />
-          <div className="absolute inset-0 flex flex-col items-stretch justify-between p-3 md:p-5">
-            <div>
-              <p className="text-[10px] md:text-xs font-semibold uppercase tracking-widest text-primary/90 mb-1 md:mb-2">
-                {title}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/45 to-transparent" />
+          <div className="absolute inset-0 flex flex-col items-stretch justify-between p-3.5 md:p-6 pt-4 md:pt-6">
+            <div className="flex flex-col gap-2 md:gap-3 min-h-0">
+              <p className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.22em] text-primary/95 leading-none">
+                {topLabel}
               </p>
-              <p className="text-white font-bold text-sm md:text-xl leading-tight">{subtitleLines[0]}</p>
-              <p className="text-white/65 text-[11px] md:text-sm mt-1 md:mt-2 leading-snug">
-                {subtitleLines.slice(1).join(" · ")}
+              <p className="text-white font-bold text-base md:text-2xl leading-[1.12] tracking-tight">
+                {headline}
+              </p>
+              <p className="text-white/58 text-[10px] md:text-[13px] leading-snug md:leading-relaxed pr-0.5">
+                {supportingLine}
               </p>
             </div>
             <div
               className={`
-                mt-auto w-full rounded-lg md:rounded-xl py-2.5 md:py-3 px-2 text-center text-[11px] md:text-sm font-bold
+                mt-5 md:mt-6 w-full rounded-lg md:rounded-xl py-2.5 md:py-3.5 px-2 text-center text-[11px] md:text-sm font-bold
                 ${isWinner ? "bg-primary text-primary-foreground" : "bg-white/12 text-white border border-white/20"}
               `}
             >
@@ -105,8 +108,9 @@ export function RecommendationTrackPicker({ sessionId, onSelect }: Recommendatio
         {renderLaneCard(
           "left",
           "mainstream",
-          "Mainstream",
-          ["Blockbuster & big nights", "Crowd-pleasers · easy to find · streaming hits"],
+          "MAINSTREAM",
+          "Blockbuster & big nights",
+          "Crowd-pleasers · easy to find · streaming hits",
           "track-mainstream"
         )}
 
@@ -129,8 +133,9 @@ export function RecommendationTrackPicker({ sessionId, onSelect }: Recommendatio
         {renderLaneCard(
           "right",
           "indie",
-          "Indie",
-          ["Lesser-known & left field", "Under-the-radar · festival · foreign gems"],
+          "LEFT FIELD",
+          "Lesser-known & left field",
+          "Under-the-radar · festival · foreign gems",
           "track-indie"
         )}
       </div>
