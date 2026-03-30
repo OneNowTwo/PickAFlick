@@ -226,15 +226,6 @@ export function ResultsScreen({
 
   /** Keep seen titles in the row so the Seen control can toggle off; dim in UI instead of removing. */
   const displayRecs = localRecs;
-  const mainstreamRecs = useMemo(
-    () => displayRecs.filter((r) => r.bucket === "mainstream"),
-    [displayRecs]
-  );
-  const discoveryRecs = useMemo(
-    () => displayRecs.filter((r) => r.bucket === "discovery"),
-    [displayRecs]
-  );
-  const showBucketRows = mainstreamRecs.length > 0 && discoveryRecs.length > 0;
   const currentRec = displayRecs[currentIndex];
   const currentTmdbId = currentRec?.movie.tmdbId;
 
@@ -480,9 +471,7 @@ export function ResultsScreen({
   const headline = tasteHeadline(preferenceProfile);
   const patternSummary =
     preferenceProfile?.patternSummary?.trim() || preferenceProfile?.tagline?.trim();
-  /** Friend-style profile line (not the big all-caps mood headline + body layout). */
-  const wantMoodLine = patternSummary?.startsWith("You're in the mood") ?? false;
-  const compactHeadline = !patternSummary || wantMoodLine;
+  const profileOnly = !patternSummary;
 
   const isCurrentSeen = currentRec ? seenMovies.has(currentRec.movie.tmdbId) : false;
 
@@ -566,7 +555,7 @@ export function ResultsScreen({
       <div className="text-center max-w-xl md:max-w-3xl px-3 pt-1 pb-2">
         <h2
           className={
-            compactHeadline
+            profileOnly
               ? "text-xl md:text-2xl lg:text-3xl font-semibold text-white tracking-tight leading-snug"
               : "text-2xl md:text-4xl lg:text-[2.75rem] font-bold text-white uppercase tracking-[0.06em] leading-[1.15]"
           }
@@ -856,153 +845,50 @@ export function ResultsScreen({
 
       </div>
 
-      <div className="flex flex-col gap-5 w-full max-w-4xl mx-auto pb-2">
-        {showBucketRows ? (
-          <>
-            <div className="w-full space-y-2">
-              <p className="text-center text-xs font-bold uppercase tracking-[0.14em] text-white/75">
-                Crowd Pleasers
-              </p>
-              <div className="flex gap-2 w-full overflow-x-auto justify-center flex-wrap">
-                {mainstreamRecs.map((rec) => {
-                  const i = displayRecs.indexOf(rec);
-                  const thumbUrl = rec.movie.posterPath
-                    ? rec.movie.posterPath.startsWith("http")
-                      ? rec.movie.posterPath
-                      : `https://image.tmdb.org/t/p/w154${rec.movie.posterPath}`
-                    : null;
-                  const isActive = i === currentIndex;
-                  const isSeenThumb = seenMovies.has(rec.movie.tmdbId);
-                  return (
-                    <div key={`m-${rec.movie.tmdbId}`} className="flex flex-col items-center gap-1 shrink-0">
-                      <span
-                        className={`text-sm font-bold min-w-[1.25rem] text-center ${
-                          isActive ? "text-primary" : "text-foreground/80"
-                        }`}
-                      >
-                        {i + 1}
-                      </span>
-                      <button
-                        onClick={() => {
-                          setCurrentIndex(i);
-                          setAutoPlayTrailer(true);
-                        }}
-                        className={`w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg overflow-hidden border-2 transition-all ${
-                          isActive
-                            ? "border-primary ring-2 ring-primary/30 scale-105"
-                            : "border-transparent opacity-70 hover:opacity-100"
-                        } ${isSeenThumb ? "opacity-45 grayscale" : ""}`}
-                        data-testid={`thumbnail-${i}`}
-                        type="button"
-                      >
-                        {thumbUrl ? (
-                          <img src={thumbUrl} alt={rec.movie.title} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full bg-muted flex items-center justify-center">
-                            <Film className="w-5 h-5 text-muted-foreground" />
-                          </div>
-                        )}
-                      </button>
+      <div className="flex flex-col gap-4 w-full max-w-4xl mx-auto pb-2">
+        <div className="flex gap-2 w-full overflow-x-auto justify-center flex-wrap">
+          {displayRecs.map((rec, i) => {
+            const thumbUrl = rec.movie.posterPath
+              ? rec.movie.posterPath.startsWith("http")
+                ? rec.movie.posterPath
+                : `https://image.tmdb.org/t/p/w154${rec.movie.posterPath}`
+              : null;
+            const isActive = i === currentIndex;
+            const isSeenThumb = seenMovies.has(rec.movie.tmdbId);
+            return (
+              <div key={rec.movie.tmdbId} className="flex flex-col items-center gap-1 shrink-0">
+                <span
+                  className={`text-sm font-bold min-w-[1.25rem] text-center ${
+                    isActive ? "text-primary" : "text-foreground/80"
+                  }`}
+                >
+                  {i + 1}
+                </span>
+                <button
+                  onClick={() => {
+                    setCurrentIndex(i);
+                    setAutoPlayTrailer(true);
+                  }}
+                  className={`w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg overflow-hidden border-2 transition-all ${
+                    isActive
+                      ? "border-primary ring-2 ring-primary/30 scale-105"
+                      : "border-transparent opacity-70 hover:opacity-100"
+                  } ${isSeenThumb ? "opacity-45 grayscale" : ""}`}
+                  data-testid={`thumbnail-${i}`}
+                  type="button"
+                >
+                  {thumbUrl ? (
+                    <img src={thumbUrl} alt={rec.movie.title} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-muted flex items-center justify-center">
+                      <Film className="w-5 h-5 text-muted-foreground" />
                     </div>
-                  );
-                })}
+                  )}
+                </button>
               </div>
-            </div>
-            <div className="w-full space-y-2">
-              <p className="text-center text-xs font-bold uppercase tracking-[0.14em] text-white/75">
-                Hidden Gems
-              </p>
-              <div className="flex gap-2 w-full overflow-x-auto justify-center flex-wrap">
-                {discoveryRecs.map((rec) => {
-                  const i = displayRecs.indexOf(rec);
-                  const thumbUrl = rec.movie.posterPath
-                    ? rec.movie.posterPath.startsWith("http")
-                      ? rec.movie.posterPath
-                      : `https://image.tmdb.org/t/p/w154${rec.movie.posterPath}`
-                    : null;
-                  const isActive = i === currentIndex;
-                  const isSeenThumb = seenMovies.has(rec.movie.tmdbId);
-                  return (
-                    <div key={`d-${rec.movie.tmdbId}`} className="flex flex-col items-center gap-1 shrink-0">
-                      <span
-                        className={`text-sm font-bold min-w-[1.25rem] text-center ${
-                          isActive ? "text-primary" : "text-foreground/80"
-                        }`}
-                      >
-                        {i + 1}
-                      </span>
-                      <button
-                        onClick={() => {
-                          setCurrentIndex(i);
-                          setAutoPlayTrailer(true);
-                        }}
-                        className={`w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg overflow-hidden border-2 transition-all ${
-                          isActive
-                            ? "border-primary ring-2 ring-primary/30 scale-105"
-                            : "border-transparent opacity-70 hover:opacity-100"
-                        } ${isSeenThumb ? "opacity-45 grayscale" : ""}`}
-                        data-testid={`thumbnail-${i}`}
-                        type="button"
-                      >
-                        {thumbUrl ? (
-                          <img src={thumbUrl} alt={rec.movie.title} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full bg-muted flex items-center justify-center">
-                            <Film className="w-5 h-5 text-muted-foreground" />
-                          </div>
-                        )}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </>
-        ) : (
-          <div className="flex gap-2 w-full overflow-x-auto justify-center flex-wrap">
-            {displayRecs.map((rec, i) => {
-              const thumbUrl = rec.movie.posterPath
-                ? rec.movie.posterPath.startsWith("http")
-                  ? rec.movie.posterPath
-                  : `https://image.tmdb.org/t/p/w154${rec.movie.posterPath}`
-                : null;
-              const isActive = i === currentIndex;
-              const isSeenThumb = seenMovies.has(rec.movie.tmdbId);
-              return (
-                <div key={rec.movie.tmdbId} className="flex flex-col items-center gap-1 shrink-0">
-                  <span
-                    className={`text-sm font-bold min-w-[1.25rem] text-center ${
-                      isActive ? "text-primary" : "text-foreground/80"
-                    }`}
-                  >
-                    {i + 1}
-                  </span>
-                  <button
-                    onClick={() => {
-                      setCurrentIndex(i);
-                      setAutoPlayTrailer(true);
-                    }}
-                    className={`w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg overflow-hidden border-2 transition-all ${
-                      isActive
-                        ? "border-primary ring-2 ring-primary/30 scale-105"
-                        : "border-transparent opacity-70 hover:opacity-100"
-                    } ${isSeenThumb ? "opacity-45 grayscale" : ""}`}
-                    data-testid={`thumbnail-${i}`}
-                    type="button"
-                  >
-                    {thumbUrl ? (
-                      <img src={thumbUrl} alt={rec.movie.title} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full bg-muted flex items-center justify-center">
-                        <Film className="w-5 h-5 text-muted-foreground" />
-                      </div>
-                    )}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
+            );
+          })}
+        </div>
       </div>
 
       {/* Watch Providers Dialog */}

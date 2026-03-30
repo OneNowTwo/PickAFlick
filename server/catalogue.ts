@@ -24,8 +24,8 @@ const cache: CatalogueCache = {
 };
 
 const CATALOGUE_TTL_HOURS = parseInt(process.env.CATALOGUE_TTL_HOURS || "24");
-const MOVIES_PER_LIST = 15;
-const TOTAL_CATALOGUE = 75;
+/** Movies sampled per editorial/TMDb list into the active session catalogue (wider = more variety per game). */
+const MOVIES_PER_LIST = parseInt(process.env.CATALOGUE_MOVIES_PER_LIST || "40", 10);
 
 function shuffleArray<T>(array: T[]): T[] {
   const shuffled = [...array];
@@ -49,7 +49,7 @@ async function buildCatalogueFromTMDb(): Promise<{ allMovies: Movie[]; grouped: 
   // Fetch multiple pages for Top Rated (pages 1-3 = ~60 movies)
   console.log("Fetching Top Rated movies (3 pages)...");
   const topRatedMovies: Movie[] = [];
-  for (let page = 1; page <= 3; page++) {
+  for (let page = 1; page <= 6; page++) {
     const movies = await getTopRatedMovies("Top Rated", page);
     topRatedMovies.push(...movies);
     console.log(`  Page ${page}: ${movies.length} movies`);
@@ -61,7 +61,7 @@ async function buildCatalogueFromTMDb(): Promise<{ allMovies: Movie[]; grouped: 
   // Fetch multiple pages for Popular Now (pages 1-2 = ~40 movies)
   console.log("Fetching Popular Now movies (2 pages)...");
   const popularMovies: Movie[] = [];
-  for (let page = 1; page <= 2; page++) {
+  for (let page = 1; page <= 4; page++) {
     const movies = await getPopularMovies("Popular Now", page);
     popularMovies.push(...movies);
     console.log(`  Page ${page}: ${movies.length} movies`);
@@ -73,7 +73,7 @@ async function buildCatalogueFromTMDb(): Promise<{ allMovies: Movie[]; grouped: 
   // Fetch New Releases (Now Playing - movies currently in theaters)
   console.log("Fetching New Releases / Now Playing movies (2 pages)...");
   const newReleaseMovies: Movie[] = [];
-  for (let page = 1; page <= 2; page++) {
+  for (let page = 1; page <= 4; page++) {
     const movies = await getNowPlayingMovies("New Releases", page);
     newReleaseMovies.push(...movies);
     console.log(`  Page ${page}: ${movies.length} movies`);
@@ -82,7 +82,7 @@ async function buildCatalogueFromTMDb(): Promise<{ allMovies: Movie[]; grouped: 
   allMovies.push(...newReleaseMovies);
   console.log(`Got ${newReleaseMovies.length} New Releases movies total`);
 
-  // Genre categories with their TMDb genre IDs (2 pages each)
+  // Genre categories with their TMDb genre IDs (4 pages each)
   // Each genre gets its own separate category - no combining!
   // NO rating filters - get maximum variety
   const genreCategories = [
@@ -105,9 +105,9 @@ async function buildCatalogueFromTMDb(): Promise<{ allMovies: Movie[]; grouped: 
   ];
 
   for (const category of genreCategories) {
-    console.log(`Fetching ${category.name} movies (2 pages)...`);
+    console.log(`Fetching ${category.name} movies (4 pages)...`);
     const categoryMovies: Movie[] = [];
-    for (let page = 1; page <= 2; page++) {
+    for (let page = 1; page <= 4; page++) {
       const movies = await discoverMovies(category.name, { 
         genreIds: category.genreIds, 
         minRating: category.minRating,
@@ -143,7 +143,7 @@ async function buildCatalogue(): Promise<void> {
       console.log(`Processing ${listName}: ${items.length} movies`);
       const listMovies: Movie[] = [];
 
-      for (const item of items.slice(0, 200)) {
+      for (const item of items.slice(0, 400)) {
         // Strip leading number prefixes like "49) " or "1. " produced by some editorial scrapers
         const cleanTitle = item.title.replace(/^\d+[.):\s]+/, "").trim();
         const movie = await resolveMovieFromTitle(cleanTitle, item.year, listName);
@@ -172,7 +172,7 @@ async function buildCatalogue(): Promise<void> {
     // in A/B pair selection — they contain many animated/superhero films that already
     // appear via Action and Sci-Fi lists.
     const MIN_GENRE_MOVIES = 10;
-    const DEFAULT_SUPPLEMENT_PAGES = 4;
+    const DEFAULT_SUPPLEMENT_PAGES = 7;
 
     // Each genre maps to a TMDb config. genreIds are joined with | (OR logic in TMDb).
     // Special value genreIds: [] means use getTopRatedMovies (no genre filter).
@@ -234,7 +234,7 @@ async function buildCatalogue(): Promise<void> {
     // Always add New Releases from TMDb (Now Playing)
     console.log("Adding New Releases from TMDb...");
     const newReleaseMovies: Movie[] = [];
-    for (let page = 1; page <= 2; page++) {
+    for (let page = 1; page <= 4; page++) {
       const movies = await getNowPlayingMovies("New Releases", page);
       newReleaseMovies.push(...movies);
       console.log(`  Page ${page}: ${movies.length} movies`);
@@ -243,6 +243,24 @@ async function buildCatalogue(): Promise<void> {
       grouped["New Releases"] = newReleaseMovies;
       allMovies.push(...newReleaseMovies);
       console.log(`Got ${newReleaseMovies.length} New Releases movies total`);
+    }
+
+    // Merge bulk TMDb chart + per-genre discover pools — large boost to unique titles for A/B + AI pad.
+    try {
+      console.log("Merging bulk TMDb catalogue (charts + genres)...");
+      const { grouped: tmdbGrouped } = await buildCatalogueFromTMDb();
+      for (const [gName, arr] of Object.entries(tmdbGrouped)) {
+        const prev = grouped[gName] || [];
+        const ids = new Set(prev.map((m) => m.tmdbId));
+        const fresh = arr.filter((m) => !ids.has(m.tmdbId));
+        if (fresh.length > 0) {
+          grouped[gName] = [...prev, ...fresh];
+          allMovies.push(...fresh);
+        }
+      }
+      console.log(`TMDb bulk merge finished (pre-dedupe allMovies length ${allMovies.length})`);
+    } catch (e) {
+      console.error("TMDb bulk catalogue merge failed (non-fatal):", e);
     }
 
     // Deduplicate allMovies by tmdbId to prevent same movie appearing twice
