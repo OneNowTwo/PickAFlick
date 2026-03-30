@@ -22,7 +22,7 @@ const openai = new OpenAI({
 
 const RECOMMENDATIONS_MODEL = process.env.OPENAI_RECOMMENDATIONS_MODEL ?? "gpt-4o";
 
-/** gpt-5 Chat Completions: use `max_completion_tokens`, not `max_tokens`. */
+/** gpt-5 Chat Completions: `max_completion_tokens` not `max_tokens`; omit `temperature` (only default 1 is allowed). */
 function chatParamsForGpt5TitleGen(
   params: Omit<OpenAI.Chat.ChatCompletionCreateParamsNonStreaming, "model">
 ): Omit<OpenAI.Chat.ChatCompletionCreateParamsNonStreaming, "model"> {
@@ -33,6 +33,10 @@ function chatParamsForGpt5TitleGen(
     delete p.max_tokens;
     p.max_completion_tokens = mt;
   }
+  delete p.temperature;
+  delete p.presence_penalty;
+  delete p.frequency_penalty;
+  delete p.top_p;
   return p as Omit<OpenAI.Chat.ChatCompletionCreateParamsNonStreaming, "model">;
 }
 
