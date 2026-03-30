@@ -20,6 +20,17 @@ export interface IStorage {
   getUserVotes(userId: number): Promise<UserVote[]>;
   getRecentRecommendations(): Promise<string[]>;
   saveRecentRecommendations(titles: string[]): Promise<void>;
+  /** Titles + metadata fingerprints for local freshness scoring (aligned indices per served film). */
+  getRecentRecommendationBundles(): Promise<{
+    titles: string[];
+    fingerprints: string[];
+    directors: string[];
+  }>;
+  saveRecentRecommendationBundles(bundles: {
+    titles: string[];
+    fingerprints: string[];
+    directors: string[];
+  }): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -137,6 +148,59 @@ export class DatabaseStorage implements IStorage {
       }
     } catch (err) {
       console.error("[recent-recs] Failed to persist recent recommendations:", err);
+    }
+  }
+
+  async getRecentRecommendationBundles(): Promise<{
+    titles: string[];
+    fingerprints: string[];
+    directors: string[];
+  }> {
+    try {
+      const [row] = await db.select().from(movieCatalogueCache)
+        .where(eq(movieCatalogueCache.cacheKey, "recent_recs_v2"));
+      if (row?.movies) {
+        const p = JSON.parse(row.movies) as {
+          titles?: string[];
+          fingerprints?: string[];
+          directors?: string[];
+        };
+        return {
+          titles: Array.isArray(p.titles) ? p.titles : [],
+          fingerprints: Array.isArray(p.fingerprints) ? p.fingerprints : [],
+          directors: Array.isArray(p.directors) ? p.directors : [],
+        };
+      }
+    } catch {
+      /* fall through */
+    }
+    const titles = await this.getRecentRecommendations();
+    return { titles, fingerprints: [], directors: [] };
+  }
+
+  async saveRecentRecommendationBundles(bundles: {
+    titles: string[];
+    fingerprints: string[];
+    directors: string[];
+  }): Promise<void> {
+    const payload = JSON.stringify(bundles);
+    try {
+      const existing = await db.select().from(movieCatalogueCache)
+        .where(eq(movieCatalogueCache.cacheKey, "recent_recs_v2"));
+      if (existing.length > 0) {
+        await db.update(movieCatalogueCache)
+          .set({ movies: payload, updatedAt: new Date() })
+          .where(eq(movieCatalogueCache.cacheKey, "recent_recs_v2"));
+      } else {
+        await db.insert(movieCatalogueCache).values({
+          cacheKey: "recent_recs_v2",
+          movies: payload,
+          grouped: "{}",
+        });
+      }
+      await this.saveRecentRecommendations(bundles.titles);
+    } catch (err) {
+      console.error("[recent-recs] Failed to persist recommendation bundles:", err);
     }
   }
 }
