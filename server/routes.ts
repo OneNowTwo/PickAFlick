@@ -345,7 +345,7 @@ export async function registerRoutes(
         res.status(400).json({ error: "Complete all rounds first" });
         return;
       }
-      const taste = await getTastePreviewForSession(sessionId);
+      const taste = await getTastePreviewForSession(sessionId, parseAnonymousRecMemoryFromRequest(req));
       res.set(NO_CACHE_HEADERS);
       res.json(taste);
     } catch (error) {

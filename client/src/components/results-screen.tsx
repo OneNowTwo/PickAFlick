@@ -22,7 +22,7 @@ import {
   Check,
   ArrowLeftRight,
 } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -34,6 +34,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   appendShownRecommendations,
   buildAnonMemoryHeaders,
+  fingerprintAnonPayload,
   getAnonMemoryPayloadForSession,
 } from "@/lib/anonymous-rec-memory";
 
@@ -168,10 +169,17 @@ export function ResultsScreen({
     }
   }, [isLoading, recommendations]);
 
+  const tasteAnonPayload = useMemo(
+    () => (sessionId ? getAnonMemoryPayloadForSession(sessionId) : []),
+    [sessionId]
+  );
+  const tasteAnonFp = useMemo(() => fingerprintAnonPayload(tasteAnonPayload), [tasteAnonPayload]);
+
   const { data: tastePreview } = useQuery<TastePreview>({
-    queryKey: ["/api/session", sessionId, "taste-preview"],
+    queryKey: ["/api/session", sessionId, "taste-preview", tasteAnonFp],
     queryFn: async () => {
-      const res = await fetch(`/api/session/${sessionId}/taste-preview`);
+      const headers = buildAnonMemoryHeaders(tasteAnonPayload) as Record<string, string>;
+      const res = await fetch(`/api/session/${sessionId}/taste-preview`, { headers });
       if (!res.ok) throw new Error("Failed to load taste preview");
       return (await res.json()) as TastePreview;
     },

@@ -1,6 +1,11 @@
 import { watchlist, sharedRecommendations, movieCatalogueCache, userVotes, type WatchlistItem, type InsertWatchlistItem, type SharedRecommendation, type MovieCatalogueCache, type UserVote, type InsertUserVote } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
+import {
+  emptyRecCooldownState,
+  recCooldownDbKey,
+  type RecCooldownState,
+} from "./rec-cooldown";
 
 /** Bump when adding new IMDb/editorial lists - invalidates old cache so catalogue rebuilds on deploy */
 const CATALOGUE_CACHE_KEY = "catalogue_v8";
@@ -34,6 +39,8 @@ export interface IStorage {
   /** Titles + metadata fingerprints for local freshness scoring (aligned indices per served film). */
   getRecentRecommendationBundles(): Promise<RecentRecommendationBundle>;
   saveRecentRecommendationBundles(bundles: RecentRecommendationBundle): Promise<void>;
+  getRecCooldownState(identity: string): Promise<RecCooldownState>;
+  saveRecCooldownState(identity: string, state: RecCooldownState): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -208,6 +215,46 @@ export class DatabaseStorage implements IStorage {
       await this.saveRecentRecommendations(bundles.titles);
     } catch (err) {
       console.error("[recent-recs] Failed to persist recommendation bundles:", err);
+    }
+  }
+
+  async getRecCooldownState(identity: string): Promise<RecCooldownState> {
+    const cacheKey = recCooldownDbKey(identity);
+    try {
+      const [row] = await db.select().from(movieCatalogueCache).where(eq(movieCatalogueCache.cacheKey, cacheKey));
+      if (row?.movies) {
+        const p = JSON.parse(row.movies) as Partial<RecCooldownState>;
+        return {
+          titleKeys: Array.isArray(p.titleKeys) ? p.titleKeys : [],
+          directorKeys: Array.isArray(p.directorKeys) ? p.directorKeys : [],
+          lastRowSubtypes: Array.isArray(p.lastRowSubtypes) ? p.lastRowSubtypes : [],
+        };
+      }
+    } catch {
+      /* fall through */
+    }
+    return emptyRecCooldownState();
+  }
+
+  async saveRecCooldownState(identity: string, state: RecCooldownState): Promise<void> {
+    const cacheKey = recCooldownDbKey(identity);
+    const payload = JSON.stringify(state);
+    try {
+      const existing = await db.select().from(movieCatalogueCache).where(eq(movieCatalogueCache.cacheKey, cacheKey));
+      if (existing.length > 0) {
+        await db
+          .update(movieCatalogueCache)
+          .set({ movies: payload, updatedAt: new Date() })
+          .where(eq(movieCatalogueCache.cacheKey, cacheKey));
+      } else {
+        await db.insert(movieCatalogueCache).values({
+          cacheKey,
+          movies: payload,
+          grouped: "{}",
+        });
+      }
+    } catch (err) {
+      console.error("[rec-cooldown] Failed to persist:", err);
     }
   }
 }

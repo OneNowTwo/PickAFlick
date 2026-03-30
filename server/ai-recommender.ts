@@ -24,6 +24,15 @@ import {
 import { getAllMovies } from "./catalogue";
 import { storage } from "./storage";
 import { sessionStorage as gameSessionStorage } from "./session-storage";
+import type { SessionMoodProfile } from "./session-mood-profile";
+export type { SessionMoodProfile } from "./session-mood-profile";
+import {
+  appendServedRow,
+  cooldownHardSnapshot,
+  recCooldownIdentity,
+  type RecCooldownState,
+} from "./rec-cooldown";
+import { buildLockedSubtypePromptBlock, pickSessionSubtype } from "./session-subtype-picker";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -44,10 +53,11 @@ const recentlyRecommendedFeelKeys: string[] = [];
 const MAX_RECENT_TRACKED = 400;
 /** Prior picks used for soft cluster repeat penalties (several rows). */
 const RECENT_CLUSTER_SOFT_WINDOW = 36;
-const RECENT_EXCLUSIONS_PROMPT_COUNT = 64;
 const TARGET_RESOLVED = 6;
 /** Single LLM pass per lane: wide candidate pool; local selector picks final row (no extra LLM). */
 const LLM_PICK_COUNT = 24;
+/** If ban filter strips too many titles, allow one refill LLM (missing slots only). */
+const MIN_POOL_AFTER_BAN_FILTER = 14;
 const ANON_PRIMARY_GENRE_OVERUSE = 4;
 const MAX_PRE_1970 = 1;
 const MIN_PICKS_YEAR_LEQ_2010 = 2;
@@ -133,19 +143,6 @@ export interface TasteObservationResult {
   preferredEras: string[];
 }
 
-/** Structured mood from A/B session — source of truth for recommendation prompts. */
-export interface SessionMoodProfile {
-  preferred_tone: string;
-  rejected_tone: string;
-  pacing: string;
-  darkness_level: string;
-  realism_vs_stylised: string;
-  complexity: string;
-  emotional_texture: string;
-  what_they_want: string[];
-  what_they_avoid: string[];
-}
-
 interface AIRecommendationResult {
   title: string;
   year?: number;
@@ -213,15 +210,122 @@ const OVERUSED_CANON_BANNED: string[] = [
   "The Departed",
 ];
 
-interface PrefetchEntry {
-  taste: Promise<TasteObservationResult>;
+interface PrefetchPhase1 {
   mood: SessionMoodProfile;
+  taste: TasteObservationResult;
   banned: { bannedSet: Set<string>; bannedTitlesPrompt: string };
-  mainstream: Promise<SingleTrackLLMResult>;
-  indie: Promise<SingleTrackLLMResult>;
+  variationBlock: string;
+  chosen: Movie[];
+  rejected: Movie[];
+  filters: string[];
 }
 
-const prefetchBySession = new Map<string, Promise<PrefetchEntry>>();
+const prefetchPhase1BySession = new Map<string, Promise<PrefetchPhase1>>();
+const laneLlmBySessionIdentity = new Map<
+  string,
+  { mainstream: Promise<SingleTrackLLMResult>; indie: Promise<SingleTrackLLMResult> }
+>();
+/** Subtype lock used for this session+identity LLM batch; persisted onto cooldown row. */
+const sessionCreativeByLaneKey = new Map<
+  string,
+  { injectedSubtype: string; subtypePromptBlock: string }
+>();
+
+/** Serialize cooldown read-modify-write per identity when both lanes finalize close together. */
+const recCooldownPersistChain = new Map<string, Promise<void>>();
+
+function lanePrefetchKey(sessionId: string, anonFp: string): string {
+  return `${sessionId}\t${recCooldownIdentity(sessionId, anonFp)}`;
+}
+
+function clearLanePrefetchForSession(sessionId: string): void {
+  const prefix = `${sessionId}\t`;
+  Array.from(laneLlmBySessionIdentity.keys()).forEach((k) => {
+    if (k.startsWith(prefix)) laneLlmBySessionIdentity.delete(k);
+  });
+  Array.from(sessionCreativeByLaneKey.keys()).forEach((k) => {
+    if (k.startsWith(prefix)) sessionCreativeByLaneKey.delete(k);
+  });
+}
+
+async function buildPrefetchPhase1(
+  sessionId: string,
+  chosenMovies: Movie[],
+  rejectedMovies: Movie[],
+  filters: string[]
+): Promise<PrefetchPhase1> {
+  const mood = await extractSessionMood(chosenMovies, rejectedMovies, filters);
+  const taste = moodToTasteObservation(mood, chosenMovies);
+  const banned = buildBannedContext(chosenMovies, rejectedMovies);
+  const { block: variationBlock } = getOrCreateSessionVariation(sessionId);
+  return { mood, taste, banned, variationBlock, chosen: chosenMovies, rejected: rejectedMovies, filters };
+}
+
+async function startLaneLlmPrefetchIfNeeded(
+  sessionId: string,
+  clientAnonMemory: AnonymousRecMemoryEntry[],
+  phase1: PrefetchPhase1,
+  cdState: RecCooldownState
+): Promise<void> {
+  const anonFp = anonFingerprint(clientAnonMemory);
+  const key = lanePrefetchKey(sessionId, anonFp);
+  if (laneLlmBySessionIdentity.has(key)) return;
+
+  const snap = cooldownHardSnapshot(cdState);
+  const merged = mergeHardCooldownIntoMerged(
+    mergeAnonymousIntoBanned(phase1.banned, clientAnonMemory),
+    cdState
+  );
+  const injectedSubtype = pickSessionSubtype(phase1.mood, snap.bannedInjectionSubtypes, sessionId);
+  const subtypePromptBlock = buildLockedSubtypePromptBlock(injectedSubtype, snap);
+  sessionCreativeByLaneKey.set(key, { injectedSubtype, subtypePromptBlock });
+
+  laneLlmBySessionIdentity.set(key, {
+    mainstream: generateSingleTrackPicks(
+      phase1.chosen,
+      phase1.rejected,
+      phase1.filters,
+      "mainstream",
+      phase1.mood,
+      merged,
+      "",
+      sessionId,
+      phase1.variationBlock,
+      subtypePromptBlock
+    ),
+    indie: generateSingleTrackPicks(
+      phase1.chosen,
+      phase1.rejected,
+      phase1.filters,
+      "indie",
+      phase1.mood,
+      merged,
+      "",
+      sessionId,
+      phase1.variationBlock,
+      subtypePromptBlock
+    ),
+  });
+}
+
+async function persistCooldownAfterServe(
+  identity: string,
+  laneKey: string,
+  recs: Recommendation[]
+): Promise<void> {
+  const tail = recCooldownPersistChain.get(identity) ?? Promise.resolve();
+  const job = tail.then(async () => {
+    const creative = sessionCreativeByLaneKey.get(laneKey);
+    const injectedSubtype = creative?.injectedSubtype ?? "session mix";
+    const st = await storage.getRecCooldownState(identity);
+    const titleKeys = recs.map((r) => normalizeTitleKey(r.movie.title)).filter(Boolean);
+    const directorKeys = recs.map((r) => directorKeyForMovie(r.movie));
+    const next = appendServedRow(st, { titleKeys, directorKeys, injectedSubtype });
+    await storage.saveRecCooldownState(identity, next);
+  });
+  recCooldownPersistChain.set(identity, job);
+  await job;
+}
 
 /** Per voting session: stable seed + prompt block so rows vary across sessions without random junk. */
 const sessionVariationCache = new Map<string, { seed: number; block: string }>();
@@ -470,12 +574,6 @@ function buildBannedContext(chosenMovies: Movie[], rejectedMovies: Movie[]): {
   for (const m of chosenMovies) addTitle(m.title);
   for (const m of rejectedMovies) addTitle(m.title);
   for (const t of OVERUSED_CANON_BANNED) addTitle(t);
-  for (const k of recentlyRecommendedTitles.slice(-RECENT_EXCLUSIONS_PROMPT_COUNT)) {
-    if (!bannedSet.has(k)) {
-      bannedSet.add(k);
-      labels.push(k);
-    }
-  }
 
   const bannedTitlesPrompt = labels.slice(0, 100).join("; ");
   return { bannedSet, bannedTitlesPrompt };
@@ -486,6 +584,38 @@ interface MergedBannedContext {
   bannedTitlesPrompt: string;
   anonDirectorKeys: Set<string>;
   anonPrimaryGenreCounts: Map<string, number>;
+  /** Hard rolling cooldown — resolve must reject these directors. */
+  hardCooldownDirectorKeys: Set<string>;
+}
+
+function mergeHardCooldownIntoMerged(
+  base: MergedBannedContext,
+  cdState: RecCooldownState
+): MergedBannedContext {
+  const snap = cooldownHardSnapshot(cdState);
+  const bannedSet = new Set(base.bannedSet);
+  const hardCooldownDirectorKeys = new Set(base.hardCooldownDirectorKeys);
+  snap.titleBan.forEach((t) => bannedSet.add(t));
+  snap.directorBan.forEach((d) => {
+    if (d) hardCooldownDirectorKeys.add(d);
+  });
+  const directorList = Array.from(snap.directorBan).filter(Boolean).slice(0, 24);
+  const titleList = Array.from(snap.titleBan).slice(0, 40);
+  const extraLines = [
+    titleList.length > 0 &&
+      `HARD COOLDOWN — do not output these titles (or close variants): ${titleList.join("; ")}.`,
+    directorList.length > 0 &&
+      `HARD COOLDOWN — do not output any film directed by: ${directorList.join("; ")}.`,
+  ].filter(Boolean) as string[];
+  const bannedTitlesPrompt = [base.bannedTitlesPrompt, ...extraLines].filter(Boolean).join(" ");
+
+  return {
+    bannedSet,
+    bannedTitlesPrompt,
+    anonDirectorKeys: new Set(base.anonDirectorKeys),
+    anonPrimaryGenreCounts: new Map(base.anonPrimaryGenreCounts),
+    hardCooldownDirectorKeys,
+  };
 }
 
 function mergeAnonymousIntoBanned(
@@ -518,7 +648,13 @@ function mergeAnonymousIntoBanned(
 
   const bannedTitlesPrompt = [base.bannedTitlesPrompt, ...memoryLines].filter(Boolean).join(" ");
 
-  return { bannedSet, bannedTitlesPrompt, anonDirectorKeys, anonPrimaryGenreCounts };
+  return {
+    bannedSet,
+    bannedTitlesPrompt,
+    anonDirectorKeys,
+    anonPrimaryGenreCounts,
+    hardCooldownDirectorKeys: new Set<string>(),
+  };
 }
 
 function cloneMergedBanned(m: MergedBannedContext): MergedBannedContext {
@@ -527,6 +663,7 @@ function cloneMergedBanned(m: MergedBannedContext): MergedBannedContext {
     bannedTitlesPrompt: m.bannedTitlesPrompt,
     anonDirectorKeys: new Set(m.anonDirectorKeys),
     anonPrimaryGenreCounts: new Map(m.anonPrimaryGenreCounts),
+    hardCooldownDirectorKeys: new Set(m.hardCooldownDirectorKeys),
   };
 }
 
@@ -535,6 +672,13 @@ function movieFailsAnonDiversity(movie: Movie, mb: MergedBannedContext): boolean
   if (d && mb.anonDirectorKeys.has(d)) return true;
   const p = (movie.genres[0] || "").trim().toLowerCase();
   if (p && (mb.anonPrimaryGenreCounts.get(p) ?? 0) >= ANON_PRIMARY_GENRE_OVERUSE) return true;
+  return false;
+}
+
+function movieFailsMergedDiversity(movie: Movie, mb: MergedBannedContext): boolean {
+  if (movieFailsAnonDiversity(movie, mb)) return true;
+  const d = (movie.director || "").toLowerCase().trim();
+  if (d && mb.hardCooldownDirectorKeys.has(d)) return true;
   return false;
 }
 
@@ -816,16 +960,71 @@ async function callSingleTrackLLM(
   return track === "mainstream" ? parseMainstreamTrackResponse(raw) : parseIndieTrackResponse(raw);
 }
 
+/** One-shot top-up when hard-ban filter removed too many LLM titles (max one call per finalize). */
+async function refillCandidatePicksLLM(
+  count: number,
+  chosenMovies: Movie[],
+  rejectedMovies: Movie[],
+  initialGenreFilters: string[],
+  track: RecommendationTrack,
+  mood: SessionMoodProfile,
+  bannedCtx: MergedBannedContext,
+  creativeSubtypeBlock: string,
+  variationBlock: string,
+  timingSessionId?: string
+): Promise<AIRecommendationResult[]> {
+  if (count <= 0) return [];
+  const tasteProfileJson = JSON.stringify(mood);
+  const user = `Refill only: prior pool lost titles to HARD COOLDOWN / bans. Output JSON with **exactly ${count}** NEW objects in "picks".
+
+taste_profile:
+${tasteProfileJson}
+
+Banned / cooldown (obey — do not repeat any of these titles or directors):
+${bannedCtx.bannedTitlesPrompt.slice(0, 6000)}
+
+${creativeSubtypeBlock}
+
+session_variation:
+${variationBlock}
+
+Same track rules as the main pool: distinct directors, tag+reason, locked subtype channel, real films with plausible AU availability.
+
+Output shape matches the main track response (picks array only is required).`;
+
+  const t0 = Date.now();
+  const response = await openai.chat.completions.create({
+    model: RECOMMENDATIONS_MODEL,
+    messages: [
+      {
+        role: "system",
+        content: `${systemPromptForTrack(track)} Refill: exact count; no repeats of banned titles or directors.`,
+      },
+      { role: "user", content: user },
+    ],
+    response_format: { type: "json_object" },
+    max_tokens: 1400,
+    temperature: track === "indie" ? 0.92 : 0.85,
+  });
+  if (timingSessionId) {
+    logRecsTiming(timingSessionId, `llm_${track}_refill`, Date.now() - t0);
+  }
+  const raw = JSON.parse(response.choices[0]?.message?.content || "{}") as Record<string, unknown>;
+  const parsed = track === "mainstream" ? parseMainstreamTrackResponse(raw) : parseIndieTrackResponse(raw);
+  return filterPicksAgainstBanned(parsed.picks || [], bannedCtx.bannedSet).slice(0, count);
+}
+
 export async function generateSingleTrackPicks(
   chosenMovies: Movie[],
   rejectedMovies: Movie[],
   initialGenreFilters: string[],
   track: RecommendationTrack,
   mood: SessionMoodProfile,
-  bannedCtx: { bannedSet: Set<string>; bannedTitlesPrompt: string },
+  bannedCtx: MergedBannedContext,
   promptExtra = "",
   timingSessionId?: string,
-  variationBlock = ""
+  variationBlock = "",
+  creativeSubtypeBlock = ""
 ): Promise<SingleTrackLLMResult> {
   await ensureRecsLoaded();
   const tasteProfileJson = JSON.stringify(mood);
@@ -833,6 +1032,7 @@ export async function generateSingleTrackPicks(
     track === "mainstream"
       ? buildMainstreamTrackPrompt(tasteProfileJson, bannedCtx.bannedTitlesPrompt, variationBlock)
       : buildIndieTrackPrompt(tasteProfileJson, bannedCtx.bannedTitlesPrompt, variationBlock);
+  const creative = creativeSubtypeBlock.trim() ? `\n\n${creativeSubtypeBlock.trim()}` : "";
   const genreLine =
     initialGenreFilters.length > 0
       ? `\n\nOptional genre hints: ${initialGenreFilters.join(", ")}.`
@@ -840,7 +1040,7 @@ export async function generateSingleTrackPicks(
   const freshness = buildRecentRowFreshnessPrompt();
   const freshnessBlock = freshness ? `\n\n${freshness}` : "";
   const extra = promptExtra.trim() ? `\n\n${promptExtra.trim()}` : "";
-  const prompt = basePrompt + genreLine + freshnessBlock + extra;
+  const prompt = basePrompt + creative + genreLine + freshnessBlock + extra;
 
   const applyBanned = (r: SingleTrackLLMResult): SingleTrackLLMResult => ({
     ...r,
@@ -871,7 +1071,7 @@ async function resolveOneRecommendation(
     if (!movieDetails.posterPath?.trim()) return null;
     if (!watchResult.providers.length) return null;
 
-    if (mergedBanned && movieFailsAnonDiversity(movieDetails, mergedBanned)) return null;
+    if (mergedBanned && movieFailsMergedDiversity(movieDetails, mergedBanned)) return null;
 
     movieDetails.listSource = "ai-recommendation";
     const reason =
@@ -976,49 +1176,7 @@ async function resolvePicksToRecommendations(
   return selected;
 }
 
-/** Mood extraction first, then both track LLM calls in parallel (no TMDB until a lane is finalized). */
-async function buildPrefetchEntry(
-  sessionId: string,
-  chosenMovies: Movie[],
-  rejectedMovies: Movie[],
-  filters: string[]
-): Promise<PrefetchEntry> {
-  const tMood = Date.now();
-  const mood = await extractSessionMood(chosenMovies, rejectedMovies, filters);
-  logRecsTiming(sessionId, "taste_extraction", Date.now() - tMood);
-  const taste = moodToTasteObservation(mood, chosenMovies);
-  const banned = buildBannedContext(chosenMovies, rejectedMovies);
-  const { block: variationBlock } = getOrCreateSessionVariation(sessionId);
-  return {
-    taste: Promise.resolve(taste),
-    mood,
-    banned,
-    mainstream: generateSingleTrackPicks(
-      chosenMovies,
-      rejectedMovies,
-      filters,
-      "mainstream",
-      mood,
-      banned,
-      "",
-      sessionId,
-      variationBlock
-    ),
-    indie: generateSingleTrackPicks(
-      chosenMovies,
-      rejectedMovies,
-      filters,
-      "indie",
-      mood,
-      banned,
-      "",
-      sessionId,
-      variationBlock
-    ),
-  };
-}
-
-/** Fire when the last A/B choice is recorded — starts taste + parallel lane LLM prefetch only (no blocking TMDB bundle). */
+/** Fire when the last A/B choice is recorded — mood extraction only; lane LLMs start when client hits taste-preview/recommendations (with anon-aware cooldown). */
 export function beginRecommendationPrefetch(sessionId: string): void {
   const session = gameSessionStorage.getSession(sessionId);
   if (!session?.isComplete) return;
@@ -1027,32 +1185,42 @@ export function beginRecommendationPrefetch(sessionId: string): void {
   const filters = gameSessionStorage.getSessionFilters(sessionId)?.genres ?? [];
   if (chosen.length === 0) return;
 
-  if (!prefetchBySession.has(sessionId)) {
-    console.log(`[prefetch] Starting taste + mainstream + indie LLM for ${sessionId}`);
-    prefetchBySession.set(sessionId, buildPrefetchEntry(sessionId, chosen, rejected, filters));
+  if (!prefetchPhase1BySession.has(sessionId)) {
+    console.log(`[prefetch] Starting taste extraction for ${sessionId} (lane LLMs deferred until results)`);
+    const tMood = Date.now();
+    const p1 = buildPrefetchPhase1(sessionId, chosen, rejected, filters).then((phase1) => {
+      logRecsTiming(sessionId, "taste_extraction", Date.now() - tMood);
+      return phase1;
+    });
+    prefetchPhase1BySession.set(sessionId, p1);
   }
 }
 
-export async function getTastePreviewForSession(sessionId: string): Promise<TasteObservationResult> {
+export async function getTastePreviewForSession(
+  sessionId: string,
+  clientAnonMemory: AnonymousRecMemoryEntry[] = []
+): Promise<TasteObservationResult> {
   const cachedTaste = sessionTasteMeta.get(sessionId)?.taste;
   if (cachedTaste) return cachedTaste;
 
-  let entryPromise = prefetchBySession.get(sessionId);
-  if (!entryPromise) {
+  let p1 = prefetchPhase1BySession.get(sessionId);
+  if (!p1) {
     const session = gameSessionStorage.getSession(sessionId);
     if (!session?.isComplete) return fallbackTaste([]);
     const chosen = gameSessionStorage.getChosenMovies(sessionId);
     const rejected = gameSessionStorage.getRejectedMovies(sessionId);
     const filters = gameSessionStorage.getSessionFilters(sessionId)?.genres ?? [];
     if (chosen.length === 0) return fallbackTaste([]);
-    entryPromise = buildPrefetchEntry(sessionId, chosen, rejected, filters);
-    prefetchBySession.set(sessionId, entryPromise);
+    p1 = buildPrefetchPhase1(sessionId, chosen, rejected, filters);
+    prefetchPhase1BySession.set(sessionId, p1);
   }
   try {
-    const entry = await entryPromise;
-    const t = await entry.taste;
-    patchSessionTasteMeta(sessionId, { mood: entry.mood, taste: t });
-    return t;
+    const phase1 = await p1;
+    patchSessionTasteMeta(sessionId, { mood: phase1.mood, taste: phase1.taste });
+    const cdId = recCooldownIdentity(sessionId, anonFingerprint(clientAnonMemory));
+    const cdState = await storage.getRecCooldownState(cdId);
+    await startLaneLlmPrefetchIfNeeded(sessionId, clientAnonMemory, phase1, cdState);
+    return phase1.taste;
   } catch {
     const chosen = gameSessionStorage.getChosenMovies(sessionId);
     return fallbackTaste(chosen);
@@ -1074,7 +1242,8 @@ async function finalizeSingleTrackToResponse(
   rawFromPrefetch: SingleTrackLLMResult | null,
   timingSessionId: string | undefined,
   laneSessionId: string,
-  anonFp: string
+  anonFp: string,
+  laneKey: string
 ): Promise<RecommendationsResponse> {
   const finalizeStart = Date.now();
   const sid = timingSessionId;
@@ -1086,11 +1255,16 @@ async function finalizeSingleTrackToResponse(
     console.log(`[recs-finalize] ${shortSid} ${track} ${msg}${tail}`);
   };
 
-  let supplementLlmMs = 0;
+  let banRefillLlmMs = 0;
   let auResolvePass1Ms = 0;
   let regenLlmMs = 0;
   let auResolvePass2Ms = 0;
   let regenUsed = false;
+
+  const creative = sessionCreativeByLaneKey.get(laneKey) ?? {
+    injectedSubtype: "session mix",
+    subtypePromptBlock: "",
+  };
 
   const variationBlock = getOrCreateSessionVariation(laneSessionId).block;
   const otherLaneTmdbIds = getOtherLaneTmdbIds(laneSessionId, anonFp, track);
@@ -1098,6 +1272,25 @@ async function finalizeSingleTrackToResponse(
 
   const workingBanned = cloneMergedBanned(banned);
   let picks = filterPicksAgainstBanned(rawFromPrefetch?.picks || [], workingBanned.bannedSet);
+  if (picks.length < MIN_POOL_AFTER_BAN_FILTER && picks.length < LLM_PICK_COUNT) {
+    const n = Math.min(LLM_PICK_COUNT - picks.length, 20);
+    const tRefill = Date.now();
+    const refill = await refillCandidatePicksLLM(
+      n,
+      chosen,
+      rejected,
+      filters,
+      track,
+      mood,
+      workingBanned,
+      creative.subtypePromptBlock,
+      variationBlock,
+      timingSessionId
+    );
+    banRefillLlmMs = Date.now() - tRefill;
+    picks = filterPicksAgainstBanned([...picks, ...refill], workingBanned.bannedSet);
+    logFinalize("ban_refill_done", { need: n, added: refill.length, pool: picks.length, refill_ms: banRefillLlmMs });
+  }
   let trackCopy: SingleTrackLLMResult | null = rawFromPrefetch;
 
   const tAu1 = Date.now();
@@ -1145,7 +1338,8 @@ async function finalizeSingleTrackToResponse(
       workingBanned,
       regenExtra,
       timingSessionId,
-      variationBlock
+      variationBlock,
+      creative.subtypePromptBlock
     );
     regenLlmMs = Date.now() - tRegen;
     logFinalize("regen_llm_ms", {
@@ -1188,7 +1382,7 @@ async function finalizeSingleTrackToResponse(
     console.log(
       `[recs-finalize] ${shortSid} ${track} SUMMARY ` +
         `total_finalize_ms=${totalFinalizeMs} ` +
-        `supplement_llm_ms=${supplementLlmMs} ` +
+        `ban_refill_llm_ms=${banRefillLlmMs} ` +
         `au_resolve_pass1_ms=${auResolvePass1Ms} ` +
         `regen_used=${regenUsed} ` +
         `regen_llm_ms=${regenLlmMs} ` +
@@ -1268,11 +1462,15 @@ async function ensureLaneReady(
       return r;
     }
 
-    let entryPromise = prefetchBySession.get(sessionId);
-    if (!entryPromise) {
-      entryPromise = buildPrefetchEntry(sessionId, chosen, rejected, filters);
-      prefetchBySession.set(sessionId, entryPromise);
+    let p1 = prefetchPhase1BySession.get(sessionId);
+    if (!p1) {
+      p1 = buildPrefetchPhase1(sessionId, chosen, rejected, filters);
+      prefetchPhase1BySession.set(sessionId, p1);
     }
+
+    const cooldownId = recCooldownIdentity(sessionId, anonFp);
+    const cdState = await storage.getRecCooldownState(cooldownId);
+    const laneKey = lanePrefetchKey(sessionId, anonFp);
 
     let mood: SessionMoodProfile;
     let taste: TasteObservationResult;
@@ -1281,15 +1479,24 @@ async function ensureLaneReady(
 
     try {
       const prefetchWait = Date.now();
-      const entry = await entryPromise;
-      logRecsTiming(sessionId, "prefetch_entry_wait", Date.now() - prefetchWait);
-      mood = entry.mood;
-      bannedMerged = mergeAnonymousIntoBanned(entry.banned, clientAnonMemory);
-      taste = await entry.taste.catch(() => moodToTasteObservation(mood, chosen));
+      const phase1 = await p1;
+      logRecsTiming(sessionId, "prefetch_phase1_wait", Date.now() - prefetchWait);
+      mood = phase1.mood;
+      taste = phase1.taste;
       patchSessionTasteMeta(sessionId, { mood, taste });
+      await startLaneLlmPrefetchIfNeeded(sessionId, clientAnonMemory, phase1, cdState);
+      bannedMerged = mergeHardCooldownIntoMerged(
+        mergeAnonymousIntoBanned(phase1.banned, clientAnonMemory),
+        cdState
+      );
+
+      const lanes = laneLlmBySessionIdentity.get(laneKey);
+      if (!lanes) {
+        throw new Error("lane_llm_not_started");
+      }
 
       const laneWait = Date.now();
-      raw = await (track === "mainstream" ? entry.mainstream : entry.indie).catch((e) => {
+      raw = await (track === "mainstream" ? lanes.mainstream : lanes.indie).catch((e) => {
         console.error(`[prefetch] ${track} track failed`, e);
         return { picks: [] as AIRecommendationResult[] };
       });
@@ -1303,8 +1510,16 @@ async function ensureLaneReady(
       mood = await extractSessionMood(chosen, rejected, filters);
       logRecsTiming(sessionId, "taste_extraction_cold", Date.now() - moodT0);
       taste = moodToTasteObservation(mood, chosen);
-      bannedMerged = mergeAnonymousIntoBanned(buildBannedContext(chosen, rejected), clientAnonMemory);
+      const cdCold = await storage.getRecCooldownState(cooldownId);
+      bannedMerged = mergeHardCooldownIntoMerged(
+        mergeAnonymousIntoBanned(buildBannedContext(chosen, rejected), clientAnonMemory),
+        cdCold
+      );
       patchSessionTasteMeta(sessionId, { mood, taste });
+      const snap = cooldownHardSnapshot(cdCold);
+      const injectedSubtype = pickSessionSubtype(mood, snap.bannedInjectionSubtypes, sessionId);
+      const subtypePromptBlock = buildLockedSubtypePromptBlock(injectedSubtype, snap);
+      sessionCreativeByLaneKey.set(laneKey, { injectedSubtype, subtypePromptBlock });
       const coldLlm = Date.now();
       raw = await generateSingleTrackPicks(
         chosen,
@@ -1315,7 +1530,8 @@ async function ensureLaneReady(
         bannedMerged,
         "",
         sessionId,
-        getOrCreateSessionVariation(sessionId).block
+        getOrCreateSessionVariation(sessionId).block,
+        subtypePromptBlock
       );
       logRecsTiming(sessionId, `llm_${track}_cold_total`, Date.now() - coldLlm);
     }
@@ -1332,16 +1548,19 @@ async function ensureLaneReady(
       raw,
       sessionId,
       sessionId,
-      anonFp
+      anonFp,
+      laneKey
     );
     logRecsTiming(sessionId, `finalize_${track}`, Date.now() - finalizeT0);
 
     mergeLaneBundleIntoCache(sessionId, anonFp, track, res);
+    await persistCooldownAfterServe(cooldownId, laneKey, res.recommendations);
     recordRecommendedRow(res.recommendations);
 
     const cur = sessionLaneBundleCache.get(laneBundleKey(sessionId, anonFp));
     if (cur?.mainstream && cur?.indie) {
-      prefetchBySession.delete(sessionId);
+      prefetchPhase1BySession.delete(sessionId);
+      clearLanePrefetchForSession(sessionId);
     }
 
     logRecsTiming(sessionId, `lane_${track}_total`, Date.now() - totalStart);
