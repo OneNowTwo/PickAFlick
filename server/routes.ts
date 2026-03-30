@@ -354,7 +354,7 @@ export async function registerRoutes(
     }
   });
 
-  // Final recommendations — single row of 5 (prefetch started when A/B completed)
+  // Final recommendations — dual bucket (5 mainstream + 5 discovery), prefetch when A/B completes
   app.get("/api/session/:sessionId/recommendations", async (req: Request, res: Response) => {
     try {
       const { sessionId } = req.params;

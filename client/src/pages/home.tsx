@@ -179,12 +179,7 @@ export default function Home() {
     },
     enabled: gameState === "results" && !!sessionId,
     staleTime: Infinity,
-    refetchInterval: (query) => {
-      const d = query.state.data;
-      if (!d) return false;
-      return (d.recommendations?.length ?? 0) >= 5 ? false : 3000;
-    },
-    refetchIntervalInBackground: true,
+    refetchInterval: false,
   });
 
   const displayRecommendations = useMemo(() => recsQuery.data ?? null, [recsQuery.data]);

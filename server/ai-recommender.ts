@@ -28,7 +28,8 @@ const recentlyRecommendedFeelKeys: string[] = [];
 const MAX_RECENT_TRACKED = 400;
 /** Hard-ban these many last-served title keys in the LLM prompt + filter. */
 const RECENT_TITLE_BAN_WINDOW = 24;
-const TARGET_RESOLVED = 5;
+/** Target resolved recommendations (5 mainstream + 5 discovery). */
+const TARGET_TOTAL_RESOLVE = 10;
 const ANON_PRIMARY_GENRE_OVERUSE = 4;
 
 let recsLoaded = false;
@@ -115,14 +116,13 @@ interface AIRecommendationResult {
   year?: number;
   reason: string;
   tag?: string;
+  bucket?: "mainstream" | "discovery";
 }
 
-interface SingleTrackLLMResult {
-  picks: AIRecommendationResult[];
-  line_what_they_want?: string;
-  line_what_they_avoid?: string;
-  line_cinema_suggested?: string;
-  line_trap_avoided?: string;
+interface DualBucketLLMResult {
+  profile_line: string;
+  mainstream: AIRecommendationResult[];
+  discovery: AIRecommendationResult[];
 }
 
 const OVERUSED_CANON_BANNED: string[] = [
@@ -186,7 +186,7 @@ interface PrefetchPhase1 {
 }
 
 const prefetchPhase1BySession = new Map<string, Promise<PrefetchPhase1>>();
-const singleRowLlmBySessionIdentity = new Map<string, Promise<SingleTrackLLMResult>>();
+const singleRowLlmBySessionIdentity = new Map<string, Promise<DualBucketLLMResult>>();
 
 function rowPrefetchKey(sessionId: string, anonFp: string): string {
   return `${sessionId}\t${anonFp}`;
@@ -213,17 +213,19 @@ async function buildPrefetchPhase1(
 
 function mergeRecentTitlesIntoBanned(merged: MergedBannedContext): MergedBannedContext {
   const bannedSet = new Set(merged.bannedSet);
-  const extra: string[] = [];
-  const slice = recentlyRecommendedTitles.slice(-RECENT_TITLE_BAN_WINDOW);
-  slice.forEach((k) => {
-    if (k && !bannedSet.has(k)) {
-      bannedSet.add(k);
-      extra.push(k);
-    }
+  const extraDisplay: string[] = [];
+  const len = recentlyRecommendedTitles.length;
+  const sliceKeys = recentlyRecommendedTitles.slice(-RECENT_TITLE_BAN_WINDOW);
+  const startIdx = len - sliceKeys.length;
+  sliceKeys.forEach((k, j) => {
+    if (!k || bannedSet.has(k)) return;
+    bannedSet.add(k);
+    const disp = (recentlyRecommendedDisplayTitles[startIdx + j] || k).trim();
+    if (disp) extraDisplay.push(disp);
   });
   const line =
-    extra.length > 0
-      ? `Recently served on this product — do NOT output these titles (or close variants): ${extra.join("; ")}.`
+    extraDisplay.length > 0
+      ? `Recently served on this product — do NOT output these titles (or close variants): ${extraDisplay.join("; ")}.`
       : "";
   const bannedTitlesPrompt = [merged.bannedTitlesPrompt, line].filter(Boolean).join(" ");
   return {
@@ -247,7 +249,7 @@ async function startSingleRowLlmPrefetchIfNeeded(
 
   singleRowLlmBySessionIdentity.set(
     key,
-    generateSingleRowPicks(
+    generateDualBucketPicks(
       phase1.chosen,
       phase1.rejected,
       phase1.filters,
@@ -259,27 +261,27 @@ async function startSingleRowLlmPrefetchIfNeeded(
   );
 }
 
-const SINGLE_ROW_SYSTEM = `You are a sharp film curator. The user finished an A/B movie voting funnel — you see their mood JSON (tone, pacing, what they want / avoid).
+const DUAL_BUCKET_SYSTEM = `You are a sharp film curator. The user finished an A/B movie voting funnel — you see their mood JSON (tone, pacing, what they want / avoid).
 
-Return exactly ONE row of 5 films that:
-- Strongly match that mood (every title must clearly fit the emotional signal — do not drift).
-- Feel curated and varied, not algorithmic: five different *expressions* of the same core mood (e.g. different sub-genres, pacing, geography, budget level, era mix).
-- Mix accessible and less obvious naturally: at least 2 picks should feel like discovery (less obvious), at least 1 clearly accessible/well-known enough to recommend with confidence; the others balance between.
-- Do NOT optimise for popularity, safety, or “pleasing” with famous defaults. Interesting, high-quality, mood-true beats fame.
-- Avoid obvious over-recommended / default-canon titles unless they are clearly the best mood fit; if a pick feels predictable, replace it.
-- No repeated directors across the 5 unless unavoidable.
-- Do not output five interchangeable films (same pacing, same “type”, same shelf).
-- If the set could have been drawn from the same 20 famous films, it is wrong — internally revise before answering.
+Return exactly 10 films in TWO groups — same core mood for all 10, but real variety between the two buckets:
 
-Ban list and “recently shown” titles in the user message are hard exclusions.
+**mainstream (5 films):** Well known, widely seen; think titles where TMDb vote count is *likely* above ~300k. Strong mood match. Not interchangeable with each other — different sub-genres / pacing / decade where possible.
 
-Each film must be plausibly streamable, rentable, or purchasable in Australia.
+**discovery (5 films):** Genuinely less known; vote count *likely* under ~200k. Still high quality (aim for ~7.0+ IMDb/TMDb vibe). Same mood match, not obscure-for-obscure's sake.
 
-Output JSON ONLY. No per-film prose or reasons — only title and year per pick.`;
+Both groups together must:
+- Span at least 3 different decades across the 10.
+- No two films from the same director (across all 10).
+- No two films of the same narrow sub-genre (e.g. not five "psychological horror" — diversify).
+- Do NOT output any title from the banned list in the user message (or close variants).
 
-function buildFivePickUserMessage(
+Do not optimise for safe or boring picks. Mood truth and quality beat fame in the discovery bucket; mainstream can be famous but still must feel specific to tonight's mood.
+
+Output JSON ONLY. No per-film explanations — title and year only in arrays.`;
+
+function buildDualBucketUserMessage(
   tasteProfileJson: string,
-  bannedTitlesPrompt: string,
+  bannedBlock: string,
   genreLine: string,
   promptExtra: string
 ): string {
@@ -288,65 +290,63 @@ ${tasteProfileJson}
 
 ${genreLine}
 
-Titles you must NOT output (or close variants):
-${bannedTitlesPrompt}
+DO NOT OUTPUT ANY OF THESE TITLES OR CLOSE VARIANTS:
+${bannedBlock}
 
-Fill these 5 slots — each a different EXPRESSION of the same mood (not five of the same kind of film):
-
-1. Grounded / procedural / crime or espionage-leaning (if mood allows; otherwise closest grounded thriller/drama fit)
-2. Psychological pressure or interior tension
-3. Slower or more atmospheric — still same mood, different pacing
-4. International or less obvious (non-English welcome if it fits)
-5. Wildcard — bold or surprising but still emotionally on-mood
+Return exactly 5 mainstream and 5 discovery films as specified in the system message.
 
 Output JSON only, this exact shape:
 {
-  "line_summary": "one short curatorial line for the row (not per-film)",
-  "picks": [
-    {"slot": 1, "title": "", "year": 2020},
-    {"slot": 2, "title": "", "year": null},
-    {"slot": 3, "title": "", "year": null},
-    {"slot": 4, "title": "", "year": null},
-    {"slot": 5, "title": "", "year": null}
+  "profile_line": "max 8 words, like a friend texting — not marketing, not 'based on your taste'",
+  "mainstream": [
+    {"title": "", "year": 2020},
+    {"title": "", "year": 2000},
+    {"title": "", "year": 0},
+    {"title": "", "year": 0},
+    {"title": "", "year": 0}
+  ],
+  "discovery": [
+    {"title": "", "year": 0},
+    {"title": "", "year": 0},
+    {"title": "", "year": 0},
+    {"title": "", "year": 0},
+    {"title": "", "year": 0}
   ]
 }
 
-Rules: exactly 5 picks, slots 1–5, one director per film, real released films only. Pick fields are title and year only — no reasons.
+Rules: exactly 5 entries in mainstream and 5 in discovery; real released films only; title and year fields only.
 ${promptExtra.trim() ? `\n\nAdditional instruction:\n${promptExtra.trim()}` : ""}`;
 }
 
-function parseFivePickResponse(raw: Record<string, unknown>): SingleTrackLLMResult {
-  const picksIn = Array.isArray(raw.picks) ? raw.picks : [];
-  const picks: AIRecommendationResult[] = picksIn
-    .map((p: unknown) => {
-      const o = p as Record<string, unknown>;
-      const slot = typeof o.slot === "number" ? o.slot : parseInt(String(o.slot || ""), 10);
-      const title = String(o.title || "").trim();
-      const idx = Number.isFinite(slot) && slot >= 1 && slot <= TARGET_RESOLVED ? slot - 1 : -1;
-      return {
-        title,
-        year: parseYearField(o.year),
-        reason: "",
-        tag: idx >= 0 ? `Slot ${slot}` : undefined,
-      };
-    })
-    .filter((p) => p.title);
-
-  picks.sort((a, b) => {
-    const sa = parseInt(String(a.tag?.replace(/\D/g, "") || "99"), 10);
-    const sb = parseInt(String(b.tag?.replace(/\D/g, "") || "99"), 10);
-    return sa - sb;
-  });
-
-  const summary = String(raw.line_summary || "").trim();
+function parseTitleYearRow(o: Record<string, unknown>): AIRecommendationResult | null {
+  const title = String(o.title || "").trim();
+  if (!title) return null;
   return {
-    picks,
-    line_what_they_want: summary,
-    line_what_they_avoid: "",
+    title,
+    year: parseYearField(o.year),
+    reason: "",
   };
 }
 
-async function generateSingleRowPicks(
+function parseDualBucketResponse(raw: Record<string, unknown>): DualBucketLLMResult {
+  const mainstreamIn = Array.isArray(raw.mainstream) ? raw.mainstream : [];
+  const discoveryIn = Array.isArray(raw.discovery) ? raw.discovery : [];
+  const mainstream: AIRecommendationResult[] = mainstreamIn
+    .map((p: unknown) => parseTitleYearRow(p as Record<string, unknown>))
+    .filter((x): x is AIRecommendationResult => !!x)
+    .slice(0, 5)
+    .map((p) => ({ ...p, bucket: "mainstream" as const }));
+  const discovery: AIRecommendationResult[] = discoveryIn
+    .map((p: unknown) => parseTitleYearRow(p as Record<string, unknown>))
+    .filter((x): x is AIRecommendationResult => !!x)
+    .slice(0, 5)
+    .map((p) => ({ ...p, bucket: "discovery" as const }));
+
+  const profile_line = String(raw.profile_line || "").trim();
+  return { profile_line, mainstream, discovery };
+}
+
+async function generateDualBucketPicks(
   chosenMovies: Movie[],
   rejectedMovies: Movie[],
   initialGenreFilters: string[],
@@ -354,35 +354,31 @@ async function generateSingleRowPicks(
   bannedCtx: MergedBannedContext,
   promptExtra: string,
   timingSessionId?: string
-): Promise<SingleTrackLLMResult> {
+): Promise<DualBucketLLMResult> {
   await ensureRecsLoaded();
   const tasteProfileJson = JSON.stringify(mood);
   const genreLine =
     initialGenreFilters.length > 0
       ? `Optional genre hints from the session: ${initialGenreFilters.join(", ")}.`
       : "";
-  const user = buildFivePickUserMessage(tasteProfileJson, bannedCtx.bannedTitlesPrompt, genreLine, promptExtra);
+  const user = buildDualBucketUserMessage(tasteProfileJson, bannedCtx.bannedTitlesPrompt, genreLine, promptExtra);
 
   const t0 = Date.now();
   const response = await openai.chat.completions.create({
     model: RECOMMENDATIONS_MODEL,
     messages: [
-      { role: "system", content: SINGLE_ROW_SYSTEM },
+      { role: "system", content: DUAL_BUCKET_SYSTEM },
       { role: "user", content: user },
     ],
     response_format: { type: "json_object" },
-    max_tokens: 1400,
+    max_tokens: 1200,
     temperature: 0.88,
   });
   if (timingSessionId) {
-    logRecsTiming(timingSessionId, "llm_single_row", Date.now() - t0);
+    logRecsTiming(timingSessionId, "llm_dual_bucket", Date.now() - t0);
   }
   const raw = JSON.parse(response.choices[0]?.message?.content || "{}") as Record<string, unknown>;
-  const parsed = parseFivePickResponse(raw);
-  return {
-    ...parsed,
-    picks: filterPicksAgainstBanned(parsed.picks || [], bannedCtx.bannedSet).slice(0, TARGET_RESOLVED),
-  };
+  return parseDualBucketResponse(raw);
 }
 
 function buildBannedContext(chosenMovies: Movie[], rejectedMovies: Movie[]): {
@@ -404,7 +400,7 @@ function buildBannedContext(chosenMovies: Movie[], rejectedMovies: Movie[]): {
   for (const m of rejectedMovies) addTitle(m.title);
   for (const t of OVERUSED_CANON_BANNED) addTitle(t);
 
-  const bannedTitlesPrompt = labels.slice(0, 120).join("; ");
+  const bannedTitlesPrompt = labels.join("; ");
   return { bannedSet, bannedTitlesPrompt };
 }
 
@@ -463,13 +459,6 @@ function movieFailsAnonDiversity(movie: Movie, mb: MergedBannedContext): boolean
   const p = (movie.genres[0] || "").trim().toLowerCase();
   if (p && (mb.anonPrimaryGenreCounts.get(p) ?? 0) >= ANON_PRIMARY_GENRE_OVERUSE) return true;
   return false;
-}
-
-function filterPicksAgainstBanned(
-  picks: AIRecommendationResult[],
-  bannedSet: Set<string>
-): AIRecommendationResult[] {
-  return picks.filter((p) => p.title && !bannedSet.has(normalizeTitleKey(p.title)));
 }
 
 export async function extractSessionMood(
@@ -691,6 +680,7 @@ async function resolveOneRecommendation(
       trailerUrls: urls,
       reason: "",
       auWatchAvailable: true,
+      bucket: rec.bucket,
     };
   } catch {
     return null;
@@ -705,7 +695,7 @@ async function resolvePicksToRecommendations(
 ): Promise<Recommendation[]> {
   const excludeTmdb = new Set(chosenMovies.map((m) => m.tmdbId));
 
-  const ordered = picks.slice(0, TARGET_RESOLVED);
+  const ordered = picks.slice(0, TARGET_TOTAL_RESOLVE);
   const tResolve = Date.now();
   const settled = await Promise.all(
     ordered.map((r) => resolveOneRecommendation(r, excludeTmdb, mergedBanned))
@@ -723,7 +713,7 @@ async function resolvePicksToRecommendations(
     seenTitles.add(tk);
     seenDirectors.add(dk);
     out.push(rec);
-    if (out.length >= TARGET_RESOLVED) break;
+    if (out.length >= TARGET_TOTAL_RESOLVE) break;
   }
 
   if (opts.logCluster?.sessionId) {
@@ -786,14 +776,16 @@ export async function getTastePreviewForSession(
   }
 }
 
+function dualBucketPicksOrdered(raw: DualBucketLLMResult | null): AIRecommendationResult[] {
+  if (!raw) return [];
+  return [...(raw.mainstream || []), ...(raw.discovery || [])];
+}
+
 async function finalizeRecommendationsToResponse(
   chosen: Movie[],
-  rejected: Movie[],
-  filters: string[],
-  mood: SessionMoodProfile,
   banned: MergedBannedContext,
   taste: TasteObservationResult,
-  rawFromPrefetch: SingleTrackLLMResult | null,
+  rawFromPrefetch: DualBucketLLMResult | null,
   timingSessionId: string | undefined
 ): Promise<RecommendationsResponse> {
   const finalizeStart = Date.now();
@@ -806,80 +798,33 @@ async function finalizeRecommendationsToResponse(
     console.log(`[recs-finalize] ${shortSid} row ${msg}${tail}`);
   };
 
-  let auResolvePass1Ms = 0;
-  let regenLlmMs = 0;
-  let auResolvePass2Ms = 0;
-  let regenUsed = false;
-
   const workingBanned = cloneMergedBanned(banned);
-  let picks = filterPicksAgainstBanned(rawFromPrefetch?.picks || [], workingBanned.bannedSet);
-  let rowCopy: SingleTrackLLMResult | null = rawFromPrefetch;
+  const picks = dualBucketPicksOrdered(rawFromPrefetch);
+  const rowCopy = rawFromPrefetch;
 
   const tAu1 = Date.now();
-  let recommendations = await resolvePicksToRecommendations(picks, chosen, workingBanned, {
+  const recommendations = await resolvePicksToRecommendations(picks, chosen, workingBanned, {
     logCluster: timingSessionId ? { sessionId: timingSessionId } : undefined,
   });
-  auResolvePass1Ms = Date.now() - tAu1;
-  logFinalize("au_resolve_pass1_ms", {
-    ms: auResolvePass1Ms,
+  const auResolveMs = Date.now() - tAu1;
+  logFinalize("au_resolve_ms", {
+    ms: auResolveMs,
     pick_pool: picks.length,
     resolved: recommendations.length,
   });
-
-  if (recommendations.length < TARGET_RESOLVED) {
-    regenUsed = true;
-    logFinalize("REGEN_TRIGGERED", {
-      reason: "resolved_lt_target",
-      pass1_resolved: recommendations.length,
-      target: TARGET_RESOLVED,
-    });
-    for (const p of picks) {
-      const k = normalizeTitleKey(p.title);
-      if (k) workingBanned.bannedSet.add(k);
-    }
-    const regenExtra =
-      "Prior output had too few titles that resolve with Australian streaming/rental/purchase options. Regenerate a full fresh set of 5 mood-varied picks (same slot rules). " +
-      "Every title must be AU-available.";
-
-    const tRegen = Date.now();
-    const raw = await generateSingleRowPicks(chosen, rejected, filters, mood, workingBanned, regenExtra, timingSessionId);
-    regenLlmMs = Date.now() - tRegen;
-    picks = filterPicksAgainstBanned(raw.picks || [], workingBanned.bannedSet);
-    rowCopy = raw;
-
-    const tAu2 = Date.now();
-    recommendations = await resolvePicksToRecommendations(picks, chosen, workingBanned, {
-      logCluster: timingSessionId ? { sessionId: timingSessionId } : undefined,
-    });
-    auResolvePass2Ms = Date.now() - tAu2;
-    logFinalize("au_resolve_pass2_ms", {
-      ms: auResolvePass2Ms,
-      pick_pool: picks.length,
-      resolved: recommendations.length,
-    });
-
-    if (recommendations.length < TARGET_RESOLVED) {
-      console.warn(
-        `[recs-finalize] ${shortSid ?? "?"} HARD_FAILURE insufficient_resolved after_single_regen ` +
-          `resolved=${recommendations.length} target=${TARGET_RESOLVED}`
-      );
-    }
-  }
 
   const totalFinalizeMs = Date.now() - finalizeStart;
   if (sid) {
     console.log(
       `[recs-finalize] ${shortSid} SUMMARY ` +
         `total_finalize_ms=${totalFinalizeMs} ` +
-        `au_resolve_pass1_ms=${auResolvePass1Ms} ` +
-        `regen_used=${regenUsed} ` +
-        `regen_llm_ms=${regenLlmMs} ` +
-        `au_resolve_pass2_ms=${auResolvePass2Ms} ` +
+        `au_resolve_ms=${auResolveMs} ` +
         `final_resolved_count=${recommendations.length}`
     );
   }
 
-  const patternLine = [rowCopy?.line_what_they_want, rowCopy?.line_what_they_avoid].filter(Boolean).join(" ");
+  const profileLine = (rowCopy?.profile_line || "").trim();
+  const headline = profileLine || taste.headline;
 
   return {
     recommendations,
@@ -887,8 +832,8 @@ async function finalizeRecommendationsToResponse(
       topGenres: taste.topGenres || [],
       themes: taste.themes || [],
       preferredEras: taste.preferredEras || [],
-      headline: taste.headline,
-      patternSummary: patternLine.trim() || taste.patternSummary,
+      headline,
+      patternSummary: "",
       tagline: "",
     },
   };
@@ -938,8 +883,14 @@ async function ensureRecommendationsReady(
 
     let mood: SessionMoodProfile;
     let taste: TasteObservationResult;
-    let raw: SingleTrackLLMResult | null = null;
+    let raw: DualBucketLLMResult | null = null;
     let bannedMerged: MergedBannedContext;
+
+    const emptyDualBucket = (): DualBucketLLMResult => ({
+      profile_line: "",
+      mainstream: [],
+      discovery: [],
+    });
 
     try {
       const prefetchWait = Date.now();
@@ -958,15 +909,10 @@ async function ensureRecommendationsReady(
 
       const rowWait = Date.now();
       raw = await rowPromise.catch((e) => {
-        console.error("[prefetch] single row LLM failed", e);
-        return { picks: [] as AIRecommendationResult[] };
+        console.error("[prefetch] dual bucket LLM failed", e);
+        return emptyDualBucket();
       });
       logRecsTiming(sessionId, "llm_raw_wait_row", Date.now() - rowWait);
-
-      raw = {
-        ...raw,
-        picks: filterPicksAgainstBanned(raw.picks || [], bannedMerged.bannedSet),
-      };
     } catch (e) {
       console.error("[prefetch] entry failed", e);
       const moodT0 = Date.now();
@@ -978,21 +924,12 @@ async function ensureRecommendationsReady(
       );
       patchSessionTasteMeta(sessionId, { mood, taste });
       const coldLlm = Date.now();
-      raw = await generateSingleRowPicks(chosen, rejected, filters, mood, bannedMerged, "", sessionId);
+      raw = await generateDualBucketPicks(chosen, rejected, filters, mood, bannedMerged, "", sessionId);
       logRecsTiming(sessionId, "llm_row_cold_total", Date.now() - coldLlm);
     }
 
     const finalizeT0 = Date.now();
-    const res = await finalizeRecommendationsToResponse(
-      chosen,
-      rejected,
-      filters,
-      mood,
-      bannedMerged,
-      taste,
-      raw,
-      sessionId
-    );
+    const res = await finalizeRecommendationsToResponse(chosen, bannedMerged, taste, raw, sessionId);
     logRecsTiming(sessionId, "finalize_row", Date.now() - finalizeT0);
 
     mergeRecBundleIntoCache(sessionId, anonFp, res);
@@ -1052,17 +989,19 @@ async function fallbackRecommendations(chosenMovies: Movie[]): Promise<Recommend
 
   const recs: Recommendation[] = [];
   for (const m of pool) {
-    if (recs.length >= TARGET_RESOLVED) break;
+    if (recs.length >= TARGET_TOTAL_RESOLVE) break;
     const trailerUrls = await getMovieTrailers(m.tmdbId);
     if (trailerUrls.length === 0) continue;
     const watch = await getWatchProviders(m.tmdbId, m.title, m.year);
     if (watch.providers.length === 0) continue;
+    const bucket = recs.length < 5 ? ("mainstream" as const) : ("discovery" as const);
     recs.push({
       movie: { ...m, listSource: "ai-recommendation" },
       trailerUrl: trailerUrls[0] || null,
       trailerUrls,
       reason: "",
       auWatchAvailable: true,
+      bucket,
     });
   }
 
@@ -1073,7 +1012,7 @@ async function fallbackRecommendations(chosenMovies: Movie[]): Promise<Recommend
       themes: [],
       preferredEras: [],
       headline: taste.headline,
-      patternSummary: taste.patternSummary,
+      patternSummary: "",
       tagline: "",
     },
   };
@@ -1180,6 +1119,7 @@ JSON only: {"title":"","year":2000} — title and year only, no reason field.`;
         trailerUrls: trailers,
         reason: "",
         auWatchAvailable: true,
+        bucket: "discovery",
       };
     }
   } catch {
@@ -1204,6 +1144,7 @@ async function catalogueFallbackReplacement(excludeTmdbIds: number[]): Promise<R
       trailerUrls,
       reason: "",
       auWatchAvailable: true,
+      bucket: "discovery",
     };
   }
   return null;

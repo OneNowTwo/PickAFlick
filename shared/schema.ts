@@ -185,6 +185,9 @@ export const choiceResponseSchema = z.object({
 export type ChoiceResponse = z.infer<typeof choiceResponseSchema>;
 
 // AI recommendation result
+export const recommendationBucketSchema = z.enum(["mainstream", "discovery"]);
+export type RecommendationBucket = z.infer<typeof recommendationBucketSchema>;
+
 export const recommendationSchema = z.object({
   movie: movieSchema,
   trailerUrl: z.string().nullable(),
@@ -193,6 +196,8 @@ export const recommendationSchema = z.object({
   wildcardBadge: z.string().optional(), // Set on personalised wildcard picks
   /** True when AU stream/rent/buy links exist (final picks must satisfy this). */
   auWatchAvailable: z.boolean().optional(),
+  /** Crowd pleasers vs hidden gems row (omit on legacy payloads). */
+  bucket: recommendationBucketSchema.optional(),
 });
 
 export type Recommendation = z.infer<typeof recommendationSchema>;
