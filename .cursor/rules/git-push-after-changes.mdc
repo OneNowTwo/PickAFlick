@@ -1,0 +1,16 @@
+---
+description: After code changes, commit and push without being asked
+alwaysApply: true
+---
+
+# Git: push after substantive work
+
+When you finish a coding task that changes the repo (features, fixes, config):
+
+1. **Commit** with a clear message summarising what changed and why.
+2. **Push** to `origin` on the current branch (usually `main`) immediately — do **not** wait for the user to ask.
+3. If `git push` fails (auth, network), say so and what was committed locally.
+
+**Deploy:** If the project uses auto-deploy from GitHub (e.g. Vercel/Railway), pushing *is* the deploy trigger — note that in the summary. Do not claim you ran a platform deploy unless you actually invoked their CLI or API.
+
+**Exceptions:** Skip commit/push only if the user explicitly asked for local-only changes, a draft, or “don’t push yet”.
