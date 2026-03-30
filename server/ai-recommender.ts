@@ -1046,8 +1046,9 @@ async function resolveSixSlotsWithRefills(
   let refillLlmMs = 0;
   let resolveMsTotal = 0;
   let refillRounds = 0;
+  let resolvePass = 0;
 
-  for (let round = 0; round < MAX_SLOT_REFILL_ROUNDS; round++) {
+  while (true) {
     const excludeTmdb = new Set(chosen.map((m) => m.tmdbId));
     otherLaneTmdbIds.forEach((id) => excludeTmdb.add(id));
     for (let i = 0; i < 6; i++) {
@@ -1085,8 +1086,11 @@ async function resolveSixSlotsWithRefills(
     if (logCluster) {
       const sid = logCluster.sessionId;
       const short = sid.length > 16 ? `${sid.slice(0, 8)}…` : sid;
-      console.log(`[recs-resolve] ${short} ${track} round=${round} filled=${fixed.filter(Boolean).length}`);
+      console.log(
+        `[recs-resolve] ${short} ${track} pass=${resolvePass} filled=${fixed.filter(Boolean).length}`
+      );
     }
+    resolvePass++;
 
     if (fixed.every(Boolean)) {
       return {
@@ -1095,6 +1099,10 @@ async function resolveSixSlotsWithRefills(
         refillRounds,
         resolveMsTotal,
       };
+    }
+
+    if (refillRounds >= MAX_SLOT_REFILL_ROUNDS) {
+      break;
     }
 
     for (let i = 0; i < 6; i++) {
