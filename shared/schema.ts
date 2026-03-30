@@ -97,10 +97,6 @@ export type WatchlistItem = typeof watchlist.$inferSelect;
 export const recommendationLaneSchema = z.enum(["mainstream", "movie_buff", "left_field"]);
 export type RecommendationLane = z.infer<typeof recommendationLaneSchema>;
 
-/** Which row a pick belongs to — dual-track recommendations */
-export const recommendationTrackSchema = z.enum(["mainstream", "indie"]);
-export type RecommendationTrack = z.infer<typeof recommendationTrackSchema>;
-
 // Movie schema with extended metadata for preference learning
 export const movieSchema = z.object({
   id: z.number(),
@@ -195,8 +191,6 @@ export const recommendationSchema = z.object({
   trailerUrls: z.array(z.string()).optional(), // Multiple trailer URLs for fallback
   reason: z.string(),
   wildcardBadge: z.string().optional(), // Set on personalised wildcard picks
-  /** Dual-row flow: mainstream vs acclaimed lesser-known row */
-  pickedAs: recommendationTrackSchema.optional(),
   /** True when AU stream/rent/buy links exist (final picks must satisfy this). */
   auWatchAvailable: z.boolean().optional(),
 });
@@ -219,19 +213,8 @@ const preferenceProfileSchema = z.object({
 
 // API response for final recommendations
 export const recommendationsResponseSchema = z.object({
-  /** Flat list: mainstream row first, then indie row (carousel order) */
   recommendations: z.array(recommendationSchema),
-  mainstreamRecommendations: z.array(recommendationSchema).optional(),
-  indieRecommendations: z.array(recommendationSchema).optional(),
   preferenceProfile: preferenceProfileSchema,
-  /** Per-lane copy when both tracks are cached (lane switcher) */
-  preferenceProfileByTrack: z
-    .object({
-      mainstream: preferenceProfileSchema,
-      indie: preferenceProfileSchema,
-    })
-    .optional(),
-  // True when results have been re-ranked using the user's full vote history
   hasPersonalisation: z.boolean().optional(),
   genreProfileSize: z.number().optional(),
 });

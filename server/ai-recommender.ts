@@ -1,10 +1,5 @@
 import OpenAI from "openai";
-import type {
-  Movie,
-  Recommendation,
-  RecommendationsResponse,
-  RecommendationTrack,
-} from "@shared/schema";
+import type { Movie, Recommendation, RecommendationsResponse } from "@shared/schema";
 import { searchMovieByTitle, getMovieTrailers, getMovieDetails, getWatchProviders } from "./tmdb";
 import type { AnonymousRecMemoryEntry } from "@shared/anonymous-rec-memory";
 import { anonFingerprint } from "./anon-memory-request";
@@ -33,7 +28,7 @@ const recentlyRecommendedFeelKeys: string[] = [];
 const MAX_RECENT_TRACKED = 400;
 /** Hard-ban these many last-served title keys in the LLM prompt + filter. */
 const RECENT_TITLE_BAN_WINDOW = 24;
-const TARGET_RESOLVED = 6;
+const TARGET_RESOLVED = 5;
 const ANON_PRIMARY_GENRE_OVERUSE = 4;
 
 let recsLoaded = false;
@@ -191,19 +186,16 @@ interface PrefetchPhase1 {
 }
 
 const prefetchPhase1BySession = new Map<string, Promise<PrefetchPhase1>>();
-const laneLlmBySessionIdentity = new Map<
-  string,
-  { mainstream: Promise<SingleTrackLLMResult>; indie: Promise<SingleTrackLLMResult> }
->();
+const singleRowLlmBySessionIdentity = new Map<string, Promise<SingleTrackLLMResult>>();
 
-function lanePrefetchKey(sessionId: string, anonFp: string): string {
+function rowPrefetchKey(sessionId: string, anonFp: string): string {
   return `${sessionId}\t${anonFp}`;
 }
 
-function clearLanePrefetchForSession(sessionId: string): void {
+function clearRowPrefetchForSession(sessionId: string): void {
   const prefix = `${sessionId}\t`;
-  Array.from(laneLlmBySessionIdentity.keys()).forEach((k) => {
-    if (k.startsWith(prefix)) laneLlmBySessionIdentity.delete(k);
+  Array.from(singleRowLlmBySessionIdentity.keys()).forEach((k) => {
+    if (k.startsWith(prefix)) singleRowLlmBySessionIdentity.delete(k);
   });
 }
 
@@ -242,118 +234,50 @@ function mergeRecentTitlesIntoBanned(merged: MergedBannedContext): MergedBannedC
   };
 }
 
-async function startLaneLlmPrefetchIfNeeded(
+async function startSingleRowLlmPrefetchIfNeeded(
   sessionId: string,
   clientAnonMemory: AnonymousRecMemoryEntry[],
   phase1: PrefetchPhase1
 ): Promise<void> {
   const anonFp = anonFingerprint(clientAnonMemory);
-  const key = lanePrefetchKey(sessionId, anonFp);
-  if (laneLlmBySessionIdentity.has(key)) return;
+  const key = rowPrefetchKey(sessionId, anonFp);
+  if (singleRowLlmBySessionIdentity.has(key)) return;
 
   const merged = mergeRecentTitlesIntoBanned(mergeAnonymousIntoBanned(phase1.banned, clientAnonMemory));
 
-  laneLlmBySessionIdentity.set(key, {
-    mainstream: generateSlotBasedLanePicks(
+  singleRowLlmBySessionIdentity.set(
+    key,
+    generateSingleRowPicks(
       phase1.chosen,
       phase1.rejected,
       phase1.filters,
-      "mainstream",
       phase1.mood,
       merged,
       "",
       sessionId
-    ),
-    indie: generateSlotBasedLanePicks(
-      phase1.chosen,
-      phase1.rejected,
-      phase1.filters,
-      "indie",
-      phase1.mood,
-      merged,
-      "",
-      sessionId
-    ),
-  });
+    )
+  );
 }
 
-const MAINSTREAM_SLOT_SYSTEM = `You are a film expert who recommends high-quality, engaging films that are accessible, watchable, and exciting, without being generic.
+const SINGLE_ROW_SYSTEM = `You are a sharp film curator. The user finished an A/B movie voting funnel — you see their mood JSON (tone, pacing, what they want / avoid).
 
-Based on the user's taste profile, generate 6 movie recommendations.
+Return exactly ONE row of 5 films that:
+- Strongly match that mood (every title must clearly fit the emotional signal — do not drift).
+- Feel curated and varied, not algorithmic: five different *expressions* of the same core mood (e.g. different sub-genres, pacing, geography, budget level, era mix).
+- Mix accessible and less obvious naturally: at least 2 picks should feel like discovery (less obvious), at least 1 clearly accessible/well-known enough to recommend with confidence; the others balance between.
+- Do NOT optimise for popularity, safety, or “pleasing” with famous defaults. Interesting, high-quality, mood-true beats fame.
+- Avoid obvious over-recommended / default-canon titles unless they are clearly the best mood fit; if a pick feels predictable, replace it.
+- No repeated directors across the 5 unless unavoidable.
+- Do not output five interchangeable films (same pacing, same “type”, same shelf).
+- If the set could have been drawn from the same 20 famous films, it is wrong — internally revise before answering.
 
-CRITICAL RULE:
-Each recommendation MUST come from a DIFFERENT discovery type.
-Do NOT give 6 films that feel like the same shelf.
+Ban list and “recently shown” titles in the user message are hard exclusions.
 
-Fill these EXACT slots:
+Each film must be plausibly streamable, rentable, or purchasable in Australia.
 
-1. Well-known, high-quality film (but NOT overplayed or obvious)
-2. Non-English film that is still accessible and widely loved
-3. Underrated but broadly appealing
-4. Recent film (2018+) with strong reception
-5. Tonal or pacing contrast from the others while still fitting the user's taste
-6. Slight wildcard — surprising, but still watchable and satisfying
+Output JSON ONLY. No per-film prose or reasons — only title and year per pick.`;
 
-STRICT RULES:
-
-* No repeated directors
-* Avoid overly obscure or inaccessible films
-* Avoid commonly repeated default recommendation titles
-* Avoid "film bro canon" staples unless unusually justified
-* If two picks feel too similar, replace one
-* Prioritise engaging, watchable, high-confidence picks
-* Each film must be plausibly streamable, rentable, or purchasable in Australia
-
-Return ONLY valid JSON with exactly 6 picks in order (slot 1…6), each with title and year when known.`;
-
-const INDIE_SLOT_SYSTEM = `You are a deep film obsessive focused on discovery, not popularity.
-
-Based on the user's taste profile, generate 6 movie recommendations.
-
-CRITICAL RULE:
-Each recommendation MUST come from a DIFFERENT discovery type.
-Do NOT give 6 films that feel like the same shelf.
-
-Fill these EXACT slots:
-
-1. Critically acclaimed but NOT mainstream or over-recommended
-2. Non-English standout, preferably less widely surfaced
-3. Cult / under-seen / low-popularity discovery
-4. Recent (2018+) but under-the-radar
-5. Strong stylistic or tonal outlier that still fits the taste profile
-6. Wildcard — unusual, bold, or unexpected, but still aligned with taste
-
-STRICT RULES:
-
-* No repeated directors
-* Avoid IMDb Top 250 / obvious canon / default "smart movie" picks
-* Avoid safe or generic choices
-* If a title feels commonly recommended, replace it
-* Prioritise originality, distinctiveness, and discovery over familiarity
-* Each film must be plausibly streamable, rentable, or purchasable in Australia
-
-Return ONLY valid JSON with exactly 6 picks in order (slot 1…6), each with title and year when known.`;
-
-const MAINSTREAM_SLOT_REASONS = [
-  "Slot 1 — Well-known quality, not overplayed",
-  "Slot 2 — Non-English, accessible",
-  "Slot 3 — Underrated, broadly appealing",
-  "Slot 4 — Recent (2018+), strong reception",
-  "Slot 5 — Tonal/pacing contrast, still on-taste",
-  "Slot 6 — Wildcard, surprising yet satisfying",
-] as const;
-
-const INDIE_SLOT_REASONS = [
-  "Slot 1 — Acclaimed, not mainstream",
-  "Slot 2 — Non-English standout",
-  "Slot 3 — Cult / under-seen",
-  "Slot 4 — Recent, under-the-radar",
-  "Slot 5 — Stylistic outlier, on-taste",
-  "Slot 6 — Wildcard, bold",
-] as const;
-
-function buildSlotUserMessage(
-  track: RecommendationTrack,
+function buildFivePickUserMessage(
   tasteProfileJson: string,
   bannedTitlesPrompt: string,
   genreLine: string,
@@ -364,43 +288,45 @@ ${tasteProfileJson}
 
 ${genreLine}
 
-Titles and names you must NOT output (or obvious variants of):
+Titles you must NOT output (or close variants):
 ${bannedTitlesPrompt}
+
+Fill these 5 slots — each a different EXPRESSION of the same mood (not five of the same kind of film):
+
+1. Grounded / procedural / crime or espionage-leaning (if mood allows; otherwise closest grounded thriller/drama fit)
+2. Psychological pressure or interior tension
+3. Slower or more atmospheric — still same mood, different pacing
+4. International or less obvious (non-English welcome if it fits)
+5. Wildcard — bold or surprising but still emotionally on-mood
 
 Output JSON only, this exact shape:
 {
-  "line_summary": "one short sentence describing the row",
+  "line_summary": "one short curatorial line for the row (not per-film)",
   "picks": [
     {"slot": 1, "title": "", "year": 2020},
     {"slot": 2, "title": "", "year": null},
     {"slot": 3, "title": "", "year": null},
     {"slot": 4, "title": "", "year": null},
-    {"slot": 5, "title": "", "year": null},
-    {"slot": 6, "title": "", "year": null}
+    {"slot": 5, "title": "", "year": null}
   ]
 }
 
-Rules: exactly 6 picks, slots 1–6 in order, one director per film (no director twice). Real released films only.
+Rules: exactly 5 picks, slots 1–5, one director per film, real released films only. Pick fields are title and year only — no reasons.
 ${promptExtra.trim() ? `\n\nAdditional instruction:\n${promptExtra.trim()}` : ""}`;
 }
 
-function parseSlotTrackResponse(
-  track: RecommendationTrack,
-  raw: Record<string, unknown>
-): SingleTrackLLMResult {
+function parseFivePickResponse(raw: Record<string, unknown>): SingleTrackLLMResult {
   const picksIn = Array.isArray(raw.picks) ? raw.picks : [];
-  const labels = track === "mainstream" ? MAINSTREAM_SLOT_REASONS : INDIE_SLOT_REASONS;
   const picks: AIRecommendationResult[] = picksIn
     .map((p: unknown) => {
       const o = p as Record<string, unknown>;
       const slot = typeof o.slot === "number" ? o.slot : parseInt(String(o.slot || ""), 10);
       const title = String(o.title || "").trim();
-      const idx = Number.isFinite(slot) && slot >= 1 && slot <= 6 ? slot - 1 : -1;
-      const reason = idx >= 0 ? labels[idx] : "Discovery slot";
+      const idx = Number.isFinite(slot) && slot >= 1 && slot <= TARGET_RESOLVED ? slot - 1 : -1;
       return {
         title,
         year: parseYearField(o.year),
-        reason,
+        reason: "",
         tag: idx >= 0 ? `Slot ${slot}` : undefined,
       };
     })
@@ -413,25 +339,17 @@ function parseSlotTrackResponse(
   });
 
   const summary = String(raw.line_summary || "").trim();
-  if (track === "mainstream") {
-    return {
-      picks,
-      line_what_they_want: summary,
-      line_what_they_avoid: "",
-    };
-  }
   return {
     picks,
-    line_cinema_suggested: summary,
-    line_trap_avoided: "",
+    line_what_they_want: summary,
+    line_what_they_avoid: "",
   };
 }
 
-async function generateSlotBasedLanePicks(
+async function generateSingleRowPicks(
   chosenMovies: Movie[],
   rejectedMovies: Movie[],
   initialGenreFilters: string[],
-  track: RecommendationTrack,
   mood: SessionMoodProfile,
   bannedCtx: MergedBannedContext,
   promptExtra: string,
@@ -443,25 +361,24 @@ async function generateSlotBasedLanePicks(
     initialGenreFilters.length > 0
       ? `Optional genre hints from the session: ${initialGenreFilters.join(", ")}.`
       : "";
-  const user = buildSlotUserMessage(track, tasteProfileJson, bannedCtx.bannedTitlesPrompt, genreLine, promptExtra);
-  const system = track === "mainstream" ? MAINSTREAM_SLOT_SYSTEM : INDIE_SLOT_SYSTEM;
+  const user = buildFivePickUserMessage(tasteProfileJson, bannedCtx.bannedTitlesPrompt, genreLine, promptExtra);
 
   const t0 = Date.now();
   const response = await openai.chat.completions.create({
     model: RECOMMENDATIONS_MODEL,
     messages: [
-      { role: "system", content: system },
+      { role: "system", content: SINGLE_ROW_SYSTEM },
       { role: "user", content: user },
     ],
     response_format: { type: "json_object" },
-    max_tokens: 1600,
-    temperature: track === "indie" ? 0.92 : 0.82,
+    max_tokens: 1400,
+    temperature: 0.88,
   });
   if (timingSessionId) {
-    logRecsTiming(timingSessionId, `llm_${track}_slots`, Date.now() - t0);
+    logRecsTiming(timingSessionId, "llm_single_row", Date.now() - t0);
   }
   const raw = JSON.parse(response.choices[0]?.message?.content || "{}") as Record<string, unknown>;
-  const parsed = parseSlotTrackResponse(track, raw);
+  const parsed = parseFivePickResponse(raw);
   return {
     ...parsed,
     picks: filterPicksAgainstBanned(parsed.picks || [], bannedCtx.bannedSet).slice(0, TARGET_RESOLVED),
@@ -637,16 +554,15 @@ export async function buildTasteObservation(
 }
 
 const sessionTasteMeta = new Map<string, { taste?: TasteObservationResult; mood?: SessionMoodProfile }>();
-type LaneBundle = Partial<Record<RecommendationTrack, RecommendationsResponse>>;
-const sessionLaneBundleCache = new Map<string, LaneBundle>();
-const laneInflight = new Map<string, Promise<RecommendationsResponse>>();
+const sessionRecBundleCache = new Map<string, RecommendationsResponse>();
+const recInflight = new Map<string, Promise<RecommendationsResponse>>();
 
-function laneBundleKey(sessionId: string, anonFp: string): string {
+function recBundleKey(sessionId: string, anonFp: string): string {
   return `${sessionId}::${anonFp}`;
 }
 
-function laneInflightKey(sessionId: string, track: RecommendationTrack, anonFp: string): string {
-  return `${sessionId}:${track}:${anonFp}`;
+function recInflightKey(sessionId: string, anonFp: string): string {
+  return `${sessionId}::${anonFp}`;
 }
 
 function logRecsTiming(sessionId: string, phase: string, ms: number): void {
@@ -662,16 +578,8 @@ function patchSessionTasteMeta(
   sessionTasteMeta.set(sessionId, { ...cur, ...partial });
 }
 
-function mergeLaneBundleIntoCache(
-  sessionId: string,
-  anonFp: string,
-  track: RecommendationTrack,
-  res: RecommendationsResponse
-): void {
-  const k = laneBundleKey(sessionId, anonFp);
-  const cur = sessionLaneBundleCache.get(k) ?? {};
-  cur[track] = res;
-  sessionLaneBundleCache.set(k, cur);
+function mergeRecBundleIntoCache(sessionId: string, anonFp: string, res: RecommendationsResponse): void {
+  sessionRecBundleCache.set(recBundleKey(sessionId, anonFp), res);
 }
 
 function normalizeTitleKey(title: string): string {
@@ -754,29 +662,9 @@ function moodToTasteObservation(mood: SessionMoodProfile, chosenMovies: Movie[])
   };
 }
 
-function getOtherLaneTmdbIds(sessionId: string, anonFp: string, track: RecommendationTrack): Set<number> {
-  const other: RecommendationTrack = track === "mainstream" ? "indie" : "mainstream";
-  const bundle = sessionLaneBundleCache.get(laneBundleKey(sessionId, anonFp));
-  const list = bundle?.[other]?.recommendations ?? [];
-  return new Set(list.map((r) => r.movie.tmdbId));
-}
-
-function buildCrossLaneHint(sessionId: string, anonFp: string, track: RecommendationTrack): string {
-  const bundle = sessionLaneBundleCache.get(laneBundleKey(sessionId, anonFp));
-  if (track === "indie") {
-    const m = bundle?.mainstream?.recommendations ?? [];
-    if (!m.length) return "";
-    return `Mainstream row for this session already: ${m.map((r) => `"${r.movie.title}"`).join("; ")}. Left-field must be different titles — not overlapping or safer parallels.`;
-  }
-  const i = bundle?.indie?.recommendations ?? [];
-  if (!i.length) return "";
-  return `Left-field row for this session already: ${i.map((r) => `"${r.movie.title}"`).join("; ")}. Mainstream must not repeat those titles.`;
-}
-
 async function resolveOneRecommendation(
   rec: AIRecommendationResult,
   excludeTmdbIds: Set<number>,
-  pickedAs: RecommendationTrack,
   mergedBanned?: MergedBannedContext | null
 ): Promise<Recommendation | null> {
   try {
@@ -796,15 +684,12 @@ async function resolveOneRecommendation(
     if (mergedBanned && movieFailsAnonDiversity(movieDetails, mergedBanned)) return null;
 
     movieDetails.listSource = "ai-recommendation";
-    const reason =
-      rec.tag && rec.reason ? `${rec.reason} · ${rec.tag}` : rec.reason || rec.tag || "";
     const urls = Array.isArray(tmdbTrailers) ? tmdbTrailers : [];
     return {
       movie: movieDetails,
       trailerUrl: urls[0] ?? null,
       trailerUrls: urls,
-      reason,
-      pickedAs,
+      reason: "",
       auWatchAvailable: true,
     };
   } catch {
@@ -815,22 +700,15 @@ async function resolveOneRecommendation(
 async function resolvePicksToRecommendations(
   picks: AIRecommendationResult[],
   chosenMovies: Movie[],
-  track: RecommendationTrack,
   mergedBanned: MergedBannedContext | null,
-  opts: {
-    otherLaneTmdbIds?: Set<number>;
-    logCluster?: { sessionId: string };
-  } = {}
+  opts: { logCluster?: { sessionId: string } } = {}
 ): Promise<Recommendation[]> {
   const excludeTmdb = new Set(chosenMovies.map((m) => m.tmdbId));
-  if (opts.otherLaneTmdbIds) {
-    opts.otherLaneTmdbIds.forEach((id) => excludeTmdb.add(id));
-  }
 
   const ordered = picks.slice(0, TARGET_RESOLVED);
   const tResolve = Date.now();
   const settled = await Promise.all(
-    ordered.map((r) => resolveOneRecommendation(r, excludeTmdb, track, mergedBanned))
+    ordered.map((r) => resolveOneRecommendation(r, excludeTmdb, mergedBanned))
   );
   const resolveMs = Date.now() - tResolve;
 
@@ -852,7 +730,7 @@ async function resolvePicksToRecommendations(
     const sid = opts.logCluster.sessionId;
     const short = sid.length > 16 ? `${sid.slice(0, 8)}…` : sid;
     console.log(
-      `[recs-resolve] ${short} ${track} tmdb_au_ms=${resolveMs} ` +
+      `[recs-resolve] ${short} row tmdb_au_ms=${resolveMs} ` +
         `llm_picks=${ordered.length} resolved=${out.length}`
     );
   }
@@ -869,7 +747,7 @@ export function beginRecommendationPrefetch(sessionId: string): void {
   if (chosen.length === 0) return;
 
   if (!prefetchPhase1BySession.has(sessionId)) {
-    console.log(`[prefetch] Starting taste extraction for ${sessionId} (slot LLMs deferred until results)`);
+    console.log(`[prefetch] Starting taste extraction for ${sessionId} (row LLM deferred until results)`);
     const tMood = Date.now();
     const p1 = buildPrefetchPhase1(sessionId, chosen, rejected, filters).then((phase1) => {
       logRecsTiming(sessionId, "taste_extraction", Date.now() - tMood);
@@ -900,7 +778,7 @@ export async function getTastePreviewForSession(
   try {
     const phase1 = await p1;
     patchSessionTasteMeta(sessionId, { mood: phase1.mood, taste: phase1.taste });
-    await startLaneLlmPrefetchIfNeeded(sessionId, clientAnonMemory, phase1);
+    await startSingleRowLlmPrefetchIfNeeded(sessionId, clientAnonMemory, phase1);
     return phase1.taste;
   } catch {
     const chosen = gameSessionStorage.getChosenMovies(sessionId);
@@ -908,8 +786,7 @@ export async function getTastePreviewForSession(
   }
 }
 
-async function finalizeSingleTrackToResponse(
-  track: RecommendationTrack,
+async function finalizeRecommendationsToResponse(
   chosen: Movie[],
   rejected: Movie[],
   filters: string[],
@@ -917,9 +794,7 @@ async function finalizeSingleTrackToResponse(
   banned: MergedBannedContext,
   taste: TasteObservationResult,
   rawFromPrefetch: SingleTrackLLMResult | null,
-  timingSessionId: string | undefined,
-  laneSessionId: string,
-  anonFp: string
+  timingSessionId: string | undefined
 ): Promise<RecommendationsResponse> {
   const finalizeStart = Date.now();
   const sid = timingSessionId;
@@ -928,7 +803,7 @@ async function finalizeSingleTrackToResponse(
   const logFinalize = (msg: string, detail?: Record<string, number | string | boolean>) => {
     if (!sid) return;
     const tail = detail ? ` ${JSON.stringify(detail)}` : "";
-    console.log(`[recs-finalize] ${shortSid} ${track} ${msg}${tail}`);
+    console.log(`[recs-finalize] ${shortSid} row ${msg}${tail}`);
   };
 
   let auResolvePass1Ms = 0;
@@ -936,16 +811,12 @@ async function finalizeSingleTrackToResponse(
   let auResolvePass2Ms = 0;
   let regenUsed = false;
 
-  const otherLaneTmdbIds = getOtherLaneTmdbIds(laneSessionId, anonFp, track);
-  const crossLaneHint = buildCrossLaneHint(laneSessionId, anonFp, track);
-
   const workingBanned = cloneMergedBanned(banned);
   let picks = filterPicksAgainstBanned(rawFromPrefetch?.picks || [], workingBanned.bannedSet);
-  let trackCopy: SingleTrackLLMResult | null = rawFromPrefetch;
+  let rowCopy: SingleTrackLLMResult | null = rawFromPrefetch;
 
   const tAu1 = Date.now();
-  let recommendations = await resolvePicksToRecommendations(picks, chosen, track, workingBanned, {
-    otherLaneTmdbIds,
+  let recommendations = await resolvePicksToRecommendations(picks, chosen, workingBanned, {
     logCluster: timingSessionId ? { sessionId: timingSessionId } : undefined,
   });
   auResolvePass1Ms = Date.now() - tAu1;
@@ -967,28 +838,17 @@ async function finalizeSingleTrackToResponse(
       if (k) workingBanned.bannedSet.add(k);
     }
     const regenExtra =
-      "Prior output had too few titles that resolve with Australian streaming/rental/purchase options. Regenerate a full fresh set of 6 slot-filling picks (same slot rules). " +
-      "Every title must be AU-available. " +
-      (crossLaneHint ? crossLaneHint : "");
+      "Prior output had too few titles that resolve with Australian streaming/rental/purchase options. Regenerate a full fresh set of 5 mood-varied picks (same slot rules). " +
+      "Every title must be AU-available.";
 
     const tRegen = Date.now();
-    const raw = await generateSlotBasedLanePicks(
-      chosen,
-      rejected,
-      filters,
-      track,
-      mood,
-      workingBanned,
-      regenExtra,
-      timingSessionId
-    );
+    const raw = await generateSingleRowPicks(chosen, rejected, filters, mood, workingBanned, regenExtra, timingSessionId);
     regenLlmMs = Date.now() - tRegen;
     picks = filterPicksAgainstBanned(raw.picks || [], workingBanned.bannedSet);
-    trackCopy = raw;
+    rowCopy = raw;
 
     const tAu2 = Date.now();
-    recommendations = await resolvePicksToRecommendations(picks, chosen, track, workingBanned, {
-      otherLaneTmdbIds,
+    recommendations = await resolvePicksToRecommendations(picks, chosen, workingBanned, {
       logCluster: timingSessionId ? { sessionId: timingSessionId } : undefined,
     });
     auResolvePass2Ms = Date.now() - tAu2;
@@ -1000,7 +860,7 @@ async function finalizeSingleTrackToResponse(
 
     if (recommendations.length < TARGET_RESOLVED) {
       console.warn(
-        `[recs-finalize] ${shortSid ?? "?"} ${track} HARD_FAILURE insufficient_resolved after_single_regen ` +
+        `[recs-finalize] ${shortSid ?? "?"} HARD_FAILURE insufficient_resolved after_single_regen ` +
           `resolved=${recommendations.length} target=${TARGET_RESOLVED}`
       );
     }
@@ -1009,7 +869,7 @@ async function finalizeSingleTrackToResponse(
   const totalFinalizeMs = Date.now() - finalizeStart;
   if (sid) {
     console.log(
-      `[recs-finalize] ${shortSid} ${track} SUMMARY ` +
+      `[recs-finalize] ${shortSid} SUMMARY ` +
         `total_finalize_ms=${totalFinalizeMs} ` +
         `au_resolve_pass1_ms=${auResolvePass1Ms} ` +
         `regen_used=${regenUsed} ` +
@@ -1019,62 +879,40 @@ async function finalizeSingleTrackToResponse(
     );
   }
 
-  const mainstream = track === "mainstream" ? recommendations : [];
-  const indie = track === "indie" ? recommendations : [];
-
-  const patternFromTrack =
-    track === "mainstream"
-      ? [trackCopy?.line_what_they_want, trackCopy?.line_what_they_avoid].filter(Boolean).join(" ")
-      : [trackCopy?.line_cinema_suggested, trackCopy?.line_trap_avoided].filter(Boolean).join(" ");
+  const patternLine = [rowCopy?.line_what_they_want, rowCopy?.line_what_they_avoid].filter(Boolean).join(" ");
 
   return {
     recommendations,
-    mainstreamRecommendations: mainstream,
-    indieRecommendations: indie,
     preferenceProfile: {
       topGenres: taste.topGenres || [],
       themes: taste.themes || [],
       preferredEras: taste.preferredEras || [],
       headline: taste.headline,
-      patternSummary: patternFromTrack.trim() || taste.patternSummary,
+      patternSummary: patternLine.trim() || taste.patternSummary,
       tagline: "",
     },
   };
 }
 
-function kickWarmOtherLane(
+async function ensureRecommendationsReady(
   sessionId: string,
-  pickedTrack: RecommendationTrack,
-  anonFp: string,
-  clientAnonMemory: AnonymousRecMemoryEntry[]
-): void {
-  const other: RecommendationTrack = pickedTrack === "mainstream" ? "indie" : "mainstream";
-  if (sessionLaneBundleCache.get(laneBundleKey(sessionId, anonFp))?.[other]) return;
-  void ensureLaneReady(sessionId, other, clientAnonMemory).catch((err) =>
-    console.error("[warm-other-lane]", err)
-  );
-}
-
-async function ensureLaneReady(
-  sessionId: string,
-  track: RecommendationTrack,
   clientAnonMemory: AnonymousRecMemoryEntry[] = []
 ): Promise<RecommendationsResponse> {
   const totalStart = Date.now();
   await ensureRecsLoaded();
   const anonFp = anonFingerprint(clientAnonMemory);
 
-  const cached = sessionLaneBundleCache.get(laneBundleKey(sessionId, anonFp))?.[track];
+  const cached = sessionRecBundleCache.get(recBundleKey(sessionId, anonFp));
   if (cached) {
-    logRecsTiming(sessionId, `lane_${track}_cache_hit`, Date.now() - totalStart);
+    logRecsTiming(sessionId, "rec_row_cache_hit", Date.now() - totalStart);
     return cached;
   }
 
-  const lk = laneInflightKey(sessionId, track, anonFp);
-  const inflight = laneInflight.get(lk);
+  const lk = recInflightKey(sessionId, anonFp);
+  const inflight = recInflight.get(lk);
   if (inflight) {
     const r = await inflight;
-    logRecsTiming(sessionId, `lane_${track}_inflight_wait`, Date.now() - totalStart);
+    logRecsTiming(sessionId, "rec_row_inflight_wait", Date.now() - totalStart);
     return r;
   }
 
@@ -1084,9 +922,9 @@ async function ensureLaneReady(
     const filters = gameSessionStorage.getSessionFilters(sessionId)?.genres ?? [];
 
     if (chosen.length === 0) {
-      const r = await fallbackSingleTrack(chosen, track);
-      mergeLaneBundleIntoCache(sessionId, anonFp, track, r);
-      logRecsTiming(sessionId, `lane_${track}_total`, Date.now() - totalStart);
+      const r = await fallbackRecommendations(chosen);
+      mergeRecBundleIntoCache(sessionId, anonFp, r);
+      logRecsTiming(sessionId, "rec_row_total", Date.now() - totalStart);
       return r;
     }
 
@@ -1096,7 +934,7 @@ async function ensureLaneReady(
       prefetchPhase1BySession.set(sessionId, p1);
     }
 
-    const laneKey = lanePrefetchKey(sessionId, anonFp);
+    const rowKey = rowPrefetchKey(sessionId, anonFp);
 
     let mood: SessionMoodProfile;
     let taste: TasteObservationResult;
@@ -1110,20 +948,20 @@ async function ensureLaneReady(
       mood = phase1.mood;
       taste = phase1.taste;
       patchSessionTasteMeta(sessionId, { mood, taste });
-      await startLaneLlmPrefetchIfNeeded(sessionId, clientAnonMemory, phase1);
+      await startSingleRowLlmPrefetchIfNeeded(sessionId, clientAnonMemory, phase1);
       bannedMerged = mergeRecentTitlesIntoBanned(mergeAnonymousIntoBanned(phase1.banned, clientAnonMemory));
 
-      const lanes = laneLlmBySessionIdentity.get(laneKey);
-      if (!lanes) {
-        throw new Error("lane_llm_not_started");
+      const rowPromise = singleRowLlmBySessionIdentity.get(rowKey);
+      if (!rowPromise) {
+        throw new Error("row_llm_not_started");
       }
 
-      const laneWait = Date.now();
-      raw = await (track === "mainstream" ? lanes.mainstream : lanes.indie).catch((e) => {
-        console.error(`[prefetch] ${track} track failed`, e);
+      const rowWait = Date.now();
+      raw = await rowPromise.catch((e) => {
+        console.error("[prefetch] single row LLM failed", e);
         return { picks: [] as AIRecommendationResult[] };
       });
-      logRecsTiming(sessionId, `llm_raw_wait_${track}`, Date.now() - laneWait);
+      logRecsTiming(sessionId, "llm_raw_wait_row", Date.now() - rowWait);
 
       raw = {
         ...raw,
@@ -1140,22 +978,12 @@ async function ensureLaneReady(
       );
       patchSessionTasteMeta(sessionId, { mood, taste });
       const coldLlm = Date.now();
-      raw = await generateSlotBasedLanePicks(
-        chosen,
-        rejected,
-        filters,
-        track,
-        mood,
-        bannedMerged,
-        "",
-        sessionId
-      );
-      logRecsTiming(sessionId, `llm_${track}_cold_total`, Date.now() - coldLlm);
+      raw = await generateSingleRowPicks(chosen, rejected, filters, mood, bannedMerged, "", sessionId);
+      logRecsTiming(sessionId, "llm_row_cold_total", Date.now() - coldLlm);
     }
 
     const finalizeT0 = Date.now();
-    const res = await finalizeSingleTrackToResponse(
-      track,
+    const res = await finalizeRecommendationsToResponse(
       chosen,
       rejected,
       filters,
@@ -1163,69 +991,51 @@ async function ensureLaneReady(
       bannedMerged,
       taste,
       raw,
-      sessionId,
-      sessionId,
-      anonFp
+      sessionId
     );
-    logRecsTiming(sessionId, `finalize_${track}`, Date.now() - finalizeT0);
+    logRecsTiming(sessionId, "finalize_row", Date.now() - finalizeT0);
 
-    mergeLaneBundleIntoCache(sessionId, anonFp, track, res);
+    mergeRecBundleIntoCache(sessionId, anonFp, res);
     recordRecommendedRow(res.recommendations);
 
-    const cur = sessionLaneBundleCache.get(laneBundleKey(sessionId, anonFp));
-    if (cur?.mainstream && cur?.indie) {
-      prefetchPhase1BySession.delete(sessionId);
-      clearLanePrefetchForSession(sessionId);
-    }
+    prefetchPhase1BySession.delete(sessionId);
+    clearRowPrefetchForSession(sessionId);
 
-    logRecsTiming(sessionId, `lane_${track}_total`, Date.now() - totalStart);
+    logRecsTiming(sessionId, "rec_row_total", Date.now() - totalStart);
     return res;
   })();
 
-  laneInflight.set(lk, work);
+  recInflight.set(lk, work);
   try {
     return await work;
   } finally {
-    laneInflight.delete(lk);
+    recInflight.delete(lk);
   }
 }
 
-export async function finalizeRecommendationsForTrack(
+export async function finalizeRecommendationsForSession(
   sessionId: string,
-  track: RecommendationTrack,
   clientAnonMemory: AnonymousRecMemoryEntry[] = []
 ): Promise<RecommendationsResponse> {
   const routeStart = Date.now();
   await ensureRecsLoaded();
   const chosen = gameSessionStorage.getChosenMovies(sessionId);
   if (chosen.length === 0) {
-    return fallbackSingleTrack(chosen, track);
+    return fallbackRecommendations(chosen);
   }
 
-  const anonFp = anonFingerprint(clientAnonMemory);
-  const active = await ensureLaneReady(sessionId, track, clientAnonMemory);
-  kickWarmOtherLane(sessionId, track, anonFp, clientAnonMemory);
-
-  const bundle = sessionLaneBundleCache.get(laneBundleKey(sessionId, anonFp)) ?? {};
-  const m = bundle.mainstream;
-  const i = bundle.indie;
+  const active = await ensureRecommendationsReady(sessionId, clientAnonMemory);
 
   logRecsTiming(sessionId, "response_total", Date.now() - routeStart);
 
   return {
-    recommendations: active.recommendations,
-    mainstreamRecommendations:
-      m?.recommendations ?? (track === "mainstream" ? active.recommendations : []),
-    indieRecommendations: i?.recommendations ?? (track === "indie" ? active.recommendations : []),
-    preferenceProfile: active.preferenceProfile,
-    preferenceProfileByTrack:
-      m && i ? { mainstream: m.preferenceProfile, indie: i.preferenceProfile } : undefined,
+    ...active,
     hasPersonalisation: false,
     genreProfileSize: 0,
   };
 }
 
-async function fallbackSingleTrack(chosenMovies: Movie[], track: RecommendationTrack): Promise<RecommendationsResponse> {
+async function fallbackRecommendations(chosenMovies: Movie[]): Promise<RecommendationsResponse> {
   const taste = fallbackTaste(chosenMovies);
   const allMovies = getAllMovies();
   const pool = shuffleArray(
@@ -1251,16 +1061,13 @@ async function fallbackSingleTrack(chosenMovies: Movie[], track: RecommendationT
       movie: { ...m, listSource: "ai-recommendation" },
       trailerUrl: trailerUrls[0] || null,
       trailerUrls,
-      reason: "Sits in the same ballpark as the pattern your picks sketched.",
-      pickedAs: track,
+      reason: "",
       auWatchAvailable: true,
     });
   }
 
   return {
     recommendations: recs,
-    mainstreamRecommendations: track === "mainstream" ? recs : [],
-    indieRecommendations: track === "indie" ? recs : [],
     preferenceProfile: {
       topGenres: taste.topGenres,
       themes: [],
@@ -1292,18 +1099,10 @@ function extractTopGenres(movies: Movie[]): string[] {
     .map(([g]) => g);
 }
 
-function replacementRules(track: RecommendationTrack): string {
-  if (track === "indie") {
-    return `Less obvious: one strong, less predictable pick — not a default list title; fits funnel; Australia.`;
-  }
-  return `Mainstream: one accessible pick — avoid generic default blockbusters; fits funnel; Australia.`;
-}
-
 export async function generateReplacementRecommendation(
   chosenMovies: Movie[],
   excludeTmdbIds: number[],
   rejectedMovies: Movie[] = [],
-  track: RecommendationTrack = "mainstream",
   clientAnonMemory: AnonymousRecMemoryEntry[] = []
 ): Promise<Recommendation | null> {
   const picks = chosenMovies.map((m, i) => `R${i + 1}: "${m.title}" (${m.year}) — ${m.director || "?"}`).join("\n");
@@ -1319,19 +1118,15 @@ export async function generateReplacementRecommendation(
           .join("; ")}.`
       : "";
 
-  const baseUser = `One replacement for the ${track} list. Infer taste from the whole funnel — do not mirror one funnel title to one pick.
+  const baseUser = `One replacement pick for this user's row. Infer taste from the whole A/B funnel — do not mirror one funnel title to one pick.
 
 ${picks}${rejHints}${memoryHint}
 
 Exclude ${excludeTmdbIds.length} titles already shown.
 
-${replacementRules(track)}
+Pick one film that fits the same mood as the funnel, feels less obvious than a default list title when possible, and is streamable/rentable/buyable in Australia.
 
-The film must be streamable, rentable, or purchasable in Australia (real AU provider options).
-
-Reason: 1–2 sentences, max 35 words. Tie to overall funnel pattern. Do NOT name any funnel film.
-
-JSON only: {"title":"","year":2000,"reason":""}`;
+JSON only: {"title":"","year":2000} — title and year only, no reason field.`;
 
   const triedTitles: string[] = [];
 
@@ -1350,8 +1145,13 @@ JSON only: {"title":"","year":2000,"reason":""}`;
         max_tokens: 280,
         temperature: 0.85,
       });
-      const result: AIRecommendationResult = JSON.parse(resp.choices[0]?.message?.content || "{}");
-      if (!result.title?.trim()) continue;
+      const parsed = JSON.parse(resp.choices[0]?.message?.content || "{}") as Record<string, unknown>;
+      const result: AIRecommendationResult = {
+        title: String(parsed.title || "").trim(),
+        year: parseYearField(parsed.year),
+        reason: "",
+      };
+      if (!result.title) continue;
 
       const search = await searchMovieByTitle(result.title, result.year);
       if (!search || excludeTmdbIds.includes(search.id)) {
@@ -1378,21 +1178,17 @@ JSON only: {"title":"","year":2000,"reason":""}`;
         movie: details,
         trailerUrl: trailers[0],
         trailerUrls: trailers,
-        reason: result.reason,
-        pickedAs: track,
+        reason: "",
         auWatchAvailable: true,
       };
     }
   } catch {
     /* fall through */
   }
-  return catalogueFallbackReplacement(excludeTmdbIds, track);
+  return catalogueFallbackReplacement(excludeTmdbIds);
 }
 
-async function catalogueFallbackReplacement(
-  excludeTmdbIds: number[],
-  track: RecommendationTrack
-): Promise<Recommendation | null> {
+async function catalogueFallbackReplacement(excludeTmdbIds: number[]): Promise<Recommendation | null> {
   const eligible = shuffleArray(
     getAllMovies().filter((m) => !excludeTmdbIds.includes(m.tmdbId) && m.rating && m.rating >= 7.0)
   );
@@ -1406,8 +1202,7 @@ async function catalogueFallbackReplacement(
       movie: { ...movie, listSource: "replacement" },
       trailerUrl: trailerUrls[0],
       trailerUrls,
-      reason: "Fits the mood your rounds pointed toward.",
-      pickedAs: track,
+      reason: "",
       auWatchAvailable: true,
     };
   }

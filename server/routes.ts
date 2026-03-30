@@ -7,7 +7,7 @@ import { getMovieTrailer, getMovieTrailers, getWatchProviders } from "./tmdb";
 import { sessionStorage } from "./session-storage";
 import {
   beginRecommendationPrefetch,
-  finalizeRecommendationsForTrack,
+  finalizeRecommendationsForSession,
   getTastePreviewForSession,
   generateReplacementRecommendation,
 } from "./ai-recommender";
@@ -15,7 +15,7 @@ import { parseAnonymousRecMemoryFromRequest } from "./anon-memory-request";
 import { buildGenreProfile } from "./recommendations";
 import { storage } from "./storage";
 import type { RoundPairResponse, ChoiceResponse, RecommendationsResponse } from "@shared/schema";
-import { insertWatchlistSchema, recommendationLaneSchema, recommendationTrackSchema } from "@shared/schema";
+import { insertWatchlistSchema } from "@shared/schema";
 import { z } from "zod";
 
 const NO_CACHE_HEADERS = {
@@ -332,7 +332,7 @@ export async function registerRoutes(
     }
   });
 
-  // Taste headline + pattern (for mainstream/indie picker) — uses prefetch taste promise
+  // Taste headline + pattern — uses prefetch taste promise
   app.get("/api/session/:sessionId/taste-preview", async (req: Request, res: Response) => {
     try {
       const { sessionId } = req.params;
@@ -354,7 +354,7 @@ export async function registerRoutes(
     }
   });
 
-  // Final recommendations for chosen track (prefetch started when A/B completed)
+  // Final recommendations — single row of 5 (prefetch started when A/B completed)
   app.get("/api/session/:sessionId/recommendations", async (req: Request, res: Response) => {
     try {
       const { sessionId } = req.params;
@@ -376,16 +376,8 @@ export async function registerRoutes(
         return;
       }
 
-      const trackParsed = recommendationTrackSchema.safeParse(req.query.track);
-      if (!trackParsed.success) {
-        res.status(400).json({ error: "Missing or invalid track (mainstream or indie)" });
-        return;
-      }
-      const track = trackParsed.data;
-
-      const aiResult = await finalizeRecommendationsForTrack(
+      const aiResult = await finalizeRecommendationsForSession(
         sessionId,
-        track,
         parseAnonymousRecMemoryFromRequest(req)
       );
 
@@ -407,7 +399,7 @@ export async function registerRoutes(
   app.post("/api/session/:sessionId/replacement", async (req: Request, res: Response) => {
     try {
       const { sessionId } = req.params;
-      const { excludeTmdbIds, track: trackBody, lane: laneBody } = req.body;
+      const { excludeTmdbIds } = req.body;
 
       if (!Array.isArray(excludeTmdbIds)) {
         res.status(400).json({ error: "excludeTmdbIds must be an array" });
@@ -428,22 +420,10 @@ export async function registerRoutes(
         return;
       }
 
-      let track: "mainstream" | "indie" = "mainstream";
-      const trackParsed = recommendationTrackSchema.safeParse(trackBody);
-      if (trackParsed.success) {
-        track = trackParsed.data;
-      } else {
-        const laneParsed = recommendationLaneSchema.safeParse(laneBody);
-        if (laneParsed.success && laneParsed.data !== "mainstream") {
-          track = "indie";
-        }
-      }
-
       const replacement = await generateReplacementRecommendation(
         chosenMovies,
         excludeTmdbIds,
         rejectedMovies,
-        track,
         parseAnonymousRecMemoryFromRequest(req)
       );
       

@@ -7,7 +7,8 @@ export const anonymousRecMemoryEntrySchema = z.object({
   director: z.string().max(300).optional(),
   genres: z.array(z.string()).max(20).optional(),
   ts: z.number(),
-  lane: z.enum(["mainstream", "indie"]),
+  /** @deprecated single-lane product; ignored if present */
+  lane: z.string().optional(),
 });
 
 export const anonymousRecMemoryPayloadSchema = z.array(anonymousRecMemoryEntrySchema).max(60);

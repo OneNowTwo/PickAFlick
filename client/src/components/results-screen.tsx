@@ -2,7 +2,6 @@ import type {
   RecommendationsResponse,
   WatchProvidersResponse,
   Recommendation,
-  RecommendationTrack,
   TastePreview,
 } from "@shared/schema";
 import { Button } from "@/components/ui/button";
@@ -20,7 +19,6 @@ import {
   EyeOff,
   Share2,
   Check,
-  ArrowLeftRight,
 } from "lucide-react";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -85,13 +83,8 @@ interface ResultsScreenProps {
   recommendations: RecommendationsResponse | null;
   isLoading: boolean;
   loadingVariant?: "fullscreen" | "inline";
-  activeTrack?: RecommendationTrack;
-  onSwitchLane?: (track: RecommendationTrack) => void;
-  canSwitchLane?: boolean;
   loadError?: boolean;
   onPlayAgain: () => void;
-  /** Re-run recommendations fetch without resetting the game (e.g. slow LLM / timeout). */
-  onRetryLoad?: () => void;
   sessionId?: string | null;
   suppressTrailer?: boolean; // hide iframe when an overlay modal is open (YouTube z-index fix)
 }
@@ -100,12 +93,8 @@ export function ResultsScreen({
   recommendations,
   isLoading,
   loadingVariant = "fullscreen",
-  activeTrack = "mainstream",
-  onSwitchLane,
-  canSwitchLane = false,
   loadError = false,
   onPlayAgain,
-  onRetryLoad,
   sessionId,
   suppressTrailer = false,
 }: ResultsScreenProps) {
@@ -148,7 +137,7 @@ export function ResultsScreen({
     setAllTrailersFailed(false);
   }, [currentIndex]);
 
-  // Progress bar: quick ramp to ~92%, then slow creep to ~97% so long LLM runs don’t look frozen.
+  // Smooth progress bar while recommendations load (indeterminate feel; caps at ~92% until data arrives).
   useEffect(() => {
     if (!isLoading) {
       setLoadingProgress(0);
@@ -156,31 +145,14 @@ export function ResultsScreen({
     }
 
     const start = Date.now();
-    const fastMs = 8000;
-    const slowMs = 180_000;
+    const durationMs = 8000;
     const progressInterval = setInterval(() => {
       const elapsed = Date.now() - start;
-      let p: number;
-      if (elapsed < fastMs) {
-        p = (elapsed / fastMs) * 92;
-      } else {
-        const slowElapsed = elapsed - fastMs;
-        p = 92 + Math.min(5, (slowElapsed / slowMs) * 5);
-      }
-      setLoadingProgress(Math.min(97, p));
+      const p = Math.min(92, (elapsed / durationMs) * 100);
+      setLoadingProgress(p);
     }, 100);
 
     return () => clearInterval(progressInterval);
-  }, [isLoading]);
-
-  const [longWait, setLongWait] = useState(false);
-  useEffect(() => {
-    if (!isLoading) {
-      setLongWait(false);
-      return;
-    }
-    const t = setTimeout(() => setLongWait(true), 35_000);
-    return () => clearTimeout(t);
   }, [isLoading]);
 
   useEffect(() => {
@@ -217,12 +189,12 @@ export function ResultsScreen({
 
   useEffect(() => {
     if (isLoading || !recommendations?.recommendations?.length || user) return;
-    appendShownRecommendations(recommendations.recommendations, activeTrack);
-  }, [isLoading, recommendations, user, activeTrack]);
+    appendShownRecommendations(recommendations.recommendations);
+  }, [isLoading, recommendations, user]);
 
   // Mutation to get a replacement recommendation
   const replacementMutation = useMutation({
-    mutationFn: async (vars: { excludeTmdbIds: number[]; track: "mainstream" | "indie" }) => {
+    mutationFn: async (vars: { excludeTmdbIds: number[] }) => {
       const payload = sessionId ? getAnonMemoryPayloadForSession(sessionId) : [];
       const extra = buildAnonMemoryHeaders(payload) as Record<string, string>;
       const res = await apiRequest(
@@ -230,7 +202,6 @@ export function ResultsScreen({
         `/api/session/${sessionId}/replacement`,
         {
           excludeTmdbIds: vars.excludeTmdbIds,
-          track: vars.track,
         },
         { headers: extra }
       );
@@ -348,7 +319,6 @@ export function ResultsScreen({
     ];
     replacementMutation.mutate({
       excludeTmdbIds: allExcludedIds,
-      track: currentRec.pickedAs ?? "mainstream",
     });
     setAutoPlayTrailer(true);
   };
@@ -417,21 +387,10 @@ export function ResultsScreen({
     return (
       <div className="flex flex-col items-center gap-4 py-12 px-4 max-w-md mx-auto text-center">
         <p className="text-white/90">Couldn&apos;t load recommendations.</p>
-        <p className="text-white/50 text-sm">
-          If it timed out, the server may still be working — retry below, or start over.
-        </p>
-        <div className="flex flex-col sm:flex-row gap-3 w-full justify-center">
-          {onRetryLoad && (
-            <Button size="lg" variant="default" onClick={() => onRetryLoad()} data-testid="button-retry-recs-fetch">
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Retry loading
-            </Button>
-          )}
-          <Button size="lg" variant={onRetryLoad ? "outline" : "default"} onClick={onPlayAgain} data-testid="button-retry-recs">
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Start over
-          </Button>
-        </div>
+        <Button size="lg" onClick={onPlayAgain} data-testid="button-retry-recs">
+          <RefreshCw className="w-4 h-4 mr-2" />
+          Try again
+        </Button>
       </div>
     );
   }
@@ -464,24 +423,7 @@ export function ResultsScreen({
           </p>
         </div>
         {loadingProgressBar}
-        <p className="text-[11px] md:text-xs text-white/40">
-          {longWait
-            ? "Still generating your row — newer models can take 1–3 minutes. You can keep waiting or retry."
-            : "This usually only takes a moment."}
-        </p>
-        {longWait && onRetryLoad && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="border-white/30 text-white bg-white/5 hover:bg-white/10"
-            onClick={() => onRetryLoad()}
-            data-testid="button-retry-load-recs"
-          >
-            <RefreshCw className="w-3.5 h-3.5 mr-2" />
-            Retry loading
-          </Button>
-        )}
+        <p className="text-[11px] md:text-xs text-white/40">This usually only takes a moment.</p>
       </div>
     );
   }
@@ -503,23 +445,7 @@ export function ResultsScreen({
             </p>
           </div>
           {loadingProgressBar}
-          <p className="text-[11px] text-white/40 text-center">
-            {longWait
-              ? "Still generating your row — newer models can take 1–3 minutes. You can keep waiting or retry."
-              : "This usually only takes a moment."}
-          </p>
-          {longWait && onRetryLoad && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="border-white/30 text-white bg-white/5 hover:bg-white/10"
-              onClick={() => onRetryLoad()}
-            >
-              <RefreshCw className="w-3.5 h-3.5 mr-2" />
-              Retry loading
-            </Button>
-          )}
+          <p className="text-[11px] text-white/40 text-center">This usually only takes a moment.</p>
         </div>
       </div>
     );
@@ -547,13 +473,6 @@ export function ResultsScreen({
     preferenceProfile?.patternSummary?.trim() || preferenceProfile?.tagline?.trim();
 
   const isCurrentSeen = currentRec ? seenMovies.has(currentRec.movie.tmdbId) : false;
-  const otherTrack: RecommendationTrack = activeTrack === "mainstream" ? "indie" : "mainstream";
-  const switchLaneButtonLabel =
-    otherTrack === "indie" ? "Switch to Left Field picks" : "Switch to Mainstream picks";
-
-  const mainstreamThumbs = displayRecs.filter((r) => r.pickedAs !== "indie");
-  const indieThumbs = displayRecs.filter((r) => r.pickedAs === "indie");
-  const showSplitThumbs = mainstreamThumbs.length > 0 && indieThumbs.length > 0;
 
   const handleNext = () => {
     if (currentIndex < totalRecs - 1) {
@@ -915,85 +834,10 @@ export function ResultsScreen({
           Share
         </button>
 
-        {canSwitchLane && onSwitchLane && (
-          <button
-            type="button"
-            onClick={() => onSwitchLane(otherTrack)}
-            className={`
-              inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold
-              border backdrop-blur-md transition-all duration-200
-              border-white/20 bg-white/[0.12] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]
-              hover:scale-[1.04] hover:border-white/35 hover:bg-white/[0.18] hover:shadow-[0_0_22px_rgba(255,255,255,0.12)]
-              active:scale-[0.97] active:border-white/25 active:bg-white/[0.14]
-            `}
-            data-testid="button-switch-lane"
-          >
-            <ArrowLeftRight className="w-3.5 h-3.5 text-white shrink-0" />
-            {switchLaneButtonLabel}
-          </button>
-        )}
       </div>
 
       <div className="flex flex-col gap-4 w-full max-w-4xl mx-auto pb-2">
-        {showSplitThumbs ? (
-          [
-            { label: "Well-known picks", recs: mainstreamThumbs },
-            { label: "Acclaimed / under-the-radar", recs: indieThumbs },
-          ].map(({ label, recs }) =>
-            recs.length === 0 ? null : (
-              <div key={label}>
-                <p className="text-[11px] md:text-xs uppercase tracking-wider text-white/40 text-center mb-2">
-                  {label}
-                </p>
-                <div className="flex gap-2 w-full overflow-x-auto justify-center flex-wrap">
-                  {recs.map((rec) => {
-                    const i = displayRecs.indexOf(rec);
-                    const thumbUrl = rec.movie.posterPath
-                      ? rec.movie.posterPath.startsWith("http")
-                        ? rec.movie.posterPath
-                        : `https://image.tmdb.org/t/p/w154${rec.movie.posterPath}`
-                      : null;
-                    const isActive = i === currentIndex;
-                    const isSeenThumb = seenMovies.has(rec.movie.tmdbId);
-                    return (
-                      <div key={rec.movie.tmdbId} className="flex flex-col items-center gap-1 shrink-0">
-                        <span
-                          className={`text-sm font-bold min-w-[1.25rem] text-center ${
-                            isActive ? "text-primary" : "text-foreground/80"
-                          }`}
-                        >
-                          {i + 1}
-                        </span>
-                        <button
-                          onClick={() => {
-                            setCurrentIndex(i);
-                            setAutoPlayTrailer(true);
-                          }}
-                          className={`w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg overflow-hidden border-2 transition-all ${
-                            isActive
-                              ? "border-primary ring-2 ring-primary/30 scale-105"
-                              : "border-transparent opacity-70 hover:opacity-100"
-                          } ${isSeenThumb ? "opacity-45 grayscale" : ""}`}
-                          data-testid={`thumbnail-${i}`}
-                          type="button"
-                        >
-                          {thumbUrl ? (
-                            <img src={thumbUrl} alt={rec.movie.title} className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full bg-muted flex items-center justify-center">
-                              <Film className="w-5 h-5 text-muted-foreground" />
-                            </div>
-                          )}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )
-          )
-        ) : (
-          <div className="flex gap-2 w-full overflow-x-auto justify-center flex-wrap">
+        <div className="flex gap-2 w-full overflow-x-auto justify-center flex-wrap">
             {displayRecs.map((rec, i) => {
               const thumbUrl = rec.movie.posterPath
                 ? rec.movie.posterPath.startsWith("http")
@@ -1035,8 +879,7 @@ export function ResultsScreen({
                 </div>
               );
             })}
-          </div>
-        )}
+        </div>
       </div>
 
       {/* Watch Providers Dialog */}

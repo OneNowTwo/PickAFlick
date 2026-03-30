@@ -1,4 +1,4 @@
-import type { Recommendation, RecommendationTrack } from "@shared/schema";
+import type { Recommendation } from "@shared/schema";
 import type { AnonymousRecMemoryEntry } from "@shared/anonymous-rec-memory";
 
 const STORAGE_KEY = "pickaflick_anon_rec_shown";
@@ -17,9 +17,7 @@ function readRaw(): AnonymousRecMemoryEntry[] {
         e &&
         typeof e === "object" &&
         typeof (e as AnonymousRecMemoryEntry).title === "string" &&
-        typeof (e as AnonymousRecMemoryEntry).ts === "number" &&
-        ((e as AnonymousRecMemoryEntry).lane === "mainstream" ||
-          (e as AnonymousRecMemoryEntry).lane === "indie")
+        typeof (e as AnonymousRecMemoryEntry).ts === "number"
     );
   } catch {
     return [];
@@ -99,10 +97,7 @@ export function getAnonymousRecMemoryForRequest(): AnonymousRecMemoryEntry[] {
 }
 
 /** After results are shown, append so the next session excludes these titles/directors. */
-export function appendShownRecommendations(
-  recs: Recommendation[],
-  lane: RecommendationTrack
-): void {
+export function appendShownRecommendations(recs: Recommendation[]): void {
   if (typeof window === "undefined") return;
   const now = Date.now();
   const prev = readRaw();
@@ -120,7 +115,6 @@ export function appendShownRecommendations(
       director: r.movie.director ?? undefined,
       genres: r.movie.genres?.length ? [...r.movie.genres] : undefined,
       ts: now,
-      lane,
     });
   }
   if (added.length === 0) return;
