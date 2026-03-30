@@ -354,7 +354,7 @@ export async function registerRoutes(
     }
   });
 
-  // Final recommendations — 10 picks (5 mainstream + 5 discovery), prefetch when A/B completes
+  // Final recommendations — 10 picks (single row), prefetch when A/B completes
   app.get("/api/session/:sessionId/recommendations", async (req: Request, res: Response) => {
     try {
       const { sessionId } = req.params;

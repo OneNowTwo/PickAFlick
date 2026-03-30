@@ -473,10 +473,6 @@ export function ResultsScreen({
   const patternSummary =
     preferenceProfile?.patternSummary?.trim() || preferenceProfile?.tagline?.trim();
   const profileOnly = !patternSummary;
-  const mainstreamRecs = displayRecs.filter((r) => r.bucket === "mainstream");
-  const discoveryRecs = displayRecs.filter((r) => r.bucket !== "mainstream");
-  const showBucketSections = mainstreamRecs.length > 0;
-
   const isCurrentSeen = currentRec ? seenMovies.has(currentRec.movie.tmdbId) : false;
 
   const handleNext = () => {
@@ -851,111 +847,50 @@ export function ResultsScreen({
 
       </div>
 
-      <div className="flex flex-col gap-5 w-full max-w-4xl mx-auto pb-2">
-        {showBucketSections
-          ? (
-              [
-                { label: "Crowd Pleasers", recs: mainstreamRecs },
-                { label: "Hidden Gems", recs: discoveryRecs },
-              ] as const
-            ).map(({ label, recs }) =>
-              recs.length === 0 ? null : (
-                <div key={label} className="flex flex-col gap-2">
-                  <p className="text-center text-xs md:text-sm font-semibold uppercase tracking-[0.12em] text-white/55">
-                    {label}
-                  </p>
-                  <div className="flex gap-2 w-full overflow-x-auto justify-center flex-wrap">
-                    {recs.map((rec) => {
-                      const i = displayRecs.indexOf(rec);
-                      const thumbUrl = rec.movie.posterPath
-                        ? rec.movie.posterPath.startsWith("http")
-                          ? rec.movie.posterPath
-                          : `https://image.tmdb.org/t/p/w154${rec.movie.posterPath}`
-                        : null;
-                      const isActive = i === currentIndex;
-                      const isSeenThumb = seenMovies.has(rec.movie.tmdbId);
-                      return (
-                        <div key={`${label}-${rec.movie.tmdbId}`} className="flex flex-col items-center gap-1 shrink-0">
-                          <span
-                            className={`text-sm font-bold min-w-[1.25rem] text-center ${
-                              isActive ? "text-primary" : "text-foreground/80"
-                            }`}
-                          >
-                            {i + 1}
-                          </span>
-                          <button
-                            onClick={() => {
-                              setCurrentIndex(i);
-                              setAutoPlayTrailer(true);
-                            }}
-                            className={`w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg overflow-hidden border-2 transition-all ${
-                              isActive
-                                ? "border-primary ring-2 ring-primary/30 scale-105"
-                                : "border-transparent opacity-70 hover:opacity-100"
-                            } ${isSeenThumb ? "opacity-45 grayscale" : ""}`}
-                            data-testid={`thumbnail-${i}`}
-                            type="button"
-                          >
-                            {thumbUrl ? (
-                              <img src={thumbUrl} alt={rec.movie.title} className="w-full h-full object-cover" />
-                            ) : (
-                              <div className="w-full h-full bg-muted flex items-center justify-center">
-                                <Film className="w-5 h-5 text-muted-foreground" />
-                              </div>
-                            )}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )
-            )
-          : (
-              <div className="flex gap-2 w-full overflow-x-auto justify-center flex-wrap">
-                {displayRecs.map((rec, i) => {
-                  const thumbUrl = rec.movie.posterPath
-                    ? rec.movie.posterPath.startsWith("http")
-                      ? rec.movie.posterPath
-                      : `https://image.tmdb.org/t/p/w154${rec.movie.posterPath}`
-                    : null;
-                  const isActive = i === currentIndex;
-                  const isSeenThumb = seenMovies.has(rec.movie.tmdbId);
-                  return (
-                    <div key={rec.movie.tmdbId} className="flex flex-col items-center gap-1 shrink-0">
-                      <span
-                        className={`text-sm font-bold min-w-[1.25rem] text-center ${
-                          isActive ? "text-primary" : "text-foreground/80"
-                        }`}
-                      >
-                        {i + 1}
-                      </span>
-                      <button
-                        onClick={() => {
-                          setCurrentIndex(i);
-                          setAutoPlayTrailer(true);
-                        }}
-                        className={`w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg overflow-hidden border-2 transition-all ${
-                          isActive
-                            ? "border-primary ring-2 ring-primary/30 scale-105"
-                            : "border-transparent opacity-70 hover:opacity-100"
-                        } ${isSeenThumb ? "opacity-45 grayscale" : ""}`}
-                        data-testid={`thumbnail-${i}`}
-                        type="button"
-                      >
-                        {thumbUrl ? (
-                          <img src={thumbUrl} alt={rec.movie.title} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full bg-muted flex items-center justify-center">
-                            <Film className="w-5 h-5 text-muted-foreground" />
-                          </div>
-                        )}
-                      </button>
+      <div className="flex flex-col gap-2 w-full max-w-5xl mx-auto pb-2">
+        <div className="flex gap-2 w-full overflow-x-auto justify-center flex-wrap md:flex-nowrap">
+          {displayRecs.map((rec, i) => {
+            const thumbUrl = rec.movie.posterPath
+              ? rec.movie.posterPath.startsWith("http")
+                ? rec.movie.posterPath
+                : `https://image.tmdb.org/t/p/w154${rec.movie.posterPath}`
+              : null;
+            const isActive = i === currentIndex;
+            const isSeenThumb = seenMovies.has(rec.movie.tmdbId);
+            return (
+              <div key={rec.movie.tmdbId} className="flex flex-col items-center gap-1 shrink-0">
+                <span
+                  className={`text-sm font-bold min-w-[1.25rem] text-center ${
+                    isActive ? "text-primary" : "text-foreground/80"
+                  }`}
+                >
+                  {i + 1}
+                </span>
+                <button
+                  onClick={() => {
+                    setCurrentIndex(i);
+                    setAutoPlayTrailer(true);
+                  }}
+                  className={`w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg overflow-hidden border-2 transition-all ${
+                    isActive
+                      ? "border-primary ring-2 ring-primary/30 scale-105"
+                      : "border-transparent opacity-70 hover:opacity-100"
+                  } ${isSeenThumb ? "opacity-45 grayscale" : ""}`}
+                  data-testid={`thumbnail-${i}`}
+                  type="button"
+                >
+                  {thumbUrl ? (
+                    <img src={thumbUrl} alt={rec.movie.title} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-muted flex items-center justify-center">
+                      <Film className="w-5 h-5 text-muted-foreground" />
                     </div>
-                  );
-                })}
+                  )}
+                </button>
               </div>
-            )}
+            );
+          })}
+        </div>
       </div>
 
       {/* Watch Providers Dialog */}

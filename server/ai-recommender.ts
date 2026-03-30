@@ -17,7 +17,7 @@ const openai = new OpenAI({
 
 /** Mood extraction only — capable model. */
 const RECOMMENDATIONS_MODEL = process.env.OPENAI_RECOMMENDATIONS_MODEL ?? "gpt-4o";
-/** 10-pick recommendation row (5 mainstream + 5 discovery). */
+/** 10-pick single-row recommendation LLM. */
 const REC_ROW_MODEL = process.env.OPENAI_REC_ROW_MODEL ?? "gpt-4o-mini";
 
 const recentlyRecommendedTitles: string[] = [];
@@ -29,7 +29,6 @@ const recentlyRecommendedTones: string[] = [];
 const recentlyRecommendedPrestige: string[] = [];
 const recentlyRecommendedFeelKeys: string[] = [];
 const MAX_RECENT_TRACKED = 400;
-/** 5 mainstream + 5 discovery after TMDB resolve. */
 const TARGET_TOTAL_RESOLVE = 10;
 
 let recsLoaded = false;
@@ -111,20 +110,16 @@ export interface TasteObservationResult {
   preferredEras: string[];
 }
 
-type PickBucket = "mainstream" | "discovery";
-
 interface AIRecommendationResult {
   title: string;
   year?: number;
   reason: string;
   tag?: string;
-  bucket?: PickBucket;
 }
 
 interface RowLLMResult {
   profile_line: string;
-  mainstream: AIRecommendationResult[];
-  discovery: AIRecommendationResult[];
+  picks: AIRecommendationResult[];
 }
 
 interface PrefetchPhase1 {
@@ -192,7 +187,11 @@ async function startSingleRowLlmPrefetchIfNeeded(
   );
 }
 
-const TEN_PICK_SYSTEM = `You are a film curator. You will receive a mood profile extracted from a user's A/B voting session. Your job is to recommend 10 films that match that mood — 5 well-known, 5 genuinely lesser-known. Be specific, varied, and surprising. Do not play it safe.`;
+const TEN_PICK_SYSTEM = `You are a world-class film curator with deep knowledge of cinema across all eras, countries, budgets, and movements — Hollywood, independent American cinema, A24, European art house, Cannes and Venice winners, Korean cinema, Japanese cinema, South American cinema, Iranian cinema, British kitchen sink, Scandinavian noir, Hong Kong action, documentary-style realism, and beyond.
+
+A user has completed a mood-based A/B voting session. You will receive their mood profile. Your job is to recommend exactly 10 films that match that mood — drawing from the full breadth of world cinema, not just the obvious English-language titles.
+
+Be bold. Be specific. Do not default to the same 20 films everyone recommends. If the set could appear on a mainstream "best of" list without surprises, it is wrong — revise it.`;
 
 function buildTenPickUserMessage(
   moodProfileJson: string,
@@ -200,30 +199,36 @@ function buildTenPickUserMessage(
   genreLine: string,
   promptExtra: string
 ): string {
-  return `Mood profile: ${moodProfileJson}
+  const genreBlock = genreLine.trim() ? `${genreLine}\n\n` : "";
+  return `Mood profile (source of truth):
+${moodProfileJson}
 
-${genreLine}
+${genreBlock}Return exactly 10 film recommendations that match this mood.
 
-Rules:
-- Return exactly 10 films: 5 "mainstream" (widely seen, recognisable) and 5 "discovery" (genuinely less known, TMDb vote count likely under 300k, still high quality)
-- Every film must clearly match the mood profile
+Diversity requirements — ALL must be met:
+- No more than 4 films in English as original language
+- At least 2 films from outside the US and UK
+- Span at least 4 different decades
 - No two films from the same director
-- Span at least 3 different decades across the 10
-- No sequels or franchise entries unless the franchise itself is a strong mood match
-- Do not suggest any of these titles (user already saw them): ${abTitlesBanLine}
-- Vary sub-genre, geography, pacing across the 10 — do not give 10 variations of the same film
+- No two films of the same sub-genre or setting
+- At least 1 film from the following each: pre-1990, 1990s, 2000s, post-2010
+- Mix of budget levels — not all prestige productions
+- No sequels, no franchise entries
+
+Do not suggest any of these titles (user already voted on them):
+${abTitlesBanLine}
+
+Think broadly: consider A24, Cannes/Venice/Berlin winners and nominees, Korean New Wave, Japanese genre cinema, South American magical realism or thriller, Scandinavian crime, underseen British films, documentary-style narratives, debut features that punched above their weight.
 
 Return JSON only:
 {
-  "profile_line": "max 8 words, friend voice, describes tonight's taste",
-  "mainstream": [
+  "profile_line": "max 8 words, friend voice, no algorithm-speak",
+  "picks": [
     {"title": "", "year": 0},
     {"title": "", "year": 0},
     {"title": "", "year": 0},
     {"title": "", "year": 0},
-    {"title": "", "year": 0}
-  ],
-  "discovery": [
+    {"title": "", "year": 0},
     {"title": "", "year": 0},
     {"title": "", "year": 0},
     {"title": "", "year": 0},
@@ -231,6 +236,8 @@ Return JSON only:
     {"title": "", "year": 0}
   ]
 }
+
+Rules: real released films only, no documentaries, no shorts. Every pick must genuinely match the mood profile.
 ${promptExtra.trim() ? `\n\nAdditional instruction:\n${promptExtra.trim()}` : ""}`;
 }
 
@@ -244,20 +251,14 @@ function parseTitleYearRow(o: Record<string, unknown>): AIRecommendationResult |
   };
 }
 
-function parseDualBucketResponse(raw: Record<string, unknown>): RowLLMResult {
-  const parseBucket = (arr: unknown, max: number): AIRecommendationResult[] => {
-    if (!Array.isArray(arr)) return [];
-    return arr
-      .map((p: unknown) => parseTitleYearRow(p as Record<string, unknown>))
-      .filter((x): x is AIRecommendationResult => !!x)
-      .slice(0, max);
-  };
+function parsePicksRowResponse(raw: Record<string, unknown>): RowLLMResult {
+  const picksIn = Array.isArray(raw.picks) ? raw.picks : [];
+  const picks: AIRecommendationResult[] = picksIn
+    .map((p: unknown) => parseTitleYearRow(p as Record<string, unknown>))
+    .filter((x): x is AIRecommendationResult => !!x)
+    .slice(0, TARGET_TOTAL_RESOLVE);
   const profile_line = String(raw.profile_line || "").trim();
-  return {
-    profile_line,
-    mainstream: parseBucket(raw.mainstream, 5),
-    discovery: parseBucket(raw.discovery, 5),
-  };
+  return { profile_line, picks };
 }
 
 async function generateRowPicks(
@@ -289,7 +290,7 @@ async function generateRowPicks(
     logRecsTiming(timingSessionId, "llm_ten_pick_row", Date.now() - t0);
   }
   const raw = JSON.parse(response.choices[0]?.message?.content || "{}") as Record<string, unknown>;
-  return parseDualBucketResponse(raw);
+  return parsePicksRowResponse(raw);
 }
 
 export async function extractSessionMood(
@@ -512,15 +513,13 @@ async function resolveOneRecommendation(
 
     movieDetails.listSource = "ai-recommendation";
     const urls = Array.isArray(tmdbTrailers) ? tmdbTrailers : [];
-    const out: Recommendation = {
+    return {
       movie: movieDetails,
       trailerUrl: urls[0] ?? null,
       trailerUrls: urls,
       reason: "",
       auWatchAvailable: true,
     };
-    if (rec.bucket) out.bucket = rec.bucket;
-    return out;
   } catch {
     return null;
   }
@@ -613,14 +612,8 @@ export async function getTastePreviewForSession(
 }
 
 function rowPicksFromRaw(raw: RowLLMResult | null): AIRecommendationResult[] {
-  if (!raw) return [];
-  const mainstream = (raw.mainstream ?? [])
-    .map((p) => ({ ...p, bucket: "mainstream" as const }))
-    .slice(0, 5);
-  const discovery = (raw.discovery ?? [])
-    .map((p) => ({ ...p, bucket: "discovery" as const }))
-    .slice(0, 5);
-  return [...mainstream, ...discovery].slice(0, TARGET_TOTAL_RESOLVE);
+  if (!raw?.picks?.length) return [];
+  return raw.picks.slice(0, TARGET_TOTAL_RESOLVE);
 }
 
 async function finalizeRecommendationsToResponse(
@@ -727,8 +720,7 @@ async function ensureRecommendationsReady(
 
     const emptyRow = (): RowLLMResult => ({
       profile_line: "",
-      mainstream: [],
-      discovery: [],
+      picks: [],
     });
 
     try {
@@ -830,14 +822,12 @@ async function fallbackRecommendations(chosenMovies: Movie[]): Promise<Recommend
     if (trailerUrls.length === 0) continue;
     const watch = await getWatchProviders(m.tmdbId, m.title, m.year);
     if (watch.providers.length === 0) continue;
-    const bucket: PickBucket = recs.length < 5 ? "mainstream" : "discovery";
     recs.push({
       movie: { ...m, listSource: "ai-recommendation" },
       trailerUrl: trailerUrls[0] || null,
       trailerUrls,
       reason: "",
       auWatchAvailable: true,
-      bucket,
     });
   }
 
