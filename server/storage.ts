@@ -5,6 +5,17 @@ import { eq, and, desc } from "drizzle-orm";
 /** Bump when adding new IMDb/editorial lists - invalidates old cache so catalogue rebuilds on deploy */
 const CATALOGUE_CACHE_KEY = "catalogue_v8";
 
+export interface RecentRecommendationBundle {
+  titles: string[];
+  fingerprints: string[];
+  directors: string[];
+  displayTitles: string[];
+  flavourClusters: string[];
+  toneClusters: string[];
+  prestigeCanonClusters: string[];
+  feelKeys: string[];
+}
+
 export interface IStorage {
   getWatchlist(sessionId: string): Promise<WatchlistItem[]>;
   addToWatchlist(item: InsertWatchlistItem & { sessionId: string }): Promise<WatchlistItem>;
@@ -21,16 +32,8 @@ export interface IStorage {
   getRecentRecommendations(): Promise<string[]>;
   saveRecentRecommendations(titles: string[]): Promise<void>;
   /** Titles + metadata fingerprints for local freshness scoring (aligned indices per served film). */
-  getRecentRecommendationBundles(): Promise<{
-    titles: string[];
-    fingerprints: string[];
-    directors: string[];
-  }>;
-  saveRecentRecommendationBundles(bundles: {
-    titles: string[];
-    fingerprints: string[];
-    directors: string[];
-  }): Promise<void>;
+  getRecentRecommendationBundles(): Promise<RecentRecommendationBundle>;
+  saveRecentRecommendationBundles(bundles: RecentRecommendationBundle): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -151,38 +154,42 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getRecentRecommendationBundles(): Promise<{
-    titles: string[];
-    fingerprints: string[];
-    directors: string[];
-  }> {
+  async getRecentRecommendationBundles(): Promise<RecentRecommendationBundle> {
+    const empty = (): RecentRecommendationBundle => ({
+      titles: [],
+      fingerprints: [],
+      directors: [],
+      displayTitles: [],
+      flavourClusters: [],
+      toneClusters: [],
+      prestigeCanonClusters: [],
+      feelKeys: [],
+    });
     try {
       const [row] = await db.select().from(movieCatalogueCache)
         .where(eq(movieCatalogueCache.cacheKey, "recent_recs_v2"));
       if (row?.movies) {
-        const p = JSON.parse(row.movies) as {
-          titles?: string[];
-          fingerprints?: string[];
-          directors?: string[];
-        };
+        const p = JSON.parse(row.movies) as Partial<RecentRecommendationBundle>;
+        const titles = Array.isArray(p.titles) ? p.titles : [];
         return {
-          titles: Array.isArray(p.titles) ? p.titles : [],
+          titles,
           fingerprints: Array.isArray(p.fingerprints) ? p.fingerprints : [],
           directors: Array.isArray(p.directors) ? p.directors : [],
+          displayTitles: Array.isArray(p.displayTitles) ? p.displayTitles : [],
+          flavourClusters: Array.isArray(p.flavourClusters) ? p.flavourClusters : [],
+          toneClusters: Array.isArray(p.toneClusters) ? p.toneClusters : [],
+          prestigeCanonClusters: Array.isArray(p.prestigeCanonClusters) ? p.prestigeCanonClusters : [],
+          feelKeys: Array.isArray(p.feelKeys) ? p.feelKeys : [],
         };
       }
     } catch {
       /* fall through */
     }
     const titles = await this.getRecentRecommendations();
-    return { titles, fingerprints: [], directors: [] };
+    return { ...empty(), titles };
   }
 
-  async saveRecentRecommendationBundles(bundles: {
-    titles: string[];
-    fingerprints: string[];
-    directors: string[];
-  }): Promise<void> {
+  async saveRecentRecommendationBundles(bundles: RecentRecommendationBundle): Promise<void> {
     const payload = JSON.stringify(bundles);
     try {
       const existing = await db.select().from(movieCatalogueCache)

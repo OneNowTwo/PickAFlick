@@ -4,6 +4,8 @@ import {
   decadeCluster,
   toneCluster,
   isLikelyTopListObvious,
+  prestigeCanonCluster,
+  overallFeelKey,
 } from "./rec-cluster-diversity";
 
 const RATING_FLOOR = 5.85;
@@ -14,9 +16,18 @@ const MAX_SAME_LANG_BUCKET = 4;
 
 const W_LLM_ORDER = 14;
 const W_SESSION_FIT = 92;
-const PEN_RECENT_TITLE = 420;
-const PEN_RECENT_FP = 130;
-const PEN_RECENT_DIR = 160;
+
+const PEN_RECENT_TITLE = 520;
+const PEN_RECENT_FP = 340;
+const PEN_RECENT_DIR = 280;
+const PEN_RECENT_SUBGENRE = 220;
+const PEN_LAST_ROW_DOM_SUBGENRE = 560;
+const PEN_RECENT_TONE = 180;
+const PEN_LAST_ROW_DOM_TONE = 520;
+const PEN_RECENT_PRESTIGE = 160;
+const PEN_LAST_ROW_DOM_PRESTIGE = 460;
+const PEN_RECENT_FEEL = 260;
+const PEN_LAST_ROW_DOM_FEEL = 540;
 const PEN_CANON_TITLE = 220;
 const PEN_PRESTIGE_KW = 35;
 const PEN_ROW_FLAVOUR = 100;
@@ -32,6 +43,17 @@ export interface LocalSelectorContext {
   recentTitleKeys: Set<string>;
   recentFingerprints: Set<string>;
   recentDirectorKeys: Set<string>;
+  /** Subgenre / texture clusters seen in recent rows */
+  recentFlavourKeys: Set<string>;
+  recentToneKeys: Set<string>;
+  recentPrestigeKeys: Set<string>;
+  /** Tonal delivery × decade — “overall feel” vs recent rows */
+  recentFeelKeys: Set<string>;
+  /** Dominant bucket in the last full served row (≥3 of 6), if any */
+  lastRowDominantFlavour: string | null;
+  lastRowDominantTone: string | null;
+  lastRowDominantPrestige: string | null;
+  lastRowDominantFeel: string | null;
   canonNormalizedTitles: Set<string>;
   target: number;
 }
@@ -155,6 +177,27 @@ function noveltyPenalty(movie: Movie, ctx: LocalSelectorContext): number {
   if (ctx.recentFingerprints.has(fp)) p += PEN_RECENT_FP;
   const dk = directorNorm(movie);
   if (ctx.recentDirectorKeys.has(dk)) p += PEN_RECENT_DIR;
+
+  const flav = flavourCluster(movie);
+  if (ctx.recentFlavourKeys.has(flav)) p += PEN_RECENT_SUBGENRE;
+  if (ctx.lastRowDominantFlavour && flav === ctx.lastRowDominantFlavour) {
+    p += PEN_LAST_ROW_DOM_SUBGENRE;
+  }
+
+  const ton = toneCluster(movie);
+  if (ctx.recentToneKeys.has(ton)) p += PEN_RECENT_TONE;
+  if (ctx.lastRowDominantTone && ton === ctx.lastRowDominantTone) p += PEN_LAST_ROW_DOM_TONE;
+
+  const pr = prestigeCanonCluster(movie);
+  if (ctx.recentPrestigeKeys.has(pr)) p += PEN_RECENT_PRESTIGE;
+  if (ctx.lastRowDominantPrestige && pr === ctx.lastRowDominantPrestige) {
+    p += PEN_LAST_ROW_DOM_PRESTIGE;
+  }
+
+  const feel = overallFeelKey(movie);
+  if (ctx.recentFeelKeys.has(feel)) p += PEN_RECENT_FEEL;
+  if (ctx.lastRowDominantFeel && feel === ctx.lastRowDominantFeel) p += PEN_LAST_ROW_DOM_FEEL;
+
   if (ctx.canonNormalizedTitles.has(tk)) p += PEN_CANON_TITLE;
   p += prestigeKeywordPenalty(movie);
   return p;
@@ -174,8 +217,10 @@ function totalBaseScore(
 }
 
 /**
- * One LLM-ordered candidate pool → dedupe → quality floor → greedy max-gain selection
- * using session fit, recent novelty, in-row diversity, light quality.
+ * One LLM-ordered candidate pool → dedupe → quality floor → greedy max-gain selection.
+ * Freshness vs recently served rows is first-class: titles, directors, metadata fingerprints,
+ * subgenre (flavour), prestige/canon tier, tonal mode, and overall feel (tone × era) — including
+ * heavy penalties when a bucket dominated the previous row.
  */
 export function selectLocalFinalRow(
   settledInOrder: (Recommendation | null)[],

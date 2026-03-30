@@ -71,3 +71,43 @@ export function isLikelyTopListObvious(movie: Movie): boolean {
   return true;
 }
 
+/**
+ * Coarse prestige / “canon” tier for freshness vs recent rows (not duplicate title logic).
+ */
+export function prestigeCanonCluster(movie: Movie): string {
+  const blob = `${movie.overview || ""} ${(movie.keywords || []).join(" ")}`.toLowerCase();
+  if (/oscar|academy award|best picture|won best|palme d'|cannes winner|golden globe|bafta winner/i.test(blob)) {
+    return "awards_signaled";
+  }
+  if (/criterion|film festival|sundance|berlinale|venice|cannes|tiff\b/i.test(blob)) return "festival_prestige";
+  const r = movie.rating ?? 0;
+  if (r >= 8.15) return "elite_consensus";
+  if (r >= 7.65) return "strong_acclaim";
+  return "standard";
+}
+
+/**
+ * “Overall feel” distinct from subgenre (flavour): tonal delivery × era bucket.
+ * Same mood twice should still shift this where possible.
+ */
+export function overallFeelKey(movie: Movie): string {
+  return `${toneCluster(movie)}|${decadeCluster(movie.year)}`;
+}
+
+/** Mode in the last served row when ≥ minCount picks share a bucket (dominant texture). */
+export function dominantInLastRow(values: string[], rowSize = 6, minCount = 3): string | null {
+  const slice = values.slice(-rowSize).filter((v) => v.length > 0);
+  if (slice.length < minCount) return null;
+  const counts = new Map<string, number>();
+  for (const v of slice) counts.set(v, (counts.get(v) ?? 0) + 1);
+  let best: string | null = null;
+  let n = 0;
+  Array.from(counts.entries()).forEach(([k, v]) => {
+    if (v > n) {
+      n = v;
+      best = k;
+    }
+  });
+  return n >= minCount ? best : null;
+}
+

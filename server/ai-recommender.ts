@@ -14,6 +14,13 @@ import {
   selectLocalFinalRow,
   type LocalSelectorContext,
 } from "./rec-local-selector";
+import {
+  flavourCluster,
+  toneCluster,
+  prestigeCanonCluster,
+  overallFeelKey,
+  dominantInLastRow,
+} from "./rec-cluster-diversity";
 import { getAllMovies } from "./catalogue";
 import { storage } from "./storage";
 import { sessionStorage as gameSessionStorage } from "./session-storage";
@@ -29,7 +36,14 @@ const RECOMMENDATIONS_MODEL = process.env.OPENAI_RECOMMENDATIONS_MODEL ?? "gpt-4
 const recentlyRecommendedTitles: string[] = [];
 const recentlyRecommendedFingerprints: string[] = [];
 const recentlyRecommendedDirectors: string[] = [];
+const recentlyRecommendedDisplayTitles: string[] = [];
+const recentlyRecommendedFlavours: string[] = [];
+const recentlyRecommendedTones: string[] = [];
+const recentlyRecommendedPrestige: string[] = [];
+const recentlyRecommendedFeelKeys: string[] = [];
 const MAX_RECENT_TRACKED = 400;
+/** Prior picks used for soft cluster repeat penalties (several rows). */
+const RECENT_CLUSTER_SOFT_WINDOW = 36;
 const RECENT_EXCLUSIONS_PROMPT_COUNT = 64;
 const TARGET_RESOLVED = 6;
 /** Single LLM pass per lane; local selector trims to final row. */
@@ -51,6 +65,13 @@ async function ensureRecsLoaded(): Promise<void> {
       recentlyRecommendedTitles.push(tk);
       recentlyRecommendedFingerprints.push(b.fingerprints[i] ?? "");
       recentlyRecommendedDirectors.push(b.directors[i] ?? "");
+      recentlyRecommendedDisplayTitles.push(
+        (b.displayTitles[i] || b.titles[i] || "").trim() || tk
+      );
+      recentlyRecommendedFlavours.push(b.flavourClusters[i] ?? "");
+      recentlyRecommendedTones.push(b.toneClusters[i] ?? "");
+      recentlyRecommendedPrestige.push(b.prestigeCanonClusters[i] ?? "");
+      recentlyRecommendedFeelKeys.push(b.feelKeys[i] ?? "");
     }
     console.log(
       `[recent-recs] Loaded ${recentlyRecommendedTitles.length} prior picks (+ fingerprints) from DB`
@@ -68,15 +89,26 @@ function recordRecommendedRow(recs: Recommendation[]): void {
   for (const r of recs) {
     const tk = normalizeTitleKey(r.movie.title);
     if (!tk || recentlyRecommendedTitles.includes(tk)) continue;
+    const m = r.movie;
     recentlyRecommendedTitles.push(tk);
-    recentlyRecommendedFingerprints.push(metadataFingerprint(r.movie));
+    recentlyRecommendedFingerprints.push(metadataFingerprint(m));
     recentlyRecommendedDirectors.push(
-      (r.movie.director || "").toLowerCase().trim() || `__dir_${r.movie.tmdbId}`
+      (m.director || "").toLowerCase().trim() || `__dir_${m.tmdbId}`
     );
+    recentlyRecommendedDisplayTitles.push(m.title.trim() || tk);
+    recentlyRecommendedFlavours.push(flavourCluster(m));
+    recentlyRecommendedTones.push(toneCluster(m));
+    recentlyRecommendedPrestige.push(prestigeCanonCluster(m));
+    recentlyRecommendedFeelKeys.push(overallFeelKey(m));
     while (recentlyRecommendedTitles.length > MAX_RECENT_TRACKED) {
       recentlyRecommendedTitles.shift();
       recentlyRecommendedFingerprints.shift();
       recentlyRecommendedDirectors.shift();
+      recentlyRecommendedDisplayTitles.shift();
+      recentlyRecommendedFlavours.shift();
+      recentlyRecommendedTones.shift();
+      recentlyRecommendedPrestige.shift();
+      recentlyRecommendedFeelKeys.shift();
     }
   }
   storage
@@ -84,6 +116,11 @@ function recordRecommendedRow(recs: Recommendation[]): void {
       titles: [...recentlyRecommendedTitles],
       fingerprints: [...recentlyRecommendedFingerprints],
       directors: [...recentlyRecommendedDirectors],
+      displayTitles: [...recentlyRecommendedDisplayTitles],
+      flavourClusters: [...recentlyRecommendedFlavours],
+      toneClusters: [...recentlyRecommendedTones],
+      prestigeCanonClusters: [...recentlyRecommendedPrestige],
+      feelKeys: [...recentlyRecommendedFeelKeys],
     })
     .catch((err) => console.error("[recent-recs] Failed to save:", err));
 }
@@ -298,6 +335,48 @@ function mergeLaneBundleIntoCache(
 
 function normalizeTitleKey(title: string): string {
   return title.toLowerCase().trim().replace(/^the\s+/i, "");
+}
+
+function humanizeClusterLabel(s: string): string {
+  return s.replace(/\|/g, " · ").replace(/_/g, " ");
+}
+
+/** Mandatory LLM instruction: same mood twice must still change row “shape” vs last serve. */
+function buildRecentRowFreshnessPrompt(): string {
+  if (recentlyRecommendedTitles.length < TARGET_RESOLVED) return "";
+  const start = recentlyRecommendedTitles.length - TARGET_RESOLVED;
+  const titles = recentlyRecommendedDisplayTitles.slice(start);
+  const flavs = recentlyRecommendedFlavours.slice(start).filter(Boolean);
+
+  const domFl = dominantInLastRow(recentlyRecommendedFlavours, TARGET_RESOLVED, 3);
+  const domTn = dominantInLastRow(recentlyRecommendedTones, TARGET_RESOLVED, 3);
+  const domPr = dominantInLastRow(recentlyRecommendedPrestige, TARGET_RESOLVED, 3);
+  const domFe = dominantInLastRow(recentlyRecommendedFeelKeys, TARGET_RESOLVED, 3);
+
+  const list = titles.filter(Boolean).join("; ");
+  const flavSummary =
+    flavs.length > 0
+      ? `Subgenre / texture buckets in that row: ${Array.from(new Set(flavs)).map(humanizeClusterLabel).join(", ")}.`
+      : "";
+
+  const domLines = [
+    domFl &&
+      `Dominant subgenre texture in that row (do not make this the spine again): ${humanizeClusterLabel(domFl)}.`,
+    domTn &&
+      `Dominant tonal delivery in that row (rotate how intensity lands): ${humanizeClusterLabel(domTn)}.`,
+    domPr &&
+      `Dominant prestige/canon tier in that row (shift obviousness / acclaim profile): ${humanizeClusterLabel(domPr)}.`,
+    domFe && `Dominant overall-feel bucket in that row (tone × decade): ${humanizeClusterLabel(domFe)}.`,
+  ].filter(Boolean) as string[];
+
+  return (
+    `## FRESH vs LAST SERVED ROW — same priority as taste_profile\n\n` +
+    `The user may request another row with the same mood. You must still match taste_profile, but this pool must **not** replay the last row’s fingerprint: same broad mood is required (e.g. still intense thrillers), yet the **subtype, how tension is delivered, prestige tier, and era/feel** must read clearly different — not merely non-duplicate titles.\n\n` +
+    `Last row included: ${list || "(see banned_titles for overlaps)"}.\n` +
+    (flavSummary ? `${flavSummary}\n` : "") +
+    (domLines.length > 0 ? `${domLines.join("\n")}\n` : "") +
+    `\nExplicit rule: prefer directors and subgenre textures **absent or rare** in that row. Re-serving the same dominant clusters is a failure even with new titles.`
+  );
 }
 
 function parseYearField(y: unknown): number | undefined {
@@ -551,10 +630,11 @@ export async function buildTasteObservation(
 
 const REC_TRACK_IMPL_NOTES = `Implementation (obey):
 - Mood JSON was extracted in a prior step; it is taste_profile.
-- banned_titles includes funnel films, rejected films, a static overused list, and recent-session recommendations — never output them.
+- banned_titles includes funnel films, rejected films, a static overused list, and recent-session titles — never output them.
+- FRESH_VS_RECENT_ROW: If a "FRESH vs LAST SERVED ROW" section appears in the user message, it is **non-negotiable and co-equal with taste_profile**. The user may want the same mood twice in a row; you must still rotate subgenre texture, tonal delivery, prestige/canon tier, and overall feel vs that last row — not just avoid duplicate titles.
 - No duplicate directors across picks.
 - Cluster diversity: spread picks across DISTINCT subgenre textures (crime vs psychological vs sci-fi vs survival vs moral drama vs horror unease, etc.), eras, and English vs non-English voices — never six films that feel like the same "type" while still matching the mood.
-- session_variation nudges which angles to explore; it must not override taste_profile.
+- session_variation nudges which angles to explore; it must not override taste_profile or FRESH_VS_RECENT_ROW.
 - Exactly ${LLM_PICK_COUNT} objects in "picks" (buffer for lookup; product shows 6).`;
 
 function buildMainstreamTrackPrompt(
@@ -585,6 +665,7 @@ Critical rules:
 - Do NOT default to overused prestige titles
 - Avoid banned_titles completely (including close variants)
 - taste_profile is authoritative — reflect BOTH what_they_want AND what_they_avoid
+- When FRESH vs LAST SERVED ROW is present, treat it as equally authoritative: same mood, **different row fingerprint** (textures, tone, prestige tier, era feel)
 - No repeated directors
 - Do not cluster all picks into the same subgenre or tone (e.g. not six gritty crime dramas)
 - At least 3 picks should feel less overexposed than typical "top 100" movies
@@ -633,6 +714,7 @@ Critical rules:
 - Do NOT default to prestige-canon films
 - Avoid banned_titles completely
 - taste_profile is authoritative
+- When FRESH vs LAST SERVED ROW is present, match mood but **rotate** subgenre spine, tonal delivery, and prestige profile vs that row — not title-dedup only
 - At least 4 of ${LLM_PICK_COUNT} picks must be meaningfully less mainstream than typical blockbusters
 - No repeated directors
 - Prioritise originality over safety; picks must still be enjoyable, not obscure for its own sake
@@ -690,9 +772,9 @@ function parseIndieTrackResponse(raw: Record<string, unknown>): SingleTrackLLMRe
 
 function systemPromptForTrack(track: RecommendationTrack): string {
   if (track === "mainstream") {
-    return "PickAFlick MAINSTREAM. JSON only. Accessible picks; obey taste_profile, banned_titles, session_variation; varied subgenres/eras; no director repeats.";
+    return "PickAFlick MAINSTREAM. JSON only. Accessible picks; taste_profile + FRESH vs LAST SERVED ROW (when present) are co-equal; banned_titles; session_variation; varied subgenres/eras; no director repeats.";
   }
-  return "PickAFlick LEFT-FIELD. JSON only. Distinct from mainstream — festival/auteur/cult energy; max 2 top-list-obvious films; obey taste_profile, banned_titles, session_variation; tags on picks.";
+  return "PickAFlick LEFT-FIELD. JSON only. Distinct from mainstream; taste_profile + FRESH vs LAST SERVED ROW co-equal; max 2 top-list-obvious; banned_titles; session_variation; tags on picks.";
 }
 
 async function callSingleTrackLLM(
@@ -739,8 +821,10 @@ export async function generateSingleTrackPicks(
     initialGenreFilters.length > 0
       ? `\n\nOptional genre hints: ${initialGenreFilters.join(", ")}.`
       : "";
+  const freshness = buildRecentRowFreshnessPrompt();
+  const freshnessBlock = freshness ? `\n\n${freshness}` : "";
   const extra = promptExtra.trim() ? `\n\n${promptExtra.trim()}` : "";
-  const prompt = basePrompt + genreLine + extra;
+  const prompt = basePrompt + genreLine + freshnessBlock + extra;
 
   const applyBanned = (r: SingleTrackLLMResult): SingleTrackLLMResult => ({
     ...r,
@@ -831,9 +915,14 @@ async function resolvePicksToRecommendations(
   const canonNormalizedTitles = new Set(OVERUSED_CANON_BANNED.map((t) => normalizeTitleKey(t)));
   const recentTitleKeys = new Set(recentlyRecommendedTitles.slice(-160));
   const recentFingerprints = new Set(
-    recentlyRecommendedFingerprints.filter(Boolean).slice(-100)
+    recentlyRecommendedFingerprints.filter(Boolean).slice(-120)
   );
-  const recentDirectorKeys = new Set(recentlyRecommendedDirectors.filter(Boolean).slice(-100));
+  const recentDirectorKeys = new Set(recentlyRecommendedDirectors.filter(Boolean).slice(-120));
+
+  const softFl = recentlyRecommendedFlavours.slice(-RECENT_CLUSTER_SOFT_WINDOW).filter(Boolean);
+  const softTn = recentlyRecommendedTones.slice(-RECENT_CLUSTER_SOFT_WINDOW).filter(Boolean);
+  const softPr = recentlyRecommendedPrestige.slice(-RECENT_CLUSTER_SOFT_WINDOW).filter(Boolean);
+  const softFe = recentlyRecommendedFeelKeys.slice(-RECENT_CLUSTER_SOFT_WINDOW).filter(Boolean);
 
   const ctx: LocalSelectorContext = {
     track,
@@ -842,6 +931,14 @@ async function resolvePicksToRecommendations(
     recentTitleKeys,
     recentFingerprints,
     recentDirectorKeys,
+    recentFlavourKeys: new Set(softFl),
+    recentToneKeys: new Set(softTn),
+    recentPrestigeKeys: new Set(softPr),
+    recentFeelKeys: new Set(softFe),
+    lastRowDominantFlavour: dominantInLastRow(recentlyRecommendedFlavours, TARGET_RESOLVED, 3),
+    lastRowDominantTone: dominantInLastRow(recentlyRecommendedTones, TARGET_RESOLVED, 3),
+    lastRowDominantPrestige: dominantInLastRow(recentlyRecommendedPrestige, TARGET_RESOLVED, 3),
+    lastRowDominantFeel: dominantInLastRow(recentlyRecommendedFeelKeys, TARGET_RESOLVED, 3),
     canonNormalizedTitles,
     target: TARGET_RESOLVED,
   };
