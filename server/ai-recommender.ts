@@ -22,29 +22,20 @@ const openai = new OpenAI({
 
 const RECOMMENDATIONS_MODEL = process.env.OPENAI_RECOMMENDATIONS_MODEL ?? "gpt-4o";
 
-/** gpt-5 Chat Completions: use `max_completion_tokens`, not `max_tokens`. */
-function chatParamsForGpt5TitleGen(
-  params: Omit<OpenAI.Chat.ChatCompletionCreateParamsNonStreaming, "model">
-): Omit<OpenAI.Chat.ChatCompletionCreateParamsNonStreaming, "model"> {
-  const p = { ...params } as Record<string, unknown>;
-  const mt = p.max_tokens;
-  const mc = p.max_completion_tokens;
-  if (typeof mt === "number" && mc === undefined) {
-    delete p.max_tokens;
-    p.max_completion_tokens = mt;
-  }
-  return p as Omit<OpenAI.Chat.ChatCompletionCreateParamsNonStreaming, "model">;
-}
-
-/** Movie title generation (slots, refills, replacement): gpt-5 only. Mood uses RECOMMENDATIONS_MODEL. */
+/** A/B: movie title generation tries gpt-5 first; mood extraction stays on RECOMMENDATIONS_MODEL. */
 async function chatCompletionForRecTitles(
   params: Omit<OpenAI.Chat.ChatCompletionCreateParamsNonStreaming, "model">
 ): Promise<OpenAI.Chat.ChatCompletion> {
-  console.log("[recs] model=gpt-5");
-  return await openai.chat.completions.create({
-    ...chatParamsForGpt5TitleGen(params),
-    model: "gpt-5",
-  });
+  const primary = "gpt-5";
+  const fallback = RECOMMENDATIONS_MODEL;
+  try {
+    console.log("[recs] model=gpt-5");
+    return await openai.chat.completions.create({ ...params, model: primary });
+  } catch (err) {
+    console.warn("[recs] title generation fallback (gpt-5 unavailable)", err);
+    console.log(`[recs] model=${fallback}`);
+    return await openai.chat.completions.create({ ...params, model: fallback });
+  }
 }
 
 const recentlyRecommendedTitles: string[] = [];
