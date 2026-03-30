@@ -1,16 +1,30 @@
 ---
-description: After code changes, commit and push without being asked
+description: PickAFlick — always commit, push main, Railway deploy via GitHub Actions
 alwaysApply: true
 ---
 
-# Git: push after substantive work
+# PickAFlick: push and deploy (do not skip)
 
-When you finish a coding task that changes the repo (features, fixes, config):
+## After any substantive code change
 
-1. **Commit** with a clear message summarising what changed and why.
-2. **Push** to `origin` on the current branch (usually `main`) immediately — do **not** wait for the user to ask.
-3. If `git push` fails (auth, network), say so and what was committed locally.
+1. **Commit** on the current branch with a clear message.
+2. **Push to `origin main`** immediately. Do not wait for the user to say “push” or “deploy”.
+3. In your **final reply**, state explicitly:
+   - that you **pushed to `origin main`**, and
+   - that **deploy is triggered by GitHub Actions** (see below).
 
-**Deploy:** If the project uses auto-deploy from GitHub (e.g. Vercel/Railway), pushing *is* the deploy trigger — note that in the summary. Do not claim you ran a platform deploy unless you actually invoked their CLI or API.
+If `git push` fails (auth, network), say exactly what failed and that the commit exists locally.
 
-**Exceptions:** Skip commit/push only if the user explicitly asked for local-only changes, a draft, or “don’t push yet”.
+**Exceptions:** Only skip commit/push when the user explicitly asked for local-only work, a draft, or “don’t push yet”.
+
+## How deploy works for this repo (hard facts)
+
+- **Not optional hand-waving:** This project is wired for **Railway**.
+- On every **`git push` to `main`**, GitHub runs **`.github/workflows/deploy-railway.yml`** (“Deploy to Railway”).
+- That workflow installs the Railway CLI and runs **`railway up --detach`** using the repo secret **`RAILWAY_TOKEN`**.
+- **Pushing `main` is the deploy trigger.** There is no separate manual deploy step unless the user asks for something extra (e.g. fixing a failed Action).
+- Do **not** say “check your host” generically without naming **GitHub Actions → Deploy to Railway** and **Railway dashboard**.
+
+## If the user says “deploy” or “push and deploy”
+
+Same as above: **commit (if needed) → `git push origin main`**. Then remind them to confirm the **Actions** run succeeded and the app updated on **Railway**.
