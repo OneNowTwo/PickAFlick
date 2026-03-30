@@ -480,7 +480,9 @@ export function ResultsScreen({
   const headline = tasteHeadline(preferenceProfile);
   const patternSummary =
     preferenceProfile?.patternSummary?.trim() || preferenceProfile?.tagline?.trim();
-  const profileOnly = !patternSummary;
+  /** Friend-style profile line (not the big all-caps mood headline + body layout). */
+  const wantMoodLine = patternSummary?.startsWith("You're in the mood") ?? false;
+  const compactHeadline = !patternSummary || wantMoodLine;
 
   const isCurrentSeen = currentRec ? seenMovies.has(currentRec.movie.tmdbId) : false;
 
@@ -564,7 +566,7 @@ export function ResultsScreen({
       <div className="text-center max-w-xl md:max-w-3xl px-3 pt-1 pb-2">
         <h2
           className={
-            profileOnly
+            compactHeadline
               ? "text-xl md:text-2xl lg:text-3xl font-semibold text-white tracking-tight leading-snug"
               : "text-2xl md:text-4xl lg:text-[2.75rem] font-bold text-white uppercase tracking-[0.06em] leading-[1.15]"
           }

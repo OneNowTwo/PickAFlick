@@ -25,7 +25,7 @@ interface RoundPickerProps {
 // Generate personalized insight based on choices made
 function generateInsight(choiceHistory: ChoiceHistory[], round: number): string {
   if (!choiceHistory || choiceHistory.length === 0) {
-    return "Pick the one that feels right for tonight...";
+    return "Choose the movie that feels right for tonight so we can figure out what you're in the mood for.";
   }
 
   const last = choiceHistory[choiceHistory.length - 1];
@@ -619,12 +619,6 @@ export function RoundPicker({
       {/* Progress ring and insight header */}
       <div className="flex flex-col items-center gap-3">
         <ProgressRing progress={progress} round={round} size={80} />
-
-        {round === 1 && (
-          <p className="text-[11px] md:text-xs text-white/55 max-w-md text-center leading-snug px-2">
-            Choose the left or right movie each round so we can figure out what you&apos;re in the mood for.
-          </p>
-        )}
 
         <p className="text-white text-sm md:text-base font-medium max-w-xs text-center tracking-wide">
           {insight}
