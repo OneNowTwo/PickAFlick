@@ -46,8 +46,8 @@ const MAX_RECENT_TRACKED = 400;
 const RECENT_CLUSTER_SOFT_WINDOW = 36;
 const RECENT_EXCLUSIONS_PROMPT_COUNT = 64;
 const TARGET_RESOLVED = 6;
-/** Single LLM pass per lane; local selector trims to final row. */
-const LLM_PICK_COUNT = 22;
+/** Single LLM pass per lane: wide candidate pool; local selector picks final row (no extra LLM). */
+const LLM_PICK_COUNT = 24;
 const ANON_PRIMARY_GENRE_OVERUSE = 4;
 const MAX_PRE_1970 = 1;
 const MIN_PICKS_YEAR_LEQ_2010 = 2;
@@ -628,49 +628,68 @@ export async function buildTasteObservation(
   return moodToTasteObservation(mood, chosenMovies);
 }
 
-const REC_TRACK_IMPL_NOTES = `Implementation (obey):
-- Mood JSON was extracted in a prior step; it is taste_profile.
-- banned_titles includes funnel films, rejected films, a static overused list, and recent-session titles — never output them.
-- FRESH_VS_RECENT_ROW: If a "FRESH vs LAST SERVED ROW" section appears in the user message, it is **non-negotiable and co-equal with taste_profile**. The user may want the same mood twice in a row; you must still rotate subgenre texture, tonal delivery, prestige/canon tier, and overall feel vs that last row — not just avoid duplicate titles.
-- No duplicate directors across picks.
-- Cluster diversity: spread picks across DISTINCT subgenre textures (crime vs psychological vs sci-fi vs survival vs moral drama vs horror unease, etc.), eras, and English vs non-English voices — never six films that feel like the same "type" while still matching the mood.
-- session_variation nudges which angles to explore; it must not override taste_profile or FRESH_VS_RECENT_ROW.
-- Exactly ${LLM_PICK_COUNT} objects in "picks" (buffer for lookup; product shows 6).`;
+const MOOD_EXPRESSIONS_GUIDE = `MOOD EXPRESSIONS — same mood, different channels (you must span many, not ${LLM_PICK_COUNT} near-copies of one):
+
+Example when the mood is intense / thriller-adjacent / high stakes — deliberately mix entries across types such as:
+- procedural intensity (case-file, investigation momentum)
+- psychological intensity (obsession, interior mind games)
+- moral pressure / ethical trap (no clean villain)
+- survival tension (physical desperation, clock pressure)
+- slow-burn dread (unease without spectacle)
+- chaotic energy (control unravelling)
+- paranoid / conspiracy thriller
+- action-driven propulsion (momentum-led, not “prestige crime” by default)
+- genre pressure-cookers (sci-fi, horror, war) that carry intensity without defaulting to gritty urban crime
+
+For calmer or different moods (warmth, comedy, romance, wonder, grief, etc.), use the same principle: **multiple legitimate expressions of that mood** — never one mental shelf repeated with small variations.`;
+
+const ANTI_DEFAULT_SHELF_RULES = `ANTI-DEFAULT SHELF (non-negotiable):
+- You are NOT listing the “best” films for the mood. You are listing a **broad candidate pool** so another step can choose a diverse final row. Optimise for: (1) mood fit, (2) **breadth of expression**, (3) freshness vs recent rows when that section appears, (4) **non-obviousness** — not peak canon.
+- Avoid the usual fallback cluster unless taste_profile or the voting funnel **overwhelmingly** points there: English-language prestige crime / psychothriller / gritty moral drama that dominates generic “serious film” lists. Unless the session explicitly demands that narrow lane, **cap such titles at 3 in this entire pool**; put the rest in other expressions above.
+- No duplicate directors. Avoid the same **director family** / house-style cluster: multiple picks that share the same industrial playbook (e.g. same mid-budget “awards-bait crime” mould) even with different names — spread countries, eras, budgets, and storytelling modes.
+- At least **half** of the ${LLM_PICK_COUNT} titles should sit **outside** the first reflex set a film buff would name for this mood (still accessible for this track, still on-mood).`;
+
+const REC_TRACK_IMPL_NOTES = `Implementation — CANDIDATE POOL (one shot, no follow-up):
+- taste_profile is the mood contract. **Breadth within that mood** is as important as “best pick” quality — the pool must not collapse onto one prestige-safe shelf.
+- banned_titles: never output these (or close variants).
+- FRESH_VS_RECENT_ROW: when that section appears, it is **co-equal** with taste_profile; rotate expressions vs the last row, not only titles.
+- Emit exactly ${LLM_PICK_COUNT} objects in "picks". A downstream selector picks 6; your job is a **wide, legitimately varied pool**, not a ranked shortlist.
+- Each pick MUST include "tag": a short mood-expression label (which channel of the mood this title represents).
+- No duplicate directors. Spread decades and languages; do not monoculture one decade or one country.
+- session_variation is an exploratory nudge only; never override taste_profile, FRESH_VS_RECENT_ROW, or anti-default rules.`;
 
 function buildMainstreamTrackPrompt(
   tasteProfileJson: string,
   bannedTitles: string,
   variationBlock: string
 ): string {
-  const v = variationBlock.trim() || "Vary subgenres and eras within the mood; avoid a monochrome row.";
-  return `You are a film-obsessed recommender.
+  const v = variationBlock.trim() || "Explore different angles of the mood; refuse a single-texture pool.";
+  return `You are generating a WIDE CANDIDATE POOL for PickAFlick (MAINSTREAM lane), this session only.
 
-You are generating MAINSTREAM picks for THIS specific session only.
+This is NOT the final recommendation row. Another system will pick 6 films from your list. Your output must be **${LLM_PICK_COUNT} distinct, eligible titles** that **cover many different expressions of the same mood** — otherwise downstream selection has nothing to work with.
 
 Inputs:
-- taste_profile (JSON, source of truth):
+- taste_profile (JSON — mood contract):
 ${tasteProfileJson}
 
-- banned_titles:
+- banned_titles (never output these or obvious variants):
 ${bannedTitles}
 
-- session_variation (explore the mood through different textures — still obey taste_profile):
+- session_variation (optional nudge — still obey taste_profile):
 ${v}
 
-Definition of MAINSTREAM:
-- accessible, highly watchable tonight, broadly satisfying, easy-entry films
-- still tailored to taste_profile
+MAINSTREAM here means: broadly watchable, satisfying tonight, accessible — but **not** “safest prestige answers.” Breadth and surprise within the mood are required.
 
-Critical rules:
-- Do NOT default to overused prestige titles
-- Avoid banned_titles completely (including close variants)
-- taste_profile is authoritative — reflect BOTH what_they_want AND what_they_avoid
-- When FRESH vs LAST SERVED ROW is present, treat it as equally authoritative: same mood, **different row fingerprint** (textures, tone, prestige tier, era feel)
-- No repeated directors
-- Do not cluster all picks into the same subgenre or tone (e.g. not six gritty crime dramas)
-- At least 3 picks should feel less overexposed than typical "top 100" movies
-- Favour films realistically available to stream in Australia
-- Decades: at least ${MIN_PICKS_YEAR_LEQ_2010} picks with year ≤ 2010; at most ${MAX_PRE_1970} with year < 1970
+${MOOD_EXPRESSIONS_GUIDE}
+
+${ANTI_DEFAULT_SHELF_RULES}
+
+When FRESH vs LAST SERVED ROW appears below in the user message: same mood again is fine; **different expressions and shelf** than that row — co-equal with taste_profile.
+
+Operational:
+- Favour titles realistically streamable/rentable in Australia when plausible.
+- Decades: at least ${MIN_PICKS_YEAR_LEQ_2010} picks with year ≤ 2010; at most ${MAX_PRE_1970} with year < 1970.
+- No more than **3** picks in the same mood_expression "tag" family in the whole pool (force spread).
 
 ${REC_TRACK_IMPL_NOTES}
 
@@ -678,7 +697,7 @@ Output JSON only:
 {
   "line_what_they_want": "one short sentence: mood they want tonight",
   "line_what_they_avoid": "one short sentence: what they are avoiding",
-  "picks": [{"title":"","year":2020,"reason":"short, tied to taste_profile"}]
+  "picks": [{"title":"","year":2020,"tag":"mood expression label (required)","reason":"one line: how this title fits taste_profile via this expression"}]
 }`;
 }
 
@@ -687,47 +706,42 @@ function buildIndieTrackPrompt(
   bannedTitles: string,
   variationBlock: string
 ): string {
-  const v = variationBlock.trim() || "Vary textures; favour under-seen and non-obvious voices.";
-  return `You are a serious movie buff creating a LEFT-FIELD recommendation row for THIS session only.
+  const v = variationBlock.trim() || "Brave angles; under-seen voices; refuse the prestige-crime default shelf.";
+  return `You are generating a WIDE CANDIDATE POOL for PickAFlick (LEFT-FIELD / INDIE lane), this session only.
+
+NOT the final six. Another step selects 6 from your pool. You must output **${LLM_PICK_COUNT}** titles that **span many expressions of the mood** — if the pool collapses to one shelf, the product fails.
 
 Inputs:
-- taste_profile (JSON, source of truth):
+- taste_profile (JSON — mood contract):
 ${tasteProfileJson}
 
 - banned_titles:
 ${bannedTitles}
 
-- session_variation (same mood, braver angles — obey taste_profile):
+- session_variation:
 ${v}
 
-Definition of INDIE / LEFT-FIELD:
-- NOT "slightly less obvious mainstream" — this row must feel categorically different from a mainstream line-up for the same mood
-- less obvious, under-seen or under-recommended; festival / auteur / cult / arthouse / singular films
-- NOT just foreign (English-language indie is fine)
+LEFT-FIELD means: categorically **not** a slightly-less-obvious mainstream list. Festival, auteur, cult, arthouse, singular — English or non-English. Still must match taste_profile.
 
-Hard separation rules:
-- At most 2 films that could plausibly appear on generic "greatest / top 100" lists; the rest must feel discoverable
-- Strongly prefer: less household-name directors, non-US or non-English-primary productions, festival prizewinners, A24-adjacent or cult reputations, niche but strong word-of-mouth
-- Avoid picks that would sit comfortably on the same shelf as typical blockbuster-adjacent recommendations
+${MOOD_EXPRESSIONS_GUIDE}
 
-Critical rules:
-- Do NOT default to prestige-canon films
-- Avoid banned_titles completely
-- taste_profile is authoritative
-- When FRESH vs LAST SERVED ROW is present, match mood but **rotate** subgenre spine, tonal delivery, and prestige profile vs that row — not title-dedup only
-- At least 4 of ${LLM_PICK_COUNT} picks must be meaningfully less mainstream than typical blockbusters
-- No repeated directors
-- Prioritise originality over safety; picks must still be enjoyable, not obscure for its own sake
-- Each pick includes "tag" naming its texture (e.g. "bleak crime", "festival sci-fi", "slow-burn horror", "moral drama")
-- Decades: at least ${MIN_PICKS_YEAR_LEQ_2010} picks with year ≤ 2010; at most ${MAX_PRE_1970} with year < 1970
+${ANTI_DEFAULT_SHELF_RULES}
+
+Stricter for this lane: at most **2** titles in the whole pool may be “generic greatest-films / top-100 list” obvious; the rest must feel discoverable. Strongly prefer non-household directors, non-US or non-English-primary voices, and titles that are **not** the default Letterboxd-canon reflex for this mood.
+
+When FRESH vs LAST SERVED ROW appears: same mood, **rotated expressions and shelf** — co-equal with taste_profile.
+
+Operational:
+- Decades: at least ${MIN_PICKS_YEAR_LEQ_2010} picks with year ≤ 2010; at most ${MAX_PRE_1970} with year < 1970.
+- No more than **3** picks sharing the same "tag" expression family in the pool.
 
 ${REC_TRACK_IMPL_NOTES}
 
 Output JSON only:
 {
   "line_cinema_suggested": "one short sentence: what kind of cinema this session suggests",
-  "line_trap_avoided": "one short sentence: obvious recommendation trap you avoided",
-  "picks": [{"title":"","year":2020,"reason":"short, tied to taste_profile","tag":""}]
+  "line_trap_avoided": "one short sentence: default shelf you refused for this pool",
+  "picks": [{"title":"","year":2020,"tag":"mood expression (required)","reason":"short, tied to taste_profile + this expression"}]
 }`;
 }
 
@@ -736,10 +750,12 @@ function parseMainstreamTrackResponse(raw: Record<string, unknown>): SingleTrack
   const picks: AIRecommendationResult[] = picksIn
     .map((p: unknown) => {
       const o = p as Record<string, unknown>;
+      const tag = String(o.tag || "").trim();
       return {
         title: String(o.title || "").trim(),
         year: parseYearField(o.year),
         reason: String(o.reason || "").trim(),
+        ...(tag ? { tag } : {}),
       };
     })
     .filter((p) => p.title);
@@ -772,9 +788,9 @@ function parseIndieTrackResponse(raw: Record<string, unknown>): SingleTrackLLMRe
 
 function systemPromptForTrack(track: RecommendationTrack): string {
   if (track === "mainstream") {
-    return "PickAFlick MAINSTREAM. JSON only. Accessible picks; taste_profile + FRESH vs LAST SERVED ROW (when present) are co-equal; banned_titles; session_variation; varied subgenres/eras; no director repeats.";
+    return "PickAFlick MAINSTREAM candidate pool. JSON only. Output exactly the requested count of picks with tags. Same mood, many expressions — not best-of canon shelf. taste_profile + FRESH block co-equal. banned_titles. Breadth, non-obviousness, anti-default prestige-crime cluster. No director repeats.";
   }
-  return "PickAFlick LEFT-FIELD. JSON only. Distinct from mainstream; taste_profile + FRESH vs LAST SERVED ROW co-equal; max 2 top-list-obvious; banned_titles; session_variation; tags on picks.";
+  return "PickAFlick LEFT-FIELD candidate pool. JSON only. Wide pool, tagged mood expressions; max 2 top-list-obvious in pool. Same mood, different channels. taste_profile + FRESH co-equal. banned_titles. No director repeats.";
 }
 
 async function callSingleTrackLLM(
@@ -790,8 +806,8 @@ async function callSingleTrackLLM(
       { role: "user", content: promptText },
     ],
     response_format: { type: "json_object" },
-    max_tokens: 1800,
-    temperature: track === "indie" ? 0.95 : 0.84,
+    max_tokens: 2800,
+    temperature: track === "indie" ? 0.95 : 0.88,
   });
   if (timingSessionId) {
     logRecsTiming(timingSessionId, `llm_${track}`, Date.now() - t0);
