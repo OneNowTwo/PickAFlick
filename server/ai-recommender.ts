@@ -31,9 +31,13 @@ const recentlyRecommendedTones: string[] = [];
 const recentlyRecommendedPrestige: string[] = [];
 const recentlyRecommendedFeelKeys: string[] = [];
 const MAX_RECENT_TRACKED = 400;
-/** Hard-ban these many last-served title keys in the LLM prompt + filter. */
-const RECENT_TITLE_BAN_WINDOW = 24;
+/** Last N served titles — hard-ban in prompt + filter (stops anchor repeats across rows). */
+const RECENT_TITLE_BAN_WINDOW = 18;
+/** Last N served rows' directors — ban re-use across nearby rows (real names only). */
+const RECENT_DIRECTOR_BAN_WINDOW = 18;
 const TARGET_RESOLVED = 6;
+/** Max targeted slot-refill LLM rounds after resolve (still one call per round, missing slots only). */
+const MAX_SLOT_REFILL_ROUNDS = 4;
 const ANON_PRIMARY_GENRE_OVERUSE = 4;
 
 let recsLoaded = false;
@@ -120,6 +124,8 @@ interface AIRecommendationResult {
   year?: number;
   reason: string;
   tag?: string;
+  /** Discovery slot 1–6 (stable through refills). */
+  slot?: number;
 }
 
 interface SingleTrackLLMResult {
@@ -179,6 +185,11 @@ const OVERUSED_CANON_BANNED: string[] = [
   "Memento",
   "Shutter Island",
   "The Departed",
+  "Children of Men",
+  "The Lighthouse",
+  "Annihilation",
+  "The Secret in Their Eyes",
+  "Secret in Their Eyes",
 ];
 
 interface PrefetchPhase1 {
@@ -219,26 +230,49 @@ async function buildPrefetchPhase1(
   return { mood, taste, banned, chosen: chosenMovies, rejected: rejectedMovies, filters };
 }
 
-function mergeRecentTitlesIntoBanned(merged: MergedBannedContext): MergedBannedContext {
+function mergeRecentProductHistoryIntoBanned(merged: MergedBannedContext): MergedBannedContext {
   const bannedSet = new Set(merged.bannedSet);
-  const extra: string[] = [];
-  const slice = recentlyRecommendedTitles.slice(-RECENT_TITLE_BAN_WINDOW);
-  slice.forEach((k) => {
+  const extraTitles: string[] = [];
+  const tStart = Math.max(0, recentlyRecommendedTitles.length - RECENT_TITLE_BAN_WINDOW);
+  for (let i = tStart; i < recentlyRecommendedTitles.length; i++) {
+    const k = recentlyRecommendedTitles[i];
     if (k && !bannedSet.has(k)) {
       bannedSet.add(k);
-      extra.push(k);
+      extraTitles.push(k);
     }
-  });
-  const line =
-    extra.length > 0
-      ? `Recently served on this product — do NOT output these titles (or close variants): ${extra.join("; ")}.`
+  }
+
+  const recentDirectorBanSet = new Set<string>();
+  const extraDirectorLabels: string[] = [];
+  const dStart = Math.max(0, recentlyRecommendedDirectors.length - RECENT_DIRECTOR_BAN_WINDOW);
+  for (let i = dStart; i < recentlyRecommendedDirectors.length; i++) {
+    const d = (recentlyRecommendedDirectors[i] || "").toLowerCase().trim();
+    if (!d || d.startsWith("__dir_")) continue;
+    recentDirectorBanSet.add(d);
+    if (extraDirectorLabels.length < 40) {
+      const label = recentlyRecommendedDirectors[i].trim();
+      if (label && !extraDirectorLabels.some((x) => x.toLowerCase() === d)) {
+        extraDirectorLabels.push(label);
+      }
+    }
+  }
+
+  const titleLine =
+    extraTitles.length > 0
+      ? `Recently served on this product — do NOT output these titles (or close variants): ${extraTitles.join("; ")}.`
       : "";
-  const bannedTitlesPrompt = [merged.bannedTitlesPrompt, line].filter(Boolean).join(" ");
+  const directorLine =
+    extraDirectorLabels.length > 0
+      ? `Recently served directors — do NOT use any of these directors again (pick different filmmakers): ${extraDirectorLabels.join("; ")}.`
+      : "";
+  const bannedTitlesPrompt = [merged.bannedTitlesPrompt, titleLine, directorLine].filter(Boolean).join(" ");
+
   return {
     bannedSet,
     bannedTitlesPrompt,
     anonDirectorKeys: new Set(merged.anonDirectorKeys),
     anonPrimaryGenreCounts: new Map(merged.anonPrimaryGenreCounts),
+    recentDirectorBanSet,
   };
 }
 
@@ -251,7 +285,7 @@ async function startLaneLlmPrefetchIfNeeded(
   const key = lanePrefetchKey(sessionId, anonFp);
   if (laneLlmBySessionIdentity.has(key)) return;
 
-  const merged = mergeRecentTitlesIntoBanned(mergeAnonymousIntoBanned(phase1.banned, clientAnonMemory));
+  const merged = mergeRecentProductHistoryIntoBanned(mergeAnonymousIntoBanned(phase1.banned, clientAnonMemory));
 
   laneLlmBySessionIdentity.set(key, {
     mainstream: generateSlotBasedLanePicks(
@@ -277,7 +311,9 @@ async function startLaneLlmPrefetchIfNeeded(
   });
 }
 
-const MAINSTREAM_SLOT_SYSTEM = `You are a film expert who recommends high-quality, engaging films that are accessible, watchable, and exciting, without being generic.
+const MAINSTREAM_SLOT_SYSTEM = `You are a film expert recommending for a MAINSTREAM row: accessible, engaging, high-confidence picks a general audience can enjoy tonight.
+
+Bias toward: clear stories, strong momentum, satisfying payoffs, and broadly watchable craft — not slow festival pieces, not abstract/experimental cinema, not niche arthouse unless it still plays like a mainstream hit.
 
 Based on the user's taste profile, generate 6 movie recommendations.
 
@@ -297,7 +333,7 @@ Fill these EXACT slots:
 STRICT RULES:
 
 * No repeated directors
-* Avoid overly obscure or inaccessible films
+* Avoid overly obscure, glacial, or "homework" films — mainstream means easy to recommend with confidence
 * Avoid commonly repeated default recommendation titles
 * Avoid "film bro canon" staples unless unusually justified
 * If two picks feel too similar, replace one
@@ -352,6 +388,33 @@ const INDIE_SLOT_REASONS = [
   "Slot 6 — Wildcard, bold",
 ] as const;
 
+/** Full slot lines for targeted refill prompts (must stay aligned with system prompts). */
+const MAINSTREAM_SLOT_SPECS: readonly string[] = [
+  "Slot 1: Well-known, high-quality film (but NOT overplayed or obvious)",
+  "Slot 2: Non-English film that is still accessible and widely loved",
+  "Slot 3: Underrated but broadly appealing",
+  "Slot 4: Recent film (2018+) with strong reception",
+  "Slot 5: Tonal or pacing contrast from the others while still fitting the user's taste",
+  "Slot 6: Slight wildcard — surprising, but still watchable and satisfying",
+];
+
+const INDIE_SLOT_SPECS: readonly string[] = [
+  "Slot 1: Critically acclaimed but NOT mainstream or over-recommended",
+  "Slot 2: Non-English standout, preferably less widely surfaced",
+  "Slot 3: Cult / under-seen / low-popularity discovery",
+  "Slot 4: Recent (2018+) but under-the-radar",
+  "Slot 5: Strong stylistic or tonal outlier that still fits the taste profile",
+  "Slot 6: Wildcard — unusual, bold, or unexpected, but still aligned with taste",
+];
+
+function parseSlotFromTag(tag?: string): number | undefined {
+  if (!tag) return undefined;
+  const m = /\d+/.exec(tag);
+  if (!m) return undefined;
+  const n = parseInt(m[0], 10);
+  return n >= 1 && n <= 6 ? n : undefined;
+}
+
 function buildSlotUserMessage(
   track: RecommendationTrack,
   tasteProfileJson: string,
@@ -402,15 +465,12 @@ function parseSlotTrackResponse(
         year: parseYearField(o.year),
         reason,
         tag: idx >= 0 ? `Slot ${slot}` : undefined,
+        slot: idx >= 0 ? slot : undefined,
       };
     })
     .filter((p) => p.title);
 
-  picks.sort((a, b) => {
-    const sa = parseInt(String(a.tag?.replace(/\D/g, "") || "99"), 10);
-    const sb = parseInt(String(b.tag?.replace(/\D/g, "") || "99"), 10);
-    return sa - sb;
-  });
+  picks.sort((a, b) => (a.slot ?? parseSlotFromTag(a.tag) ?? 99) - (b.slot ?? parseSlotFromTag(b.tag) ?? 99));
 
   const summary = String(raw.line_summary || "").trim();
   if (track === "mainstream") {
@@ -425,6 +485,104 @@ function parseSlotTrackResponse(
     line_cinema_suggested: summary,
     line_trap_avoided: "",
   };
+}
+
+function picksToSixSlotRow(picks: AIRecommendationResult[]): (AIRecommendationResult | null)[] {
+  const row: (AIRecommendationResult | null)[] = [null, null, null, null, null, null];
+  for (const p of picks) {
+    const s = p.slot ?? parseSlotFromTag(p.tag);
+    if (s && s >= 1 && s <= 6 && !row[s - 1]) row[s - 1] = { ...p, slot: s };
+  }
+  return row;
+}
+
+async function refillSlotsOnly(
+  track: RecommendationTrack,
+  mood: SessionMoodProfile,
+  bannedCtx: MergedBannedContext,
+  slots: number[],
+  promptExtra: string,
+  timingSessionId?: string
+): Promise<AIRecommendationResult[]> {
+  const need = Array.from(new Set(slots.filter((s) => s >= 1 && s <= 6))).sort((a, b) => a - b);
+  if (need.length === 0) return [];
+
+  const tasteProfileJson = JSON.stringify(mood);
+  const specs = track === "mainstream" ? MAINSTREAM_SLOT_SPECS : INDIE_SLOT_SPECS;
+  const specBlock = need.map((s) => specs[s - 1]).join("\n");
+  const user = `taste_profile (JSON — source of truth for tonight's mood):
+${tasteProfileJson}
+
+Titles and names you must NOT output (or obvious variants of):
+${bannedCtx.bannedTitlesPrompt}
+
+TASK: Fill ONLY these discovery slots: ${need.join(", ")}.
+Use these definitions exactly (one film per slot, no director twice across your picks):
+
+${specBlock}
+
+Output JSON only:
+{ "picks": [ {"slot": <n>, "title": "", "year": null}, ... ] }
+
+Rules: exactly ${need.length} picks, one per listed slot number, slots ${need.join(", ")} only, real released films, plausibly available in Australia.${promptExtra.trim() ? `\n\nAdditional instruction:\n${promptExtra.trim()}` : ""}`;
+
+  const system = track === "mainstream" ? MAINSTREAM_SLOT_SYSTEM : INDIE_SLOT_SYSTEM;
+  const t0 = Date.now();
+  const response = await openai.chat.completions.create({
+    model: RECOMMENDATIONS_MODEL,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+    response_format: { type: "json_object" },
+    max_tokens: 1200,
+    temperature: track === "indie" ? 0.9 : 0.8,
+  });
+  if (timingSessionId) {
+    logRecsTiming(timingSessionId, `llm_${track}_slot_refill`, Date.now() - t0);
+  }
+  const raw = JSON.parse(response.choices[0]?.message?.content || "{}") as Record<string, unknown>;
+  const parsed = parseSlotTrackResponse(track, raw);
+  return filterPicksAgainstBanned(parsed.picks || [], bannedCtx.bannedSet).filter((p) => {
+    const s = p.slot ?? parseSlotFromTag(p.tag);
+    return s !== undefined && need.includes(s);
+  });
+}
+
+async function buildSixSlotPickArray(
+  initial: AIRecommendationResult[],
+  track: RecommendationTrack,
+  mood: SessionMoodProfile,
+  bannedCtx: MergedBannedContext,
+  promptExtra: string,
+  timingSessionId?: string
+): Promise<(AIRecommendationResult | null)[]> {
+  const arr: (AIRecommendationResult | null)[] = [null, null, null, null, null, null];
+  function ingest(list: AIRecommendationResult[]) {
+    for (const p of list) {
+      const s = p.slot ?? parseSlotFromTag(p.tag);
+      if (!s || s < 1 || s > 6 || !p.title) continue;
+      if (bannedCtx.bannedSet.has(normalizeTitleKey(p.title))) continue;
+      if (arr[s - 1]) continue;
+      arr[s - 1] = { ...p, slot: s };
+    }
+  }
+  ingest(initial);
+  let rounds = 0;
+  while (arr.some((x) => !x) && rounds < 3) {
+    const missing = [1, 2, 3, 4, 5, 6].filter((s) => !arr[s - 1]);
+    const refill = await refillSlotsOnly(
+      track,
+      mood,
+      bannedCtx,
+      missing,
+      rounds === 0 ? promptExtra : `Only slots ${missing.join(", ")}. Every title must obey the ban list.`,
+      timingSessionId
+    );
+    ingest(filterPicksAgainstBanned(refill, bannedCtx.bannedSet));
+    rounds++;
+  }
+  return arr;
 }
 
 async function generateSlotBasedLanePicks(
@@ -462,10 +620,10 @@ async function generateSlotBasedLanePicks(
   }
   const raw = JSON.parse(response.choices[0]?.message?.content || "{}") as Record<string, unknown>;
   const parsed = parseSlotTrackResponse(track, raw);
-  return {
-    ...parsed,
-    picks: filterPicksAgainstBanned(parsed.picks || [], bannedCtx.bannedSet).slice(0, TARGET_RESOLVED),
-  };
+  const filtered = filterPicksAgainstBanned(parsed.picks || [], bannedCtx.bannedSet);
+  const row = await buildSixSlotPickArray(filtered, track, mood, bannedCtx, promptExtra, timingSessionId);
+  const picks = row.filter((p): p is AIRecommendationResult => p !== null);
+  return { ...parsed, picks };
 }
 
 function buildBannedContext(chosenMovies: Movie[], rejectedMovies: Movie[]): {
@@ -496,6 +654,8 @@ interface MergedBannedContext {
   bannedTitlesPrompt: string;
   anonDirectorKeys: Set<string>;
   anonPrimaryGenreCounts: Map<string, number>;
+  /** Lowercase director names from recent product history (not TMDB placeholders). */
+  recentDirectorBanSet: Set<string>;
 }
 
 function mergeAnonymousIntoBanned(
@@ -528,7 +688,13 @@ function mergeAnonymousIntoBanned(
 
   const bannedTitlesPrompt = [base.bannedTitlesPrompt, ...memoryLines].filter(Boolean).join(" ");
 
-  return { bannedSet, bannedTitlesPrompt, anonDirectorKeys, anonPrimaryGenreCounts };
+  return {
+    bannedSet,
+    bannedTitlesPrompt,
+    anonDirectorKeys,
+    anonPrimaryGenreCounts,
+    recentDirectorBanSet: new Set<string>(),
+  };
 }
 
 function cloneMergedBanned(m: MergedBannedContext): MergedBannedContext {
@@ -537,6 +703,7 @@ function cloneMergedBanned(m: MergedBannedContext): MergedBannedContext {
     bannedTitlesPrompt: m.bannedTitlesPrompt,
     anonDirectorKeys: new Set(m.anonDirectorKeys),
     anonPrimaryGenreCounts: new Map(m.anonPrimaryGenreCounts),
+    recentDirectorBanSet: new Set(m.recentDirectorBanSet),
   };
 }
 
@@ -793,6 +960,9 @@ async function resolveOneRecommendation(
     if (!movieDetails.posterPath?.trim()) return null;
     if (!watchResult.providers.length) return null;
 
+    const dirNorm = (movieDetails.director || "").toLowerCase().trim();
+    if (mergedBanned && dirNorm && mergedBanned.recentDirectorBanSet.has(dirNorm)) return null;
+
     if (mergedBanned && movieFailsAnonDiversity(movieDetails, mergedBanned)) return null;
 
     movieDetails.listSource = "ai-recommendation";
@@ -858,6 +1028,123 @@ async function resolvePicksToRecommendations(
   }
 
   return out;
+}
+
+async function resolveSixSlotsWithRefills(
+  initialRow: (AIRecommendationResult | null)[],
+  chosen: Movie[],
+  track: RecommendationTrack,
+  workingBanned: MergedBannedContext,
+  otherLaneTmdbIds: Set<number>,
+  mood: SessionMoodProfile,
+  crossLaneHint: string,
+  timingSessionId: string | undefined,
+  logCluster?: { sessionId: string }
+): Promise<{ recommendations: Recommendation[]; refillLlmMs: number; refillRounds: number; resolveMsTotal: number }> {
+  const picksRowMut: (AIRecommendationResult | null)[] = [...initialRow];
+  const fixed: (Recommendation | null)[] = [null, null, null, null, null, null];
+  let refillLlmMs = 0;
+  let resolveMsTotal = 0;
+  let refillRounds = 0;
+
+  for (let round = 0; round < MAX_SLOT_REFILL_ROUNDS; round++) {
+    const excludeTmdb = new Set(chosen.map((m) => m.tmdbId));
+    otherLaneTmdbIds.forEach((id) => excludeTmdb.add(id));
+    for (let i = 0; i < 6; i++) {
+      const f = fixed[i];
+      if (f) excludeTmdb.add(f.movie.tmdbId);
+    }
+
+    const seenTitles = new Set<string>();
+    const seenDirectors = new Set<string>();
+    for (let i = 0; i < 6; i++) {
+      const f = fixed[i];
+      if (f) {
+        seenTitles.add(normalizeTitleKey(f.movie.title));
+        seenDirectors.add(directorKeyForMovie(f.movie));
+      }
+    }
+
+    const t0 = Date.now();
+    for (let i = 0; i < 6; i++) {
+      if (fixed[i]) continue;
+      const pick = picksRowMut[i];
+      if (!pick) continue;
+      const rec = await resolveOneRecommendation(pick, excludeTmdb, track, workingBanned);
+      if (!rec) continue;
+      const tk = normalizeTitleKey(rec.movie.title);
+      const dk = directorKeyForMovie(rec.movie);
+      if (seenTitles.has(tk) || seenDirectors.has(dk)) continue;
+      seenTitles.add(tk);
+      seenDirectors.add(dk);
+      excludeTmdb.add(rec.movie.tmdbId);
+      fixed[i] = rec;
+    }
+    resolveMsTotal += Date.now() - t0;
+
+    if (logCluster) {
+      const sid = logCluster.sessionId;
+      const short = sid.length > 16 ? `${sid.slice(0, 8)}…` : sid;
+      console.log(`[recs-resolve] ${short} ${track} round=${round} filled=${fixed.filter(Boolean).length}`);
+    }
+
+    if (fixed.every(Boolean)) {
+      return {
+        recommendations: fixed as Recommendation[],
+        refillLlmMs,
+        refillRounds,
+        resolveMsTotal,
+      };
+    }
+
+    for (let i = 0; i < 6; i++) {
+      const f = fixed[i];
+      if (f) {
+        const k = normalizeTitleKey(f.movie.title);
+        if (k) workingBanned.bannedSet.add(k);
+      }
+    }
+
+    const missingSlots = [1, 2, 3, 4, 5, 6].filter((s) => !fixed[s - 1]);
+    for (const s of missingSlots) {
+      const old = picksRowMut[s - 1];
+      if (old) {
+        const k = normalizeTitleKey(old.title);
+        if (k) workingBanned.bannedSet.add(k);
+      }
+      picksRowMut[s - 1] = null;
+    }
+
+    const tRef = Date.now();
+    const refill = await refillSlotsOnly(
+      track,
+      mood,
+      workingBanned,
+      missingSlots,
+      [
+        "These slots failed Australian streaming/rental/purchase, poster, in-row duplicate rules, or recent-director bans. Suggest different titles that will pass.",
+        crossLaneHint,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      timingSessionId
+    );
+    refillLlmMs += Date.now() - tRef;
+    refillRounds++;
+
+    for (const p of filterPicksAgainstBanned(refill, workingBanned.bannedSet)) {
+      const s = p.slot ?? parseSlotFromTag(p.tag);
+      if (!s || s < 1 || s > 6) continue;
+      if (!picksRowMut[s - 1]) picksRowMut[s - 1] = { ...p, slot: s };
+    }
+  }
+
+  return {
+    recommendations: fixed.filter((r): r is Recommendation => r !== null),
+    refillLlmMs,
+    refillRounds,
+    resolveMsTotal,
+  };
 }
 
 export function beginRecommendationPrefetch(sessionId: string): void {
@@ -931,79 +1218,54 @@ async function finalizeSingleTrackToResponse(
     console.log(`[recs-finalize] ${shortSid} ${track} ${msg}${tail}`);
   };
 
-  let auResolvePass1Ms = 0;
-  let regenLlmMs = 0;
-  let auResolvePass2Ms = 0;
-  let regenUsed = false;
-
   const otherLaneTmdbIds = getOtherLaneTmdbIds(laneSessionId, anonFp, track);
   const crossLaneHint = buildCrossLaneHint(laneSessionId, anonFp, track);
 
   const workingBanned = cloneMergedBanned(banned);
-  let picks = filterPicksAgainstBanned(rawFromPrefetch?.picks || [], workingBanned.bannedSet);
-  let trackCopy: SingleTrackLLMResult | null = rawFromPrefetch;
-
-  const tAu1 = Date.now();
-  let recommendations = await resolvePicksToRecommendations(picks, chosen, track, workingBanned, {
-    otherLaneTmdbIds,
-    logCluster: timingSessionId ? { sessionId: timingSessionId } : undefined,
-  });
-  auResolvePass1Ms = Date.now() - tAu1;
-  logFinalize("au_resolve_pass1_ms", {
-    ms: auResolvePass1Ms,
-    pick_pool: picks.length,
-    resolved: recommendations.length,
-  });
-
-  if (recommendations.length < TARGET_RESOLVED) {
-    regenUsed = true;
-    logFinalize("REGEN_TRIGGERED", {
-      reason: "resolved_lt_target",
-      pass1_resolved: recommendations.length,
-      target: TARGET_RESOLVED,
-    });
-    for (const p of picks) {
-      const k = normalizeTitleKey(p.title);
-      if (k) workingBanned.bannedSet.add(k);
-    }
-    const regenExtra =
-      "Prior output had too few titles that resolve with Australian streaming/rental/purchase options. Regenerate a full fresh set of 6 slot-filling picks (same slot rules). " +
-      "Every title must be AU-available. " +
-      (crossLaneHint ? crossLaneHint : "");
-
-    const tRegen = Date.now();
-    const raw = await generateSlotBasedLanePicks(
-      chosen,
-      rejected,
-      filters,
+  let picksRow = picksToSixSlotRow(filterPicksAgainstBanned(rawFromPrefetch?.picks || [], workingBanned.bannedSet));
+  if (picksRow.some((x) => !x)) {
+    const filled = await buildSixSlotPickArray(
+      picksRow.filter((x): x is AIRecommendationResult => x !== null),
       track,
       mood,
       workingBanned,
-      regenExtra,
+      crossLaneHint,
       timingSessionId
     );
-    regenLlmMs = Date.now() - tRegen;
-    picks = filterPicksAgainstBanned(raw.picks || [], workingBanned.bannedSet);
-    trackCopy = raw;
-
-    const tAu2 = Date.now();
-    recommendations = await resolvePicksToRecommendations(picks, chosen, track, workingBanned, {
-      otherLaneTmdbIds,
-      logCluster: timingSessionId ? { sessionId: timingSessionId } : undefined,
-    });
-    auResolvePass2Ms = Date.now() - tAu2;
-    logFinalize("au_resolve_pass2_ms", {
-      ms: auResolvePass2Ms,
-      pick_pool: picks.length,
-      resolved: recommendations.length,
-    });
-
-    if (recommendations.length < TARGET_RESOLVED) {
-      console.warn(
-        `[recs-finalize] ${shortSid ?? "?"} ${track} HARD_FAILURE insufficient_resolved after_single_regen ` +
-          `resolved=${recommendations.length} target=${TARGET_RESOLVED}`
-      );
+    for (let i = 0; i < 6; i++) {
+      if (!picksRow[i]) picksRow[i] = filled[i];
     }
+  }
+
+  let trackCopy: SingleTrackLLMResult | null = rawFromPrefetch;
+
+  const tResolveAll = Date.now();
+  const { recommendations, refillLlmMs, refillRounds, resolveMsTotal } = await resolveSixSlotsWithRefills(
+    picksRow,
+    chosen,
+    track,
+    workingBanned,
+    otherLaneTmdbIds,
+    mood,
+    crossLaneHint,
+    timingSessionId,
+    timingSessionId ? { sessionId: timingSessionId } : undefined
+  );
+  const resolveWallMs = Date.now() - tResolveAll;
+
+  logFinalize("slot_resolve_summary", {
+    resolve_ms: resolveMsTotal,
+    resolve_wall_ms: resolveWallMs,
+    refill_rounds: refillRounds,
+    refill_llm_ms: refillLlmMs,
+    final_resolved_count: recommendations.length,
+  });
+
+  if (recommendations.length < TARGET_RESOLVED) {
+    console.warn(
+      `[recs-finalize] ${shortSid ?? "?"} ${track} HARD_FAILURE insufficient_resolved_after_slot_refills ` +
+        `resolved=${recommendations.length} target=${TARGET_RESOLVED} refill_rounds=${refillRounds}`
+    );
   }
 
   const totalFinalizeMs = Date.now() - finalizeStart;
@@ -1011,10 +1273,10 @@ async function finalizeSingleTrackToResponse(
     console.log(
       `[recs-finalize] ${shortSid} ${track} SUMMARY ` +
         `total_finalize_ms=${totalFinalizeMs} ` +
-        `au_resolve_pass1_ms=${auResolvePass1Ms} ` +
-        `regen_used=${regenUsed} ` +
-        `regen_llm_ms=${regenLlmMs} ` +
-        `au_resolve_pass2_ms=${auResolvePass2Ms} ` +
+        `resolve_core_ms=${resolveMsTotal} ` +
+        `resolve_wall_ms=${resolveWallMs} ` +
+        `slot_refill_rounds=${refillRounds} ` +
+        `slot_refill_llm_ms=${refillLlmMs} ` +
         `final_resolved_count=${recommendations.length}`
     );
   }
@@ -1111,7 +1373,7 @@ async function ensureLaneReady(
       taste = phase1.taste;
       patchSessionTasteMeta(sessionId, { mood, taste });
       await startLaneLlmPrefetchIfNeeded(sessionId, clientAnonMemory, phase1);
-      bannedMerged = mergeRecentTitlesIntoBanned(mergeAnonymousIntoBanned(phase1.banned, clientAnonMemory));
+      bannedMerged = mergeRecentProductHistoryIntoBanned(mergeAnonymousIntoBanned(phase1.banned, clientAnonMemory));
 
       const lanes = laneLlmBySessionIdentity.get(laneKey);
       if (!lanes) {
@@ -1135,7 +1397,7 @@ async function ensureLaneReady(
       mood = await extractSessionMood(chosen, rejected, filters);
       logRecsTiming(sessionId, "taste_extraction_cold", Date.now() - moodT0);
       taste = moodToTasteObservation(mood, chosen);
-      bannedMerged = mergeRecentTitlesIntoBanned(
+      bannedMerged = mergeRecentProductHistoryIntoBanned(
         mergeAnonymousIntoBanned(buildBannedContext(chosen, rejected), clientAnonMemory)
       );
       patchSessionTasteMeta(sessionId, { mood, taste });
