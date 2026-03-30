@@ -130,6 +130,7 @@ export function buildLockedSubtypePromptBlock(
     `The mood in taste_profile must be expressed **primarily through this single channel**: **${chosenSubtype}**.\n` +
     `- Every pick's "tag" must name this same channel (or a clear facet of it), and "reason" must tie the film to **${chosenSubtype}** — not a generic "intense" or "great thriller" shelf.\n` +
     `- Do not drift back to the default prestige-crime / critic-canon mental shelf; stay inside **${chosenSubtype}** while varying films, eras, countries, and directors.\n` +
+    `- Do **not** fill the pool with the same “intelligent thriller” staples every list recommends; within **${chosenSubtype}**, reach for titles that feel like **discoveries** (under-seen, non-English, older cuts, regional) whenever they still fit.\n` +
     (recentLine ? `${recentLine}\n` : "") +
     `\nIf you ignore the locked channel and output a generic prestige cluster, the response is invalid.`
   );

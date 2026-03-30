@@ -72,6 +72,35 @@ export function isLikelyTopListObvious(movie: Movie): boolean {
 }
 
 /**
+ * “Could this sit on a lazy Top-20 intense-thrillers / default rec list?”
+ * Used to cap staple picks in the final row and nudge toward discovery.
+ */
+export function isDefaultListPedigree(movie: Movie): boolean {
+  if (isLikelyTopListObvious(movie)) return true;
+  const r = movie.rating ?? 0;
+  if (r < 7.72) return false;
+  const g = movie.genres.join(" ").toLowerCase();
+  if (/documentary|animation|short/i.test(g)) return false;
+  const blob = `${movie.overview || ""} ${(movie.keywords || []).join(" ")}`.toLowerCase();
+  const tensePalette =
+    /\b(thriller|crime|mystery|psychological|suspense|neo-noir|action)\b/i.test(g) ||
+    /\b(thriller|crime|mystery|suspense|noir)\b/i.test(blob);
+  if (tensePalette) {
+    if (regionCluster(movie) !== "english_primary") return false;
+    const y = movie.year ?? 0;
+    if (y < 1990 || y > new Date().getFullYear() + 1) return false;
+    if (r >= 7.92) return true;
+    if (r >= 7.72 && /\b(oscar|academy award|based on the novel|bestsell|masterpiece|gripping)\b/i.test(blob)) {
+      return true;
+    }
+    return false;
+  }
+  // Other genres: only ultra-zeitgeist English hits
+  if (regionCluster(movie) === "english_primary" && r >= 8.22 && (movie.year ?? 0) >= 1995) return true;
+  return false;
+}
+
+/**
  * Coarse prestige / “canon” tier for freshness vs recent rows (not duplicate title logic).
  */
 export function prestigeCanonCluster(movie: Movie): string {

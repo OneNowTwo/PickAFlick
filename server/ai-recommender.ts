@@ -788,19 +788,26 @@ Example when the mood is intense / thriller-adjacent / high stakes — deliberat
 For calmer or different moods (warmth, comedy, romance, wonder, grief, etc.), use the same principle: **multiple legitimate expressions of that mood** — never one mental shelf repeated with small variations.`;
 
 const ANTI_DEFAULT_SHELF_RULES = `ANTI-DEFAULT SHELF (non-negotiable):
-- You are NOT listing the “best” films for the mood. You are listing a **broad candidate pool** so another step can choose a diverse final row. Optimise for: (1) mood fit, (2) **breadth of expression**, (3) freshness vs recent rows when that section appears, (4) **non-obviousness** — not peak canon.
-- Avoid the usual fallback cluster unless taste_profile or the voting funnel **overwhelmingly** points there: English-language prestige crime / psychothriller / gritty moral drama that dominates generic “serious film” lists. Unless the session explicitly demands that narrow lane, **cap such titles at 3 in this entire pool**; put the rest in other expressions above.
+- You are NOT listing the “best” films for the mood. You are listing a **broad candidate pool** so another step can choose a diverse final row. Optimise for: (1) mood fit, (2) **breadth of expression**, (3) freshness vs recent rows when that section appears, (4) **discovery / non-obviousness** — not peak canon.
+- Avoid the usual fallback cluster unless taste_profile or the voting funnel **overwhelmingly** points there: English-language prestige crime / psychothriller / “intelligent thriller” staples that dominate Reddit, Letterboxd, and lazy listicles. Unless the session explicitly demands that narrow lane, **cap such titles at 2 in this entire ${LLM_PICK_COUNT}-title pool**; every other slot must skew **lesser-surfaced**, **unexpected but fitting**, or **outside the usual recommendation pool**.
 - No duplicate directors. Avoid the same **director family** / house-style cluster: multiple picks that share the same industrial playbook (e.g. same mid-budget “awards-bait crime” mould) even with different names — spread countries, eras, budgets, and storytelling modes.
-- At least **half** of the ${LLM_PICK_COUNT} titles should sit **outside** the first reflex set a film buff would name for this mood (still accessible for this track, still on-mood).`;
+- At least **two thirds** of the pool must be titles a casual film fan would **not** instantly name for this mood — still legitimate, still watchable, still on-profile.`;
+
+const DISCOVERY_ANTI_STAPLE_BLOCK = `DISCOVERY / ANTI–“TOP 20 THRILLERS” (CRITICAL):
+- If a title could plausibly headline a **“Top 20 intense thrillers”** or **default intelligent-thriller** list without debate, it is **wrong** for this product unless you have **no** alternative that fits the locked subtype — and even then use **sparingly**.
+- **Intelligent-thriller staples** (household-name twist films, prestige crime-psych defaults, Fincher-school reflex picks, critic-canon English crime) are **forbidden as the spine** of the pool. Prioritise **discovery**: regional cinema, pre-2000 deep cuts, non-English voices, festival/indie curios, under-marketed gems that still match the mood and subtype.
+- Litmus test: *Would this appear on a generic “best thrillers” blog?* If yes → **replace it**.
+- Downstream selection will enforce that **at least 3 of the final 6** feel like **non-default, lesser-widely-known** picks — bias your ${LLM_PICK_COUNT} titles heavily so that is achievable (do not front-load obvious answers).`;
 
 const REC_TRACK_IMPL_NOTES = `Implementation — CANDIDATE POOL (one shot, no follow-up):
-- taste_profile is the mood contract. **Breadth within that mood** is as important as “best pick” quality — the pool must not collapse onto one prestige-safe shelf.
+- taste_profile is the mood contract. **Breadth + discovery within that mood** beat “safest best” picks — the pool must not look like a critic’s default shelf.
 - banned_titles: never output these (or close variants).
 - FRESH_VS_RECENT_ROW: when that section appears, it is **co-equal** with taste_profile; rotate expressions vs the last row, not only titles.
-- Emit exactly ${LLM_PICK_COUNT} objects in "picks". A downstream selector picks 6; your job is a **wide, legitimately varied pool**, not a ranked shortlist.
+- DISCOVERY_ANTI_STAPLE: obey the discovery block — **wrong** = feels like a lazy listicle pick; **right** = feels like a curated find.
+- Emit exactly ${LLM_PICK_COUNT} objects in "picks". A downstream selector picks 6; your job is a **wide pool rich in non-obvious titles**, not a ranked shortlist of famous films.
 - Each pick MUST include "tag": a short mood-expression label (which channel of the mood this title represents).
 - No duplicate directors. Spread decades and languages; do not monoculture one decade or one country.
-- session_variation is an exploratory nudge only; never override taste_profile, FRESH_VS_RECENT_ROW, or anti-default rules.`;
+- session_variation is an exploratory nudge only; never override taste_profile, FRESH_VS_RECENT_ROW, anti-default, or discovery rules.`;
 
 function buildMainstreamTrackPrompt(
   tasteProfileJson: string,
@@ -827,6 +834,8 @@ MAINSTREAM here means: broadly watchable, satisfying tonight, accessible — but
 ${MOOD_EXPRESSIONS_GUIDE}
 
 ${ANTI_DEFAULT_SHELF_RULES}
+
+${DISCOVERY_ANTI_STAPLE_BLOCK}
 
 When FRESH vs LAST SERVED ROW appears below in the user message: same mood again is fine; **different expressions and shelf** than that row — co-equal with taste_profile.
 
@@ -871,7 +880,9 @@ ${MOOD_EXPRESSIONS_GUIDE}
 
 ${ANTI_DEFAULT_SHELF_RULES}
 
-Stricter for this lane: at most **2** titles in the whole pool may be “generic greatest-films / top-100 list” obvious; the rest must feel discoverable. Strongly prefer non-household directors, non-US or non-English-primary voices, and titles that are **not** the default Letterboxd-canon reflex for this mood.
+${DISCOVERY_ANTI_STAPLE_BLOCK}
+
+Stricter for this lane: at most **1** title in the whole pool may be “generic greatest-films / top-100 list” obvious; the rest must feel discoverable. Strongly prefer non-household directors, non-US or non-English-primary voices, and titles that are **not** the default Letterboxd-canon reflex for this mood.
 
 When FRESH vs LAST SERVED ROW appears: same mood, **rotated expressions and shelf** — co-equal with taste_profile.
 
@@ -932,9 +943,9 @@ function parseIndieTrackResponse(raw: Record<string, unknown>): SingleTrackLLMRe
 
 function systemPromptForTrack(track: RecommendationTrack): string {
   if (track === "mainstream") {
-    return "PickAFlick MAINSTREAM candidate pool. JSON only. Output exactly the requested count of picks with tags. Same mood, many expressions — not best-of canon shelf. taste_profile + FRESH block co-equal. banned_titles. Breadth, non-obviousness, anti-default prestige-crime cluster. No director repeats.";
+    return "PickAFlick MAINSTREAM candidate pool. JSON only. Discovery-first: avoid Top-20-thriller / default intelligent-thriller staples; most picks must feel like finds, not listicles. ≥3 of final 6 will be non-obvious — bias pool accordingly. taste_profile + FRESH + locked subtype co-equal. banned_titles. No director repeats.";
   }
-  return "PickAFlick LEFT-FIELD candidate pool. JSON only. Wide pool, tagged mood expressions; max 2 top-list-obvious in pool. Same mood, different channels. taste_profile + FRESH co-equal. banned_titles. No director repeats.";
+  return "PickAFlick LEFT-FIELD candidate pool. JSON only. Discovery mandatory; max 1 top-100-obvious in pool. Refuse default thriller/crime canon shelf. taste_profile + FRESH + subtype co-equal. banned_titles. No director repeats.";
 }
 
 async function callSingleTrackLLM(
@@ -989,6 +1000,7 @@ session_variation:
 ${variationBlock}
 
 Same track rules as the main pool: distinct directors, tag+reason, locked subtype channel, real films with plausible AU availability.
+DISCOVERY: refill slots must be **lesser-surfaced / non-listicle** titles — not “Top 20 thriller” defaults; prefer curios and unexpected fits.
 
 Output shape matches the main track response (picks array only is required).`;
 

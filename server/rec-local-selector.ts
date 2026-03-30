@@ -4,6 +4,7 @@ import {
   decadeCluster,
   toneCluster,
   isLikelyTopListObvious,
+  isDefaultListPedigree,
   prestigeCanonCluster,
   overallFeelKey,
 } from "./rec-cluster-diversity";
@@ -34,6 +35,10 @@ const PEN_ROW_FLAVOUR = 100;
 const PEN_ROW_DECADE = 58;
 const PEN_ROW_TONE = 78;
 const PEN_ROW_LANG_MINOR = 22;
+/** Final row: at least 3 picks should feel like discovery — block a 4th “staple list” title. */
+const MAX_DEFAULT_LIST_PEDIGREE_IN_ROW = 3;
+const PEN_DEFAULT_LIST_FOURTH_PLUS = 920;
+const BONUS_DISCOVERY_LEAN = 48;
 
 export interface LocalSelectorContext {
   track: RecommendationTrack;
@@ -161,6 +166,11 @@ function rowPenalty(movie: Movie, picked: Movie[], track: RecommendationTrack): 
   if (tc >= MAX_TONE_IN_ROW) p += PEN_ROW_TONE * (tc - MAX_TONE_IN_ROW + 1);
   if (lc >= MAX_SAME_LANG_BUCKET) p += PEN_ROW_LANG_MINOR * (lc - MAX_SAME_LANG_BUCKET + 1);
 
+  const stapleInRow = picked.filter((m) => isDefaultListPedigree(m)).length;
+  if (isDefaultListPedigree(movie) && stapleInRow >= MAX_DEFAULT_LIST_PEDIGREE_IN_ROW) {
+    p += PEN_DEFAULT_LIST_FOURTH_PLUS;
+  }
+
   if (track === "indie") {
     const ob = picked.filter((m) => isLikelyTopListObvious(m)).length;
     if (isLikelyTopListObvious(movie) && ob >= 2) p += 500;
@@ -209,9 +219,11 @@ function totalBaseScore(
   ctx: LocalSelectorContext
 ): number {
   const m = rec.movie;
+  const discovery = !isDefaultListPedigree(m) ? BONUS_DISCOVERY_LEAN : 0;
   return (
     baseQualityScore(m, llmIndex) +
-    sessionFitScore(m, ctx.chosenMovies, ctx.moodBlob) * (W_SESSION_FIT / 100) -
+    sessionFitScore(m, ctx.chosenMovies, ctx.moodBlob) * (W_SESSION_FIT / 100) +
+    discovery -
     noveltyPenalty(m, ctx)
   );
 }
@@ -221,6 +233,8 @@ function totalBaseScore(
  * Freshness vs recently served rows is first-class: titles, directors, metadata fingerprints,
  * subgenre (flavour), prestige/canon tier, tonal mode, and overall feel (tone × era) — including
  * heavy penalties when a bucket dominated the previous row.
+ * Discovery: at most three “default list / intense-thriller staple” pedigrees per row; lean picks
+ * get a score bonus so ≥3 slots skew toward lesser-surfaced fits.
  */
 export function selectLocalFinalRow(
   settledInOrder: (Recommendation | null)[],
