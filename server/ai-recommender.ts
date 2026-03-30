@@ -22,6 +22,22 @@ const openai = new OpenAI({
 
 const RECOMMENDATIONS_MODEL = process.env.OPENAI_RECOMMENDATIONS_MODEL ?? "gpt-4o";
 
+/** A/B: movie title generation tries gpt-5 first; mood extraction stays on RECOMMENDATIONS_MODEL. */
+async function chatCompletionForRecTitles(
+  params: Omit<OpenAI.Chat.ChatCompletionCreateParamsNonStreaming, "model">
+): Promise<OpenAI.Chat.ChatCompletion> {
+  const primary = "gpt-5";
+  const fallback = RECOMMENDATIONS_MODEL;
+  try {
+    console.log("[recs] model=gpt-5");
+    return await openai.chat.completions.create({ ...params, model: primary });
+  } catch (err) {
+    console.warn("[recs] title generation fallback (gpt-5 unavailable)", err);
+    console.log(`[recs] model=${fallback}`);
+    return await openai.chat.completions.create({ ...params, model: fallback });
+  }
+}
+
 const recentlyRecommendedTitles: string[] = [];
 const recentlyRecommendedFingerprints: string[] = [];
 const recentlyRecommendedDirectors: string[] = [];
@@ -528,8 +544,7 @@ Rules: exactly ${need.length} picks, one per listed slot number, slots ${need.jo
 
   const system = track === "mainstream" ? MAINSTREAM_SLOT_SYSTEM : INDIE_SLOT_SYSTEM;
   const t0 = Date.now();
-  const response = await openai.chat.completions.create({
-    model: RECOMMENDATIONS_MODEL,
+  const response = await chatCompletionForRecTitles({
     messages: [
       { role: "system", content: system },
       { role: "user", content: user },
@@ -605,8 +620,7 @@ async function generateSlotBasedLanePicks(
   const system = track === "mainstream" ? MAINSTREAM_SLOT_SYSTEM : INDIE_SLOT_SYSTEM;
 
   const t0 = Date.now();
-  const response = await openai.chat.completions.create({
-    model: RECOMMENDATIONS_MODEL,
+  const response = await chatCompletionForRecTitles({
     messages: [
       { role: "system", content: system },
       { role: "user", content: user },
@@ -1613,8 +1627,7 @@ JSON only: {"title":"","year":2000,"reason":""}`;
           : "";
       const prompt = baseUser + banLine;
 
-      const resp = await openai.chat.completions.create({
-        model: RECOMMENDATIONS_MODEL,
+      const resp = await chatCompletionForRecTitles({
         messages: [{ role: "user", content: prompt }],
         response_format: { type: "json_object" },
         max_tokens: 280,
