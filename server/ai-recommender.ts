@@ -17,10 +17,11 @@ const openai = new OpenAI({
 
 /** Mood extraction only — capable model. */
 const RECOMMENDATIONS_MODEL = process.env.OPENAI_RECOMMENDATIONS_MODEL ?? "gpt-4o";
-/** 10-pick single-row recommendation LLM. */
+/** 5-pick single-row recommendation LLM. */
 const REC_ROW_MODEL = process.env.OPENAI_REC_ROW_MODEL ?? "gpt-4o-mini";
 
-const recentlyRecommendedTitles: string[] = [];
+/** DB bundle persistence (parallel arrays) — not the mood-fingerprint map below. */
+const bundleTitleKeys: string[] = [];
 const recentlyRecommendedFingerprints: string[] = [];
 const recentlyRecommendedDirectors: string[] = [];
 const recentlyRecommendedDisplayTitles: string[] = [];
@@ -29,7 +30,13 @@ const recentlyRecommendedTones: string[] = [];
 const recentlyRecommendedPrestige: string[] = [];
 const recentlyRecommendedFeelKeys: string[] = [];
 const MAX_RECENT_TRACKED = 400;
-const TARGET_TOTAL_RESOLVE = 10;
+const TARGET_TOTAL_RESOLVE = 5;
+
+/** Cross-session titles already suggested for this mood fingerprint (preferred_tone + pacing). */
+const recentlyRecommendedTitles = new Map<string, string[]>();
+const moodFingerprintInsertOrder: string[] = [];
+const MAX_TITLES_PER_MOOD_FP = 20;
+const MAX_MOOD_FINGERPRINTS = 20;
 
 let recsLoaded = false;
 
@@ -41,7 +48,7 @@ async function ensureRecsLoaded(): Promise<void> {
     for (let i = 0; i < b.titles.length; i++) {
       const tk = normalizeTitleKey(b.titles[i] || "");
       if (!tk) continue;
-      recentlyRecommendedTitles.push(tk);
+      bundleTitleKeys.push(tk);
       recentlyRecommendedFingerprints.push(b.fingerprints[i] ?? "");
       recentlyRecommendedDirectors.push(b.directors[i] ?? "");
       recentlyRecommendedDisplayTitles.push(
@@ -52,7 +59,7 @@ async function ensureRecsLoaded(): Promise<void> {
       recentlyRecommendedPrestige.push(b.prestigeCanonClusters[i] ?? "");
       recentlyRecommendedFeelKeys.push(b.feelKeys[i] ?? "");
     }
-    console.log(`[recent-recs] Loaded ${recentlyRecommendedTitles.length} prior picks from DB`);
+    console.log(`[recent-recs] Loaded ${bundleTitleKeys.length} prior picks from DB`);
   } catch {
     /* non-fatal */
   }
@@ -65,9 +72,9 @@ export async function preloadRecentRecommendationsCache(): Promise<void> {
 function recordRecommendedRow(recs: Recommendation[]): void {
   for (const r of recs) {
     const tk = normalizeTitleKey(r.movie.title);
-    if (!tk || recentlyRecommendedTitles.includes(tk)) continue;
+    if (!tk || bundleTitleKeys.includes(tk)) continue;
     const m = r.movie;
-    recentlyRecommendedTitles.push(tk);
+    bundleTitleKeys.push(tk);
     recentlyRecommendedFingerprints.push("");
     recentlyRecommendedDirectors.push(
       (m.director || "").toLowerCase().trim() || `__dir_${m.tmdbId}`
@@ -77,8 +84,8 @@ function recordRecommendedRow(recs: Recommendation[]): void {
     recentlyRecommendedTones.push("");
     recentlyRecommendedPrestige.push("");
     recentlyRecommendedFeelKeys.push("");
-    while (recentlyRecommendedTitles.length > MAX_RECENT_TRACKED) {
-      recentlyRecommendedTitles.shift();
+    while (bundleTitleKeys.length > MAX_RECENT_TRACKED) {
+      bundleTitleKeys.shift();
       recentlyRecommendedFingerprints.shift();
       recentlyRecommendedDirectors.shift();
       recentlyRecommendedDisplayTitles.shift();
@@ -90,7 +97,7 @@ function recordRecommendedRow(recs: Recommendation[]): void {
   }
   storage
     .saveRecentRecommendationBundles({
-      titles: [...recentlyRecommendedTitles],
+      titles: [...bundleTitleKeys],
       fingerprints: [...recentlyRecommendedFingerprints],
       directors: [...recentlyRecommendedDirectors],
       displayTitles: [...recentlyRecommendedDisplayTitles],
@@ -146,6 +153,46 @@ function formatAbBanListForPrompt(chosenMovies: Movie[], rejectedMovies: Movie[]
   return labels.join(", ") || "(none)";
 }
 
+function moodFingerprint(mood: SessionMoodProfile): string {
+  return `${String(mood.preferred_tone || "").trim()}|${String(mood.pacing || "").trim()}`;
+}
+
+function ensureMoodFingerprintRegistered(fp: string): void {
+  if (recentlyRecommendedTitles.has(fp)) return;
+  while (moodFingerprintInsertOrder.length >= MAX_MOOD_FINGERPRINTS) {
+    const evict = moodFingerprintInsertOrder.shift()!;
+    recentlyRecommendedTitles.delete(evict);
+  }
+  moodFingerprintInsertOrder.push(fp);
+  recentlyRecommendedTitles.set(fp, []);
+}
+
+function rememberResolvedTitlesForMoodFingerprint(mood: SessionMoodProfile, displayTitles: string[]): void {
+  const fp = moodFingerprint(mood);
+  ensureMoodFingerprintRegistered(fp);
+  const prev = recentlyRecommendedTitles.get(fp) ?? [];
+  const merged = [...prev];
+  for (const t of displayTitles) {
+    const s = t.trim();
+    if (s) merged.push(s);
+  }
+  recentlyRecommendedTitles.set(fp, merged.slice(-MAX_TITLES_PER_MOOD_FP));
+}
+
+function moodRecentTitlesList(mood: SessionMoodProfile): string[] {
+  return recentlyRecommendedTitles.get(moodFingerprint(mood)) ?? [];
+}
+
+function formatChosenTitlesForRecPrompt(chosen: Movie[]): string {
+  if (chosen.length === 0) return "(none)";
+  return chosen.map((m) => `- "${m.title}" (${m.year ?? "?"})`).join("\n");
+}
+
+function formatRejectedTitlesForRecPrompt(rejected: Movie[]): string {
+  if (rejected.length === 0) return "(none)";
+  return rejected.map((m) => `- "${m.title}" (${m.year ?? "?"})`).join("\n");
+}
+
 const prefetchPhase1BySession = new Map<string, Promise<PrefetchPhase1>>();
 const singleRowLlmBySessionIdentity = new Map<string, Promise<RowLLMResult>>();
 
@@ -183,61 +230,65 @@ async function startSingleRowLlmPrefetchIfNeeded(
 
   singleRowLlmBySessionIdentity.set(
     key,
-    generateRowPicks(phase1.filters, phase1.mood, phase1.abBanTitlesLine, "", sessionId)
+    generateRowPicks(phase1.chosen, phase1.rejected, phase1.mood, phase1.abBanTitlesLine, "", sessionId)
   );
 }
 
-const TEN_PICK_SYSTEM = `You are a world-class film curator with deep knowledge of cinema across all eras, countries, budgets, and movements — Hollywood, independent American cinema, A24, European art house, Cannes and Venice winners, Korean cinema, Japanese cinema, South American cinema, Iranian cinema, British kitchen sink, Scandinavian noir, Hong Kong action, documentary-style realism, and beyond.
-
-A user has completed a mood-based A/B voting session. You will receive their mood profile. Your job is to recommend exactly 10 films that match that mood — drawing from the full breadth of world cinema, not just the obvious English-language titles.
-
-Be bold. Be specific. Do not default to the same 20 films everyone recommends. If the set could appear on a mainstream "best of" list without surprises, it is wrong — revise it.`;
+const TEN_PICK_SYSTEM = `You are a world-class film curator — the kind of person who has seen everything, remembers all of it, and can read exactly what someone wants tonight from the pattern of their choices. You give confident, specific recommendations like a knowledgeable friend, not a recommendation algorithm. You never play it safe. You never default to the obvious. You think laterally across decades, countries, budgets, and movements to find the five films that are genuinely right for this person tonight.`;
 
 function buildTenPickUserMessage(
-  moodProfileJson: string,
-  abTitlesBanLine: string,
-  genreLine: string,
+  chosen: Movie[],
+  rejected: Movie[],
+  abBanTitlesLine: string,
+  mood: SessionMoodProfile,
   promptExtra: string
 ): string {
-  const genreBlock = genreLine.trim() ? `${genreLine}\n\n` : "";
-  return `Mood profile (source of truth):
-${moodProfileJson}
+  const recentList = moodRecentTitlesList(mood);
+  const recentLine = recentList.length > 0 ? recentList.join(", ") : "(none)";
+  const goDeeperBullet =
+    recentList.length > 0 ?
+      "\n- If recent titles exist: the obvious choices for this mood have already been used — go deeper and find less obvious but equally powerful matches"
+    : "";
 
-${genreBlock}Return exactly 10 film recommendations that match this mood.
+  return `A user just completed a 7-round A/B movie voting session. Here is what they chose and what they rejected:
 
-Diversity requirements — ALL must be met:
-- No more than 4 films in English as original language
-- At least 2 films from outside the US and UK
-- Span at least 4 different decades
+CHOSEN (what they wanted):
+${formatChosenTitlesForRecPrompt(chosen)}
+
+REJECTED (what they didn't want tonight):
+${formatRejectedTitlesForRecPrompt(rejected)}
+
+Read the pattern holistically. The rejections are as important as the choices — they tell you what tone, energy, and type of film this person is actively avoiding right now.
+
+From this pattern, infer:
+- The emotional register they're after (tense, heavy, funny, warm, cerebral etc)
+- The pacing they want (slow burn, propulsive, contemplative)
+- The darkness level they can handle tonight
+- What they are clearly NOT in the mood for based on rejections
+
+Then recommend exactly 5 films that match what this pattern reveals.
+
+Rules:
 - No two films from the same director
-- No two films of the same sub-genre or setting
-- At least 1 film from the following each: pre-1990, 1990s, 2000s, post-2010
-- Mix of budget levels — not all prestige productions
-- No sequels, no franchise entries
+- Span at least 3 different decades across the 5
+- At least 1 non-English language film
+- No sequels or franchise entries unless the franchise itself is a direct mood match
+- Do not suggest any of these titles (user already voted on them): ${abBanTitlesLine}
+- Do not suggest any of these recently recommended titles: ${recentLine}${goDeeperBullet}
 
-Do not suggest any of these titles (user already voted on them):
-${abTitlesBanLine}
-
-Think broadly: consider A24, Cannes/Venice/Berlin winners and nominees, Korean New Wave, Japanese genre cinema, South American magical realism or thriller, Scandinavian crime, underseen British films, documentary-style narratives, debut features that punched above their weight.
+Each film gets exactly one line of reason — written like a knowledgeable friend recommending it, not an algorithm. Specific, confident, no hedging. Example: "Slow-burn western that turns into something genuinely horrifying — shares the survival DNA of your horror picks." NOT "We chose this because you selected The Descent."
 
 Return JSON only:
 {
-  "profile_line": "max 8 words, friend voice, no algorithm-speak",
+  "profile_line": "max 8 words, friend voice, describes tonight's mood — not a genre label",
   "picks": [
-    {"title": "", "year": 0},
-    {"title": "", "year": 0},
-    {"title": "", "year": 0},
-    {"title": "", "year": 0},
-    {"title": "", "year": 0},
-    {"title": "", "year": 0},
-    {"title": "", "year": 0},
-    {"title": "", "year": 0},
-    {"title": "", "year": 0},
-    {"title": "", "year": 0}
+    {"title": "", "year": 0, "reason": "one line, friend voice, specific"},
+    {"title": "", "year": 0, "reason": "one line, friend voice, specific"},
+    {"title": "", "year": 0, "reason": "one line, friend voice, specific"},
+    {"title": "", "year": 0, "reason": "one line, friend voice, specific"},
+    {"title": "", "year": 0, "reason": "one line, friend voice, specific"}
   ]
 }
-
-Rules: real released films only, no documentaries, no shorts. Every pick must genuinely match the mood profile.
 ${promptExtra.trim() ? `\n\nAdditional instruction:\n${promptExtra.trim()}` : ""}`;
 }
 
@@ -247,7 +298,7 @@ function parseTitleYearRow(o: Record<string, unknown>): AIRecommendationResult |
   return {
     title,
     year: parseYearField(o.year),
-    reason: "",
+    reason: String(o.reason || "").trim(),
   };
 }
 
@@ -262,18 +313,14 @@ function parsePicksRowResponse(raw: Record<string, unknown>): RowLLMResult {
 }
 
 async function generateRowPicks(
-  initialGenreFilters: string[],
+  chosenMovies: Movie[],
+  rejectedMovies: Movie[],
   mood: SessionMoodProfile,
   abBanTitlesLine: string,
   promptExtra: string,
   timingSessionId?: string
 ): Promise<RowLLMResult> {
-  const moodProfileJson = JSON.stringify(mood);
-  const genreLine =
-    initialGenreFilters.length > 0
-      ? `Optional genre hints from the session: ${initialGenreFilters.join(", ")}.`
-      : "";
-  const user = buildTenPickUserMessage(moodProfileJson, abBanTitlesLine, genreLine, promptExtra);
+  const user = buildTenPickUserMessage(chosenMovies, rejectedMovies, abBanTitlesLine, mood, promptExtra);
 
   const t0 = Date.now();
   const response = await openai.chat.completions.create({
@@ -283,11 +330,11 @@ async function generateRowPicks(
       { role: "user", content: user },
     ],
     response_format: { type: "json_object" },
-    max_tokens: 1200,
+    max_tokens: 1500,
     temperature: 0.9,
   });
   if (timingSessionId) {
-    logRecsTiming(timingSessionId, "llm_ten_pick_row", Date.now() - t0);
+    logRecsTiming(timingSessionId, "llm_five_pick_row", Date.now() - t0);
   }
   const raw = JSON.parse(response.choices[0]?.message?.content || "{}") as Record<string, unknown>;
   return parsePicksRowResponse(raw);
@@ -517,7 +564,7 @@ async function resolveOneRecommendation(
       movie: movieDetails,
       trailerUrl: urls[0] ?? null,
       trailerUrls: urls,
-      reason: "",
+      reason: rec.reason?.trim() ?? "",
       auWatchAvailable: true,
     };
   } catch {
@@ -620,7 +667,8 @@ async function finalizeRecommendationsToResponse(
   chosen: Movie[],
   taste: TasteObservationResult,
   rawFromPrefetch: RowLLMResult | null,
-  timingSessionId: string | undefined
+  timingSessionId: string | undefined,
+  mood: SessionMoodProfile
 ): Promise<RecommendationsResponse> {
   const finalizeStart = Date.now();
   const sid = timingSessionId;
@@ -639,6 +687,12 @@ async function finalizeRecommendationsToResponse(
   const recommendations = await resolvePicksToRecommendations(picks, chosen, {
     logCluster: timingSessionId ? { sessionId: timingSessionId } : undefined,
   });
+  if (recommendations.length > 0) {
+    rememberResolvedTitlesForMoodFingerprint(
+      mood,
+      recommendations.map((r) => r.movie.title.trim()).filter(Boolean)
+    );
+  }
   const auResolveMs = Date.now() - tAu1;
   logFinalize("au_resolve_ms", {
     ms: auResolveMs,
@@ -739,7 +793,7 @@ async function ensureRecommendationsReady(
 
       const rowWait = Date.now();
       raw = await rowPromise.catch((e) => {
-        console.error("[prefetch] ten-pick row LLM failed", e);
+        console.error("[prefetch] five-pick row LLM failed", e);
         return emptyRow();
       });
       logRecsTiming(sessionId, "llm_raw_wait_row", Date.now() - rowWait);
@@ -752,12 +806,12 @@ async function ensureRecommendationsReady(
       patchSessionTasteMeta(sessionId, { mood, taste });
       const coldLlm = Date.now();
       const abLine = formatAbBanListForPrompt(chosen, rejected);
-      raw = await generateRowPicks(filters, mood, abLine, "", sessionId);
+      raw = await generateRowPicks(chosen, rejected, mood, abLine, "", sessionId);
       logRecsTiming(sessionId, "llm_row_cold_total", Date.now() - coldLlm);
     }
 
     const finalizeT0 = Date.now();
-    const res = await finalizeRecommendationsToResponse(chosen, taste, raw, sessionId);
+    const res = await finalizeRecommendationsToResponse(chosen, taste, raw, sessionId, mood);
     logRecsTiming(sessionId, "finalize_row", Date.now() - finalizeT0);
 
     mergeRecBundleIntoCache(sessionId, anonFp, res);

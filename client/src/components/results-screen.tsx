@@ -847,8 +847,8 @@ export function ResultsScreen({
 
       </div>
 
-      <div className="flex flex-col gap-2 w-full max-w-5xl mx-auto pb-2">
-        <div className="flex gap-2 w-full overflow-x-auto justify-center flex-wrap md:flex-nowrap">
+      <div className="flex flex-col gap-2 w-full max-w-6xl mx-auto pb-2">
+        <div className="flex gap-2 md:gap-2.5 w-full overflow-x-auto justify-start md:justify-center flex-nowrap px-1 pb-1">
           {displayRecs.map((rec, i) => {
             const thumbUrl = rec.movie.posterPath
               ? rec.movie.posterPath.startsWith("http")
@@ -857,8 +857,12 @@ export function ResultsScreen({
               : null;
             const isActive = i === currentIndex;
             const isSeenThumb = seenMovies.has(rec.movie.tmdbId);
+            const reasonLine = rec.reason?.trim() ?? "";
             return (
-              <div key={rec.movie.tmdbId} className="flex flex-col items-center gap-1 shrink-0">
+              <div
+                key={rec.movie.tmdbId}
+                className="flex flex-col items-center gap-0.5 shrink-0 w-[4.75rem] sm:w-[5.25rem]"
+              >
                 <span
                   className={`text-sm font-bold min-w-[1.25rem] text-center ${
                     isActive ? "text-primary" : "text-foreground/80"
@@ -871,22 +875,39 @@ export function ResultsScreen({
                     setCurrentIndex(i);
                     setAutoPlayTrailer(true);
                   }}
-                  className={`w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg overflow-hidden border-2 transition-all ${
+                  className={`w-full aspect-[2/3] max-h-[84px] rounded-lg overflow-hidden border-2 transition-all ${
                     isActive
-                      ? "border-primary ring-2 ring-primary/30 scale-105"
-                      : "border-transparent opacity-70 hover:opacity-100"
+                      ? "border-primary ring-2 ring-primary/30 scale-[1.02]"
+                      : "border-transparent opacity-80 hover:opacity-100"
                   } ${isSeenThumb ? "opacity-45 grayscale" : ""}`}
                   data-testid={`thumbnail-${i}`}
                   type="button"
                 >
                   {thumbUrl ? (
-                    <img src={thumbUrl} alt={rec.movie.title} className="w-full h-full object-cover" />
+                    <img src={thumbUrl} alt="" className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full bg-muted flex items-center justify-center">
                       <Film className="w-5 h-5 text-muted-foreground" />
                     </div>
                   )}
                 </button>
+                <p
+                  className="w-full text-center text-[10px] leading-tight text-muted-foreground font-medium line-clamp-2 px-0.5"
+                  title={rec.movie.title}
+                >
+                  {rec.movie.title}
+                </p>
+                {rec.movie.year != null ? (
+                  <p className="text-[10px] text-muted-foreground leading-none">{rec.movie.year}</p>
+                ) : null}
+                {reasonLine ? (
+                  <p
+                    className="w-full text-center text-[10px] leading-snug text-muted-foreground line-clamp-3 px-0.5"
+                    title={reasonLine}
+                  >
+                    {reasonLine}
+                  </p>
+                ) : null}
               </div>
             );
           })}
