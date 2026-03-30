@@ -15,7 +15,10 @@ const openai = new OpenAI({
   maxRetries: 1,
 });
 
+/** Mood extraction only — capable model. */
 const RECOMMENDATIONS_MODEL = process.env.OPENAI_RECOMMENDATIONS_MODEL ?? "gpt-4o";
+/** 10-pick recommendation row (5 mainstream + 5 discovery). */
+const REC_ROW_MODEL = process.env.OPENAI_REC_ROW_MODEL ?? "gpt-4o-mini";
 
 const recentlyRecommendedTitles: string[] = [];
 const recentlyRecommendedFingerprints: string[] = [];
@@ -26,11 +29,8 @@ const recentlyRecommendedTones: string[] = [];
 const recentlyRecommendedPrestige: string[] = [];
 const recentlyRecommendedFeelKeys: string[] = [];
 const MAX_RECENT_TRACKED = 400;
-/** Hard-ban these many last-served title keys in the LLM prompt + filter. */
-const RECENT_TITLE_BAN_WINDOW = 24;
-/** Final row size (single list of picks). */
-const TARGET_TOTAL_RESOLVE = 5;
-const ANON_PRIMARY_GENRE_OVERUSE = 4;
+/** 5 mainstream + 5 discovery after TMDB resolve. */
+const TARGET_TOTAL_RESOLVE = 10;
 
 let recsLoaded = false;
 
@@ -111,76 +111,44 @@ export interface TasteObservationResult {
   preferredEras: string[];
 }
 
+type PickBucket = "mainstream" | "discovery";
+
 interface AIRecommendationResult {
   title: string;
   year?: number;
   reason: string;
   tag?: string;
+  bucket?: PickBucket;
 }
 
 interface RowLLMResult {
   profile_line: string;
-  picks: AIRecommendationResult[];
+  mainstream: AIRecommendationResult[];
+  discovery: AIRecommendationResult[];
 }
-
-const OVERUSED_CANON_BANNED: string[] = [
-  "Oldboy",
-  "Prisoners",
-  "No Country for Old Men",
-  "Parasite",
-  "Jojo Rabbit",
-  "Fight Club",
-  "Pulp Fiction",
-  "The Shawshank Redemption",
-  "The Dark Knight",
-  "Inception",
-  "Interstellar",
-  "Forrest Gump",
-  "The Godfather",
-  "The Godfather Part II",
-  "Schindler's List",
-  "The Matrix",
-  "Goodfellas",
-  "Se7en",
-  "Silence of the Lambs",
-  "Whiplash",
-  "Nightcrawler",
-  "Drive",
-  "Blade Runner 2049",
-  "Arrival",
-  "Dune",
-  "Everything Everywhere All at Once",
-  "Get Out",
-  "Hereditary",
-  "Midsommar",
-  "The Witch",
-  "Uncut Gems",
-  "There Will Be Blood",
-  "Zodiac",
-  "Gone Girl",
-  "The Social Network",
-  "La La Land",
-  "Moonlight",
-  "Spotlight",
-  "Birdman",
-  "12 Years a Slave",
-  "The Revenant",
-  "Mad Max: Fury Road",
-  "Django Unchained",
-  "Inglourious Basterds",
-  "The Prestige",
-  "Memento",
-  "Shutter Island",
-  "The Departed",
-];
 
 interface PrefetchPhase1 {
   mood: SessionMoodProfile;
   taste: TasteObservationResult;
-  banned: { bannedSet: Set<string>; bannedTitlesPrompt: string };
+  /** Comma-separated A/B session titles for the rec prompt only. */
+  abBanTitlesLine: string;
   chosen: Movie[];
   rejected: Movie[];
   filters: string[];
+}
+
+function formatAbBanListForPrompt(chosenMovies: Movie[], rejectedMovies: Movie[]): string {
+  const seen = new Set<string>();
+  const labels: string[] = [];
+  for (const m of [...chosenMovies, ...rejectedMovies]) {
+    const t = m.title?.trim();
+    if (!t) continue;
+    const k = t.toLowerCase().trim().replace(/^the\s+/i, "");
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    labels.push(t);
+  }
+  return labels.join(", ") || "(none)";
 }
 
 const prefetchPhase1BySession = new Map<string, Promise<PrefetchPhase1>>();
@@ -205,33 +173,8 @@ async function buildPrefetchPhase1(
 ): Promise<PrefetchPhase1> {
   const mood = await extractSessionMood(chosenMovies, rejectedMovies, filters);
   const taste = moodToTasteObservation(mood, chosenMovies);
-  const banned = buildBannedContext(chosenMovies, rejectedMovies);
-  return { mood, taste, banned, chosen: chosenMovies, rejected: rejectedMovies, filters };
-}
-
-function mergeRecentTitlesIntoBanned(merged: MergedBannedContext): MergedBannedContext {
-  const bannedSet = new Set(merged.bannedSet);
-  const extraDisplay: string[] = [];
-  const len = recentlyRecommendedTitles.length;
-  const sliceKeys = recentlyRecommendedTitles.slice(-RECENT_TITLE_BAN_WINDOW);
-  const startIdx = len - sliceKeys.length;
-  sliceKeys.forEach((k, j) => {
-    if (!k || bannedSet.has(k)) return;
-    bannedSet.add(k);
-    const disp = (recentlyRecommendedDisplayTitles[startIdx + j] || k).trim();
-    if (disp) extraDisplay.push(disp);
-  });
-  const line =
-    extraDisplay.length > 0
-      ? `Recently served on this product — do NOT output these titles (or close variants): ${extraDisplay.join("; ")}.`
-      : "";
-  const bannedTitlesPrompt = [merged.bannedTitlesPrompt, line].filter(Boolean).join(" ");
-  return {
-    bannedSet,
-    bannedTitlesPrompt,
-    anonDirectorKeys: new Set(merged.anonDirectorKeys),
-    anonPrimaryGenreCounts: new Map(merged.anonPrimaryGenreCounts),
-  };
+  const abBanTitlesLine = formatAbBanListForPrompt(chosenMovies, rejectedMovies);
+  return { mood, taste, abBanTitlesLine, chosen: chosenMovies, rejected: rejectedMovies, filters };
 }
 
 async function startSingleRowLlmPrefetchIfNeeded(
@@ -243,74 +186,51 @@ async function startSingleRowLlmPrefetchIfNeeded(
   const key = rowPrefetchKey(sessionId, anonFp);
   if (singleRowLlmBySessionIdentity.has(key)) return;
 
-  const merged = mergeRecentTitlesIntoBanned(mergeAnonymousIntoBanned(phase1.banned, clientAnonMemory));
-
   singleRowLlmBySessionIdentity.set(
     key,
-    generateRowPicks(
-      phase1.chosen,
-      phase1.rejected,
-      phase1.filters,
-      phase1.mood,
-      merged,
-      "",
-      sessionId
-    )
+    generateRowPicks(phase1.filters, phase1.mood, phase1.abBanTitlesLine, "", sessionId)
   );
 }
 
-const FIVE_PICK_SYSTEM = `You are a sharp film curator. The user finished an A/B movie voting funnel — you see their mood JSON (tone, pacing, what they want / avoid).
+const TEN_PICK_SYSTEM = `You are a film curator. You will receive a mood profile extracted from a user's A/B voting session. Your job is to recommend 10 films that match that mood — 5 well-known, 5 genuinely lesser-known. Be specific, varied, and surprising. Do not play it safe.`;
 
-Return exactly **5 films** as one row — same core mood for all 5, with **broad expression** across the row.
-
-**Mix (no separate buckets in output):** Include both **accessible / well-known** picks (likely higher TMDb vote counts) and **less obvious / discovery** picks (likely lower vote counts but still strong quality ~7.0+). Roughly balance so the row is not all blockbusters and not all obscure — e.g. about 2–3 more familiar and 2–3 more surprising, still mood-true.
-
-**Variation within the row:**
-- Do not return 5 interchangeable films.
-- Force different sub-types / expressions on-mood, e.g.: grounded thriller; psychological pressure; moral ambiguity; survival or physical tension; atmospheric slow-burn; political or institutional tension; sci-fi or speculative edge when it fits.
-- If two picks feel too similar in tone, pacing, or sub-type, replace one.
-- Do not let all five cluster as the same prestige-crime/thriller OR the same arthouse/slow-burn — spread the shelf.
-- Do not drift away from the A/B funnel mood.
-
-**Hard rules for the 5:**
-- Span at least 2 different decades.
-- No two films from the same director.
-- No two films of the same narrow sub-genre.
-- Do NOT output any title from the banned list (or close variants).
-
-Output JSON ONLY. Title and year per film only — no per-film prose.`;
-
-const REFILL_ROW_SYSTEM = `You are filling ONLY missing slots in a 5-film recommendation row. Output JSON only — title and year per film. Same mood as taste_profile. Output exactly the number of films requested — no more, no fewer. Do not repeat banned or already-shown titles. Each pick must differ in expression from the others. Stay on-mood from the funnel.`;
-
-function buildFivePickUserMessage(
-  tasteProfileJson: string,
-  bannedBlock: string,
+function buildTenPickUserMessage(
+  moodProfileJson: string,
+  abTitlesBanLine: string,
   genreLine: string,
   promptExtra: string
 ): string {
-  return `taste_profile (JSON — source of truth for tonight's mood):
-${tasteProfileJson}
+  return `Mood profile: ${moodProfileJson}
 
 ${genreLine}
 
-DO NOT OUTPUT ANY OF THESE TITLES OR CLOSE VARIANTS:
-${bannedBlock}
+Rules:
+- Return exactly 10 films: 5 "mainstream" (widely seen, recognisable) and 5 "discovery" (genuinely less known, TMDb vote count likely under 300k, still high quality)
+- Every film must clearly match the mood profile
+- No two films from the same director
+- Span at least 3 different decades across the 10
+- No sequels or franchise entries unless the franchise itself is a strong mood match
+- Do not suggest any of these titles (user already saw them): ${abTitlesBanLine}
+- Vary sub-genre, geography, pacing across the 10 — do not give 10 variations of the same film
 
-Return exactly **5** films as specified in the system message.
-
-Output JSON only, this exact shape:
+Return JSON only:
 {
-  "profile_line": "max 8 words, like a friend texting — not marketing, not 'based on your taste'",
-  "picks": [
-    {"title": "", "year": 2020},
-    {"title": "", "year": 2000},
+  "profile_line": "max 8 words, friend voice, describes tonight's taste",
+  "mainstream": [
+    {"title": "", "year": 0},
+    {"title": "", "year": 0},
+    {"title": "", "year": 0},
+    {"title": "", "year": 0},
+    {"title": "", "year": 0}
+  ],
+  "discovery": [
+    {"title": "", "year": 0},
+    {"title": "", "year": 0},
     {"title": "", "year": 0},
     {"title": "", "year": 0},
     {"title": "", "year": 0}
   ]
 }
-
-Rules: exactly 5 entries in picks; real released films only; title and year fields only.
 ${promptExtra.trim() ? `\n\nAdditional instruction:\n${promptExtra.trim()}` : ""}`;
 }
 
@@ -324,292 +244,52 @@ function parseTitleYearRow(o: Record<string, unknown>): AIRecommendationResult |
   };
 }
 
-function parseRowResponse(raw: Record<string, unknown>): RowLLMResult {
-  const picksIn = Array.isArray(raw.picks) ? raw.picks : [];
-  const picks: AIRecommendationResult[] = picksIn
-    .map((p: unknown) => parseTitleYearRow(p as Record<string, unknown>))
-    .filter((x): x is AIRecommendationResult => !!x)
-    .slice(0, TARGET_TOTAL_RESOLVE);
-
+function parseDualBucketResponse(raw: Record<string, unknown>): RowLLMResult {
+  const parseBucket = (arr: unknown, max: number): AIRecommendationResult[] => {
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .map((p: unknown) => parseTitleYearRow(p as Record<string, unknown>))
+      .filter((x): x is AIRecommendationResult => !!x)
+      .slice(0, max);
+  };
   const profile_line = String(raw.profile_line || "").trim();
-  return { profile_line, picks };
+  return {
+    profile_line,
+    mainstream: parseBucket(raw.mainstream, 5),
+    discovery: parseBucket(raw.discovery, 5),
+  };
 }
 
 async function generateRowPicks(
-  chosenMovies: Movie[],
-  rejectedMovies: Movie[],
   initialGenreFilters: string[],
   mood: SessionMoodProfile,
-  bannedCtx: MergedBannedContext,
+  abBanTitlesLine: string,
   promptExtra: string,
   timingSessionId?: string
 ): Promise<RowLLMResult> {
-  await ensureRecsLoaded();
-  const tasteProfileJson = JSON.stringify(mood);
+  const moodProfileJson = JSON.stringify(mood);
   const genreLine =
     initialGenreFilters.length > 0
       ? `Optional genre hints from the session: ${initialGenreFilters.join(", ")}.`
       : "";
-  const user = buildFivePickUserMessage(tasteProfileJson, bannedCtx.bannedTitlesPrompt, genreLine, promptExtra);
+  const user = buildTenPickUserMessage(moodProfileJson, abBanTitlesLine, genreLine, promptExtra);
 
   const t0 = Date.now();
   const response = await openai.chat.completions.create({
-    model: RECOMMENDATIONS_MODEL,
+    model: REC_ROW_MODEL,
     messages: [
-      { role: "system", content: FIVE_PICK_SYSTEM },
+      { role: "system", content: TEN_PICK_SYSTEM },
       { role: "user", content: user },
     ],
     response_format: { type: "json_object" },
-    max_tokens: 900,
-    temperature: 0.88,
-  });
-  if (timingSessionId) {
-    logRecsTiming(timingSessionId, "llm_five_pick_row", Date.now() - t0);
-  }
-  const raw = JSON.parse(response.choices[0]?.message?.content || "{}") as Record<string, unknown>;
-  return parseRowResponse(raw);
-}
-
-function parseRefillRowResponse(raw: Record<string, unknown>, need: number): AIRecommendationResult[] {
-  const picksIn = Array.isArray(raw.picks) ? raw.picks : [];
-  const out: AIRecommendationResult[] = [];
-  for (let i = 0; i < picksIn.length && out.length < need; i++) {
-    const p = parseTitleYearRow(picksIn[i] as Record<string, unknown>);
-    if (p) out.push(p);
-  }
-  return out;
-}
-
-async function generateRefillRowPicks(
-  mood: SessionMoodProfile,
-  bannedCtx: MergedBannedContext,
-  initialGenreFilters: string[],
-  needCount: number,
-  alreadyShownTitles: string[],
-  timingSessionId?: string
-): Promise<AIRecommendationResult[]> {
-  if (needCount <= 0) return [];
-  await ensureRecsLoaded();
-  const tasteProfileJson = JSON.stringify(mood);
-  const genreLine =
-    initialGenreFilters.length > 0
-      ? `Optional genre hints from the session: ${initialGenreFilters.join(", ")}.`
-      : "";
-  const shownLine =
-    alreadyShownTitles.length > 0
-      ? `Already placed in the row (do NOT repeat): ${alreadyShownTitles.slice(0, 40).join("; ")}.`
-      : "";
-  const user = `taste_profile (JSON):
-${tasteProfileJson}
-
-${genreLine}
-
-DO NOT OUTPUT ANY OF THESE TITLES OR CLOSE VARIANTS:
-${bannedCtx.bannedTitlesPrompt}
-
-${shownLine}
-
-Output exactly ${needCount} new film(s) for the same 5-film row. Mix accessible and less-known titles like the main curator; vary expression; stay on-mood.
-
-JSON only:
-{
-  "picks": [{"title":"","year":2020}]
-}
-The picks array must have exactly ${needCount} entries.`;
-
-  const t0 = Date.now();
-  const response = await openai.chat.completions.create({
-    model: RECOMMENDATIONS_MODEL,
-    messages: [
-      { role: "system", content: REFILL_ROW_SYSTEM },
-      { role: "user", content: user },
-    ],
-    response_format: { type: "json_object" },
-    max_tokens: 400,
+    max_tokens: 1200,
     temperature: 0.9,
   });
   if (timingSessionId) {
-    logRecsTiming(timingSessionId, "llm_row_refill", Date.now() - t0);
+    logRecsTiming(timingSessionId, "llm_ten_pick_row", Date.now() - t0);
   }
   const raw = JSON.parse(response.choices[0]?.message?.content || "{}") as Record<string, unknown>;
-  return parseRefillRowResponse(raw, needCount);
-}
-
-function appendTitlesFromRecommendationsToBanned(mb: MergedBannedContext, recs: Recommendation[]): void {
-  for (const r of recs) {
-    const raw = r.movie.title?.trim();
-    if (!raw) continue;
-    const k = normalizeTitleKey(raw);
-    if (!k || mb.bannedSet.has(k)) continue;
-    mb.bannedSet.add(k);
-    mb.bannedTitlesPrompt = mb.bannedTitlesPrompt
-      ? `${mb.bannedTitlesPrompt}; ${raw}`
-      : raw;
-  }
-}
-
-function mergeRefillResolvedIntoRow(base: Recommendation[], refillResolved: Recommendation[]): Recommendation[] {
-  const out = [...base];
-  const seenT = new Set(out.map((r) => normalizeTitleKey(r.movie.title)));
-  const seenD = new Set(out.map((r) => directorKeyForMovie(r.movie)));
-  for (const r of refillResolved) {
-    if (out.length >= TARGET_TOTAL_RESOLVE) break;
-    const tk = normalizeTitleKey(r.movie.title);
-    const dk = directorKeyForMovie(r.movie);
-    if (seenT.has(tk) || seenD.has(dk)) continue;
-    out.push(r);
-    seenT.add(tk);
-    seenD.add(dk);
-  }
-  return out;
-}
-
-function orderRecommendationRow(recs: Recommendation[]): Recommendation[] {
-  return recs.slice(0, TARGET_TOTAL_RESOLVE);
-}
-
-async function padRowFromCatalogue(
-  chosen: Movie[],
-  _mergedBanned: MergedBannedContext | null,
-  recs: Recommendation[]
-): Promise<Recommendation[]> {
-  let out = orderRecommendationRow(recs);
-  if (out.length >= TARGET_TOTAL_RESOLVE) {
-    return out;
-  }
-
-  const excludeTmdb = new Set(chosen.map((c) => c.tmdbId));
-  const seenTitle = new Set<string>();
-  const seenDir = new Set<string>();
-  for (const r of out) {
-    excludeTmdb.add(r.movie.tmdbId);
-    seenTitle.add(normalizeTitleKey(r.movie.title));
-    seenDir.add(directorKeyForMovie(r.movie));
-  }
-
-  const pool = shuffleArray(
-    getAllMovies().filter(
-      (m) =>
-        !excludeTmdb.has(m.tmdbId) &&
-        m.posterPath?.trim() &&
-        m.year &&
-        m.rating &&
-        m.rating >= 6.5
-    )
-  );
-
-  for (const m of pool) {
-    if (out.length >= TARGET_TOTAL_RESOLVE) break;
-    const tk = normalizeTitleKey(m.title);
-    const dk = directorKeyForMovie(m);
-    if (seenTitle.has(tk) || seenDir.has(dk)) continue;
-
-    try {
-      const [details, trailerUrls, watchResult] = await Promise.all([
-        getMovieDetails(m.tmdbId),
-        getMovieTrailers(m.tmdbId).catch(() => [] as string[]),
-        getWatchProviders(m.tmdbId, m.title, m.year ?? null),
-      ]);
-      if (!details?.posterPath?.trim() || watchResult.providers.length === 0) continue;
-
-      details.listSource = "catalogue-pad";
-      const urls = Array.isArray(trailerUrls) ? trailerUrls : [];
-      out.push({
-        movie: details,
-        trailerUrl: urls[0] ?? null,
-        trailerUrls: urls,
-        reason: "",
-        auWatchAvailable: true,
-      });
-      excludeTmdb.add(m.tmdbId);
-      seenTitle.add(tk);
-      seenDir.add(dk);
-    } catch {
-      /* skip */
-    }
-  }
-
-  return orderRecommendationRow(out);
-}
-
-function buildBannedContext(chosenMovies: Movie[], rejectedMovies: Movie[]): {
-  bannedSet: Set<string>;
-  bannedTitlesPrompt: string;
-} {
-  const bannedSet = new Set<string>();
-  const labels: string[] = [];
-
-  const addTitle = (raw: string) => {
-    const k = normalizeTitleKey(raw);
-    if (!k) return;
-    if (bannedSet.has(k)) return;
-    bannedSet.add(k);
-    labels.push(raw.trim());
-  };
-
-  for (const m of chosenMovies) addTitle(m.title);
-  for (const m of rejectedMovies) addTitle(m.title);
-  for (const t of OVERUSED_CANON_BANNED) addTitle(t);
-
-  const bannedTitlesPrompt = labels.join("; ");
-  return { bannedSet, bannedTitlesPrompt };
-}
-
-interface MergedBannedContext {
-  bannedSet: Set<string>;
-  bannedTitlesPrompt: string;
-  anonDirectorKeys: Set<string>;
-  anonPrimaryGenreCounts: Map<string, number>;
-}
-
-function mergeAnonymousIntoBanned(
-  base: { bannedSet: Set<string>; bannedTitlesPrompt: string },
-  entries: AnonymousRecMemoryEntry[]
-): MergedBannedContext {
-  const bannedSet = new Set(base.bannedSet);
-  const extraTitles: string[] = [];
-  const anonDirectorKeys = new Set<string>();
-  const anonPrimaryGenreCounts = new Map<string, number>();
-
-  for (const e of entries) {
-    const tk = normalizeTitleKey(e.title);
-    if (tk && !bannedSet.has(tk)) {
-      bannedSet.add(tk);
-      extraTitles.push(e.title.trim());
-    }
-    const d = (e.director || "").toLowerCase().trim();
-    if (d) anonDirectorKeys.add(d);
-    const g0 = e.genres?.[0]?.trim().toLowerCase();
-    if (g0) anonPrimaryGenreCounts.set(g0, (anonPrimaryGenreCounts.get(g0) ?? 0) + 1);
-  }
-
-  const memoryLines = [
-    extraTitles.length > 0 &&
-      `Browser memory — do NOT repeat these titles (or close variants): ${extraTitles.slice(0, 40).join("; ")}.`,
-    anonDirectorKeys.size > 0 &&
-      `Browser memory — do not use these directors: ${Array.from(anonDirectorKeys).slice(0, 25).join("; ")}.`,
-  ].filter(Boolean) as string[];
-
-  const bannedTitlesPrompt = [base.bannedTitlesPrompt, ...memoryLines].filter(Boolean).join(" ");
-
-  return { bannedSet, bannedTitlesPrompt, anonDirectorKeys, anonPrimaryGenreCounts };
-}
-
-function cloneMergedBanned(m: MergedBannedContext): MergedBannedContext {
-  return {
-    bannedSet: new Set(m.bannedSet),
-    bannedTitlesPrompt: m.bannedTitlesPrompt,
-    anonDirectorKeys: new Set(m.anonDirectorKeys),
-    anonPrimaryGenreCounts: new Map(m.anonPrimaryGenreCounts),
-  };
-}
-
-function movieFailsAnonDiversity(movie: Movie, mb: MergedBannedContext): boolean {
-  const d = (movie.director || "").toLowerCase().trim();
-  if (d && mb.anonDirectorKeys.has(d)) return true;
-  const p = (movie.genres[0] || "").trim().toLowerCase();
-  if (p && (mb.anonPrimaryGenreCounts.get(p) ?? 0) >= ANON_PRIMARY_GENRE_OVERUSE) return true;
-  return false;
+  return parseDualBucketResponse(raw);
 }
 
 export async function extractSessionMood(
@@ -814,8 +494,7 @@ function moodToTasteObservation(mood: SessionMoodProfile, chosenMovies: Movie[])
 
 async function resolveOneRecommendation(
   rec: AIRecommendationResult,
-  excludeTmdbIds: Set<number>,
-  mergedBanned?: MergedBannedContext | null
+  excludeTmdbIds: Set<number>
 ): Promise<Recommendation | null> {
   try {
     const searchResult = await searchMovieByTitle(rec.title, rec.year);
@@ -831,17 +510,17 @@ async function resolveOneRecommendation(
     if (!movieDetails.posterPath?.trim()) return null;
     if (!watchResult.providers.length) return null;
 
-    if (mergedBanned && movieFailsAnonDiversity(movieDetails, mergedBanned)) return null;
-
     movieDetails.listSource = "ai-recommendation";
     const urls = Array.isArray(tmdbTrailers) ? tmdbTrailers : [];
-    return {
+    const out: Recommendation = {
       movie: movieDetails,
       trailerUrl: urls[0] ?? null,
       trailerUrls: urls,
       reason: "",
       auWatchAvailable: true,
     };
+    if (rec.bucket) out.bucket = rec.bucket;
+    return out;
   } catch {
     return null;
   }
@@ -850,16 +529,13 @@ async function resolveOneRecommendation(
 async function resolvePicksToRecommendations(
   picks: AIRecommendationResult[],
   chosenMovies: Movie[],
-  mergedBanned: MergedBannedContext | null,
   opts: { logCluster?: { sessionId: string } } = {}
 ): Promise<Recommendation[]> {
   const excludeTmdb = new Set(chosenMovies.map((m) => m.tmdbId));
 
   const ordered = picks.slice(0, TARGET_TOTAL_RESOLVE);
   const tResolve = Date.now();
-  const settled = await Promise.all(
-    ordered.map((r) => resolveOneRecommendation(r, excludeTmdb, mergedBanned))
-  );
+  const settled = await Promise.all(ordered.map((r) => resolveOneRecommendation(r, excludeTmdb)));
   const resolveMs = Date.now() - tResolve;
 
   const out: Recommendation[] = [];
@@ -937,18 +613,21 @@ export async function getTastePreviewForSession(
 }
 
 function rowPicksFromRaw(raw: RowLLMResult | null): AIRecommendationResult[] {
-  if (!raw?.picks?.length) return [];
-  return raw.picks.slice(0, TARGET_TOTAL_RESOLVE);
+  if (!raw) return [];
+  const mainstream = (raw.mainstream ?? [])
+    .map((p) => ({ ...p, bucket: "mainstream" as const }))
+    .slice(0, 5);
+  const discovery = (raw.discovery ?? [])
+    .map((p) => ({ ...p, bucket: "discovery" as const }))
+    .slice(0, 5);
+  return [...mainstream, ...discovery].slice(0, TARGET_TOTAL_RESOLVE);
 }
 
 async function finalizeRecommendationsToResponse(
   chosen: Movie[],
-  banned: MergedBannedContext,
   taste: TasteObservationResult,
   rawFromPrefetch: RowLLMResult | null,
-  timingSessionId: string | undefined,
-  mood: SessionMoodProfile,
-  filters: string[]
+  timingSessionId: string | undefined
 ): Promise<RecommendationsResponse> {
   const finalizeStart = Date.now();
   const sid = timingSessionId;
@@ -960,56 +639,18 @@ async function finalizeRecommendationsToResponse(
     console.log(`[recs-finalize] ${shortSid} row ${msg}${tail}`);
   };
 
-  const workingBanned = cloneMergedBanned(banned);
   const picks = rowPicksFromRaw(rawFromPrefetch);
   const rowCopy = rawFromPrefetch;
 
   const tAu1 = Date.now();
-  let recommendations = await resolvePicksToRecommendations(picks, chosen, workingBanned, {
+  const recommendations = await resolvePicksToRecommendations(picks, chosen, {
     logCluster: timingSessionId ? { sessionId: timingSessionId } : undefined,
   });
-  let auResolveMs = Date.now() - tAu1;
-  logFinalize("au_resolve_pass1_ms", {
+  const auResolveMs = Date.now() - tAu1;
+  logFinalize("au_resolve_ms", {
     ms: auResolveMs,
     pick_pool: picks.length,
     resolved: recommendations.length,
-  });
-
-  appendTitlesFromRecommendationsToBanned(workingBanned, recommendations);
-
-  const need = Math.max(0, TARGET_TOTAL_RESOLVE - recommendations.length);
-
-  if (need > 0) {
-    const shownTitles = recommendations.map((r) => r.movie.title.trim()).filter(Boolean);
-    const tRefill = Date.now();
-    const refillPicks = await generateRefillRowPicks(
-      mood,
-      workingBanned,
-      filters,
-      need,
-      shownTitles,
-      timingSessionId
-    );
-    logFinalize("refill_llm_ms", { ms: Date.now() - tRefill, need, refill_pool: refillPicks.length });
-
-    const tAuRefill = Date.now();
-    const refillResolved = await resolvePicksToRecommendations(refillPicks, chosen, workingBanned, {
-      logCluster: timingSessionId ? { sessionId: timingSessionId } : undefined,
-    });
-    auResolveMs += Date.now() - tAuRefill;
-    recommendations = mergeRefillResolvedIntoRow(recommendations, refillResolved);
-    appendTitlesFromRecommendationsToBanned(workingBanned, recommendations);
-    logFinalize("after_refill_merge", {
-      resolved: recommendations.length,
-      refill_resolved: refillResolved.length,
-    });
-  }
-
-  const tPad = Date.now();
-  recommendations = await padRowFromCatalogue(chosen, workingBanned, recommendations);
-  logFinalize("catalogue_pad_ms", {
-    ms: Date.now() - tPad,
-    total: recommendations.length,
   });
 
   const totalFinalizeMs = Date.now() - finalizeStart;
@@ -1083,11 +724,11 @@ async function ensureRecommendationsReady(
     let mood: SessionMoodProfile;
     let taste: TasteObservationResult;
     let raw: RowLLMResult | null = null;
-    let bannedMerged: MergedBannedContext;
 
     const emptyRow = (): RowLLMResult => ({
       profile_line: "",
-      picks: [],
+      mainstream: [],
+      discovery: [],
     });
 
     try {
@@ -1098,7 +739,6 @@ async function ensureRecommendationsReady(
       taste = phase1.taste;
       patchSessionTasteMeta(sessionId, { mood, taste });
       await startSingleRowLlmPrefetchIfNeeded(sessionId, clientAnonMemory, phase1);
-      bannedMerged = mergeRecentTitlesIntoBanned(mergeAnonymousIntoBanned(phase1.banned, clientAnonMemory));
 
       const rowPromise = singleRowLlmBySessionIdentity.get(rowKey);
       if (!rowPromise) {
@@ -1107,7 +747,7 @@ async function ensureRecommendationsReady(
 
       const rowWait = Date.now();
       raw = await rowPromise.catch((e) => {
-        console.error("[prefetch] five-pick row LLM failed", e);
+        console.error("[prefetch] ten-pick row LLM failed", e);
         return emptyRow();
       });
       logRecsTiming(sessionId, "llm_raw_wait_row", Date.now() - rowWait);
@@ -1117,25 +757,15 @@ async function ensureRecommendationsReady(
       mood = await extractSessionMood(chosen, rejected, filters);
       logRecsTiming(sessionId, "taste_extraction_cold", Date.now() - moodT0);
       taste = moodToTasteObservation(mood, chosen);
-      bannedMerged = mergeRecentTitlesIntoBanned(
-        mergeAnonymousIntoBanned(buildBannedContext(chosen, rejected), clientAnonMemory)
-      );
       patchSessionTasteMeta(sessionId, { mood, taste });
       const coldLlm = Date.now();
-      raw = await generateRowPicks(chosen, rejected, filters, mood, bannedMerged, "", sessionId);
+      const abLine = formatAbBanListForPrompt(chosen, rejected);
+      raw = await generateRowPicks(filters, mood, abLine, "", sessionId);
       logRecsTiming(sessionId, "llm_row_cold_total", Date.now() - coldLlm);
     }
 
     const finalizeT0 = Date.now();
-    const res = await finalizeRecommendationsToResponse(
-      chosen,
-      bannedMerged,
-      taste,
-      raw,
-      sessionId,
-      mood,
-      filters
-    );
+    const res = await finalizeRecommendationsToResponse(chosen, taste, raw, sessionId);
     logRecsTiming(sessionId, "finalize_row", Date.now() - finalizeT0);
 
     mergeRecBundleIntoCache(sessionId, anonFp, res);
@@ -1200,12 +830,14 @@ async function fallbackRecommendations(chosenMovies: Movie[]): Promise<Recommend
     if (trailerUrls.length === 0) continue;
     const watch = await getWatchProviders(m.tmdbId, m.title, m.year);
     if (watch.providers.length === 0) continue;
+    const bucket: PickBucket = recs.length < 5 ? "mainstream" : "discovery";
     recs.push({
       movie: { ...m, listSource: "ai-recommendation" },
       trailerUrl: trailerUrls[0] || null,
       trailerUrls,
       reason: "",
       auWatchAvailable: true,
+      bucket,
     });
   }
 
@@ -1246,24 +878,17 @@ export async function generateReplacementRecommendation(
   chosenMovies: Movie[],
   excludeTmdbIds: number[],
   rejectedMovies: Movie[] = [],
-  clientAnonMemory: AnonymousRecMemoryEntry[] = []
+  _clientAnonMemory: AnonymousRecMemoryEntry[] = []
 ): Promise<Recommendation | null> {
   const picks = chosenMovies.map((m, i) => `R${i + 1}: "${m.title}" (${m.year}) — ${m.director || "?"}`).join("\n");
   const rejHints =
     rejectedMovies.length > 0
       ? `\nPASSED ON: ${rejectedMovies.slice(0, 3).map((m) => `"${m.title}"`).join(", ")}`
       : "";
-  const memoryHint =
-    clientAnonMemory.length > 0
-      ? `\nBrowser memory — do NOT repeat these titles: ${clientAnonMemory
-          .slice(-20)
-          .map((e) => e.title.trim())
-          .join("; ")}.`
-      : "";
 
   const baseUser = `One replacement pick for this user's row. Infer taste from the whole A/B funnel — do not mirror one funnel title to one pick.
 
-${picks}${rejHints}${memoryHint}
+${picks}${rejHints}
 
 Exclude ${excludeTmdbIds.length} titles already shown.
 
@@ -1282,7 +907,7 @@ JSON only: {"title":"","year":2000} — title and year only, no reason field.`;
       const prompt = baseUser + banLine;
 
       const resp = await openai.chat.completions.create({
-        model: RECOMMENDATIONS_MODEL,
+        model: REC_ROW_MODEL,
         messages: [{ role: "user", content: prompt }],
         response_format: { type: "json_object" },
         max_tokens: 280,
