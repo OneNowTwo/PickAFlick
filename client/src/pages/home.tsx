@@ -192,14 +192,31 @@ export default function Home() {
   // Get current round query
   const recsQuery = useQuery<RecommendationsResponse>({
     queryKey: ["/api/session", sessionId, "recommendations-bundle", anonRecFingerprint],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const tr = resultsTrack ?? "mainstream";
-      const res = await fetch(
-        `/api/session/${sessionId}/recommendations?track=${encodeURIComponent(tr)}`,
-        { headers: buildAnonMemoryHeaders(anonRecPayload) }
-      );
-      if (!res.ok) throw new Error(await res.text());
-      return res.json() as Promise<RecommendationsResponse>;
+      const url = `/api/session/${sessionId}/recommendations?track=${encodeURIComponent(tr)}`;
+      const headers = buildAnonMemoryHeaders(anonRecPayload);
+      /** gpt-5 + slot refills can exceed 60s; avoid an infinite spinner if the connection stalls. */
+      const RECS_FETCH_MAX_MS = 300_000;
+      const ctrl = new AbortController();
+      const timeoutId = setTimeout(() => ctrl.abort(), RECS_FETCH_MAX_MS);
+      const onQueryAbort = () => {
+        clearTimeout(timeoutId);
+        ctrl.abort();
+      };
+      if (signal.aborted) {
+        clearTimeout(timeoutId);
+        throw new DOMException("Aborted", "AbortError");
+      }
+      signal.addEventListener("abort", onQueryAbort, { once: true });
+      try {
+        const res = await fetch(url, { headers, signal: ctrl.signal });
+        if (!res.ok) throw new Error(await res.text());
+        return res.json() as Promise<RecommendationsResponse>;
+      } finally {
+        clearTimeout(timeoutId);
+        signal.removeEventListener("abort", onQueryAbort);
+      }
     },
     enabled: gameState === "results" && !!sessionId && !!resultsTrack,
     staleTime: Infinity,
@@ -738,7 +755,7 @@ export default function Home() {
           <ResultsScreen
             key={`${sessionId}-${resultsTrack ?? ""}`}
             recommendations={displayRecommendations}
-            isLoading={recsQuery.isLoading}
+            isLoading={!recsQuery.data && recsQuery.fetchStatus === "fetching"}
             loadingVariant="inline"
             loadError={recsQuery.isError}
             activeTrack={resultsTrack ?? "mainstream"}
@@ -750,6 +767,7 @@ export default function Home() {
               )
             }
             onPlayAgain={handlePlayAgain}
+            onRetryLoad={() => void recsQuery.refetch()}
             sessionId={sessionId}
           />
         )}

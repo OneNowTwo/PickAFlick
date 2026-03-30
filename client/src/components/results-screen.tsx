@@ -90,6 +90,8 @@ interface ResultsScreenProps {
   canSwitchLane?: boolean;
   loadError?: boolean;
   onPlayAgain: () => void;
+  /** Re-run recommendations fetch without resetting the game (e.g. slow LLM / timeout). */
+  onRetryLoad?: () => void;
   sessionId?: string | null;
   suppressTrailer?: boolean; // hide iframe when an overlay modal is open (YouTube z-index fix)
 }
@@ -103,6 +105,7 @@ export function ResultsScreen({
   canSwitchLane = false,
   loadError = false,
   onPlayAgain,
+  onRetryLoad,
   sessionId,
   suppressTrailer = false,
 }: ResultsScreenProps) {
@@ -145,7 +148,7 @@ export function ResultsScreen({
     setAllTrailersFailed(false);
   }, [currentIndex]);
 
-  // Smooth progress bar while recommendations load (indeterminate feel; caps at ~92% until data arrives).
+  // Progress bar: quick ramp to ~92%, then slow creep to ~97% so long LLM runs don’t look frozen.
   useEffect(() => {
     if (!isLoading) {
       setLoadingProgress(0);
@@ -153,14 +156,31 @@ export function ResultsScreen({
     }
 
     const start = Date.now();
-    const durationMs = 8000;
+    const fastMs = 8000;
+    const slowMs = 180_000;
     const progressInterval = setInterval(() => {
       const elapsed = Date.now() - start;
-      const p = Math.min(92, (elapsed / durationMs) * 100);
-      setLoadingProgress(p);
+      let p: number;
+      if (elapsed < fastMs) {
+        p = (elapsed / fastMs) * 92;
+      } else {
+        const slowElapsed = elapsed - fastMs;
+        p = 92 + Math.min(5, (slowElapsed / slowMs) * 5);
+      }
+      setLoadingProgress(Math.min(97, p));
     }, 100);
 
     return () => clearInterval(progressInterval);
+  }, [isLoading]);
+
+  const [longWait, setLongWait] = useState(false);
+  useEffect(() => {
+    if (!isLoading) {
+      setLongWait(false);
+      return;
+    }
+    const t = setTimeout(() => setLongWait(true), 35_000);
+    return () => clearTimeout(t);
   }, [isLoading]);
 
   useEffect(() => {
@@ -397,10 +417,21 @@ export function ResultsScreen({
     return (
       <div className="flex flex-col items-center gap-4 py-12 px-4 max-w-md mx-auto text-center">
         <p className="text-white/90">Couldn&apos;t load recommendations.</p>
-        <Button size="lg" onClick={onPlayAgain} data-testid="button-retry-recs">
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Try again
-        </Button>
+        <p className="text-white/50 text-sm">
+          If it timed out, the server may still be working — retry below, or start over.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3 w-full justify-center">
+          {onRetryLoad && (
+            <Button size="lg" variant="default" onClick={() => onRetryLoad()} data-testid="button-retry-recs-fetch">
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Retry loading
+            </Button>
+          )}
+          <Button size="lg" variant={onRetryLoad ? "outline" : "default"} onClick={onPlayAgain} data-testid="button-retry-recs">
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Start over
+          </Button>
+        </div>
       </div>
     );
   }
@@ -433,7 +464,24 @@ export function ResultsScreen({
           </p>
         </div>
         {loadingProgressBar}
-        <p className="text-[11px] md:text-xs text-white/40">This usually only takes a moment.</p>
+        <p className="text-[11px] md:text-xs text-white/40">
+          {longWait
+            ? "Still generating your row — newer models can take 1–3 minutes. You can keep waiting or retry."
+            : "This usually only takes a moment."}
+        </p>
+        {longWait && onRetryLoad && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="border-white/30 text-white bg-white/5 hover:bg-white/10"
+            onClick={() => onRetryLoad()}
+            data-testid="button-retry-load-recs"
+          >
+            <RefreshCw className="w-3.5 h-3.5 mr-2" />
+            Retry loading
+          </Button>
+        )}
       </div>
     );
   }
@@ -455,7 +503,23 @@ export function ResultsScreen({
             </p>
           </div>
           {loadingProgressBar}
-          <p className="text-[11px] text-white/40 text-center">This usually only takes a moment.</p>
+          <p className="text-[11px] text-white/40 text-center">
+            {longWait
+              ? "Still generating your row — newer models can take 1–3 minutes. You can keep waiting or retry."
+              : "This usually only takes a moment."}
+          </p>
+          {longWait && onRetryLoad && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-white/30 text-white bg-white/5 hover:bg-white/10"
+              onClick={() => onRetryLoad()}
+            >
+              <RefreshCw className="w-3.5 h-3.5 mr-2" />
+              Retry loading
+            </Button>
+          )}
         </div>
       </div>
     );
