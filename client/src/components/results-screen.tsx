@@ -36,13 +36,14 @@ import {
   getAnonMemoryPayloadForSession,
 } from "@/lib/anonymous-rec-memory";
 
-function tasteHeadline(profile: RecommendationsResponse["preferenceProfile"] | undefined): string {
-  const h = profile?.headline?.trim();
-  if (h) return h;
+/** Hero title: Claude profile_line only (uppercase via CSS); never preferenceProfile.headline. */
+function heroHeadlineFromProfile(profile: RecommendationsResponse["preferenceProfile"] | undefined): string {
+  const pl = profile?.profileLine?.trim();
+  if (pl) return pl;
   const g = profile?.topGenres?.filter(Boolean) ?? [];
-  if (g.length >= 2) return `Tonight: ${g[0].toLowerCase()} with a ${g[1].toLowerCase()} edge.`;
-  if (g.length === 1) return `Tonight leans ${g[0].toLowerCase()}.`;
-  return "Here’s what matched your picks.";
+  if (g.length >= 2) return `${g[0]} · ${g[1]}`;
+  if (g.length === 1) return g[0];
+  return "Tonight's picks";
 }
 
 /** Display-only: shift common third-person / label phrasing to second-person for results copy. */
@@ -562,10 +563,7 @@ export function ResultsScreen({
 
   const { preferenceProfile, hasPersonalisation } = recommendations;
   const totalRecs = displayRecs.length;
-  const heroHeadline =
-    preferenceProfile?.profileLine?.trim() ||
-    preferenceProfile?.headline?.trim() ||
-    tasteHeadline(preferenceProfile);
+  const heroHeadline = heroHeadlineFromProfile(preferenceProfile);
   const isCurrentSeen = currentRec ? seenMovies.has(currentRec.movie.tmdbId) : false;
 
   const handleNext = () => {
@@ -658,7 +656,7 @@ export function ResultsScreen({
       )}
 
       <p className="w-full max-w-3xl mx-auto text-center text-sm md:text-base text-white/90 leading-relaxed px-3 mt-0.5 mb-0 normal-case">
-        Looks like you&apos;re in the mood for tonight. Here are our picks:
+        Here are our picks for you tonight:
       </p>
 
       {/* Trailer card with nav - row on desktop, stacked on mobile */}

@@ -630,7 +630,7 @@ async function resolveOneRecommendation(
     if (!movieDetails.posterPath?.trim()) return null;
     if (!watchResult.providers.length) return null;
 
-    movieDetails.listSource = "ai-recommendation";
+    movieDetails.listSource = "claude-row";
     const urls = Array.isArray(tmdbTrailers) ? tmdbTrailers : [];
     return {
       movie: movieDetails,
@@ -655,7 +655,7 @@ async function resolveMovieFromCatalogueCandidate(movie: Movie): Promise<Recomme
     if (!movieDetails) return null;
     if (!movieDetails.posterPath?.trim()) return null;
     if (!watchResult.providers.length) return null;
-    movieDetails.listSource = "ai-recommendation";
+    movieDetails.listSource = "catalog-pad";
     const urls = Array.isArray(tmdbTrailers) ? tmdbTrailers : [];
     return {
       movie: movieDetails,
@@ -877,6 +877,14 @@ async function finalizeRecommendationsToResponse(
   recommendations = recommendations.slice(0, TARGET_TOTAL_RESOLVE);
   sortRecommendationsPre1980Last(recommendations);
 
+  if (sid) {
+    const finalSources = recommendations.map((r) => ({
+      title: r.movie.title,
+      source: r.movie.listSource,
+    }));
+    console.log(`[recs-finalize] ${shortSid} row final_sources=${JSON.stringify(finalSources)}`);
+  }
+
   if (recommendations.length > 0) {
     const moodKey = buildMoodKeyForRecentStore(chosen);
     try {
@@ -1078,7 +1086,7 @@ async function fallbackRecommendations(chosenMovies: Movie[]): Promise<Recommend
     const watch = await getWatchProviders(m.tmdbId, m.title, m.year);
     if (watch.providers.length === 0) continue;
     recs.push({
-      movie: { ...m, listSource: "ai-recommendation" },
+      movie: { ...m, listSource: "fallback-row" },
       trailerUrl: trailerUrls[0] || null,
       trailerUrls,
       reason: "",
