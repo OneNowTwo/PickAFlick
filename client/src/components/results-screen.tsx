@@ -79,13 +79,6 @@ function loadingBodyFromPreview(p: TastePreview | undefined): string {
   return "We’re lining up films that match how you voted.";
 }
 
-/** Claude profile_line embedded in a sentence — first character lowercased for sentence case */
-function moodFragmentForSentence(profileLine: string): string {
-  const t = profileLine.trim();
-  if (!t) return "a film that fits your picks";
-  return t.charAt(0).toLowerCase() + t.slice(1);
-}
-
 function truncateOverview(text: string, maxLen = 120): string {
   const t = text.replace(/\s+/g, " ").trim();
   if (t.length <= maxLen) return t;
@@ -569,8 +562,10 @@ export function ResultsScreen({
 
   const { preferenceProfile, hasPersonalisation } = recommendations;
   const totalRecs = displayRecs.length;
-  const apiProfileLine = preferenceProfile?.profileLine?.trim() ?? "";
-  const topHeadline = preferenceProfile?.headline?.trim() || tasteHeadline(preferenceProfile);
+  const heroHeadline =
+    preferenceProfile?.profileLine?.trim() ||
+    preferenceProfile?.headline?.trim() ||
+    tasteHeadline(preferenceProfile);
   const isCurrentSeen = currentRec ? seenMovies.has(currentRec.movie.tmdbId) : false;
 
   const handleNext = () => {
@@ -651,7 +646,7 @@ export function ResultsScreen({
     <div className="flex flex-col items-center gap-1 md:gap-2 w-full max-w-7xl mx-auto px-2 md:px-4 pt-4 md:pt-2 pb-4 md:pb-6">
       <div className="text-center max-w-xl md:max-w-3xl px-3 pt-1 pb-2">
         <h2 className="text-2xl md:text-4xl lg:text-[2.75rem] font-bold text-white uppercase tracking-[0.06em] leading-[1.15]">
-          {topHeadline}
+          {heroHeadline}
         </h2>
       </div>
 
@@ -663,7 +658,7 @@ export function ResultsScreen({
       )}
 
       <p className="w-full max-w-3xl mx-auto text-center text-sm md:text-base text-white/90 leading-relaxed px-3 mt-0.5 mb-0 normal-case">
-        Looks like you&apos;re in the mood for {moodFragmentForSentence(apiProfileLine)}. Here are our picks:
+        Looks like you&apos;re in the mood for tonight. Here are our picks:
       </p>
 
       {/* Trailer card with nav - row on desktop, stacked on mobile */}
