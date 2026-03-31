@@ -691,17 +691,31 @@ async function padRecommendationsFromHighRatedGenre(
     }
     pool.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
 
-    for (const m of pool) {
-      if (out.length >= need) break;
-      const tk = normalizeTitleKey(m.title);
-      const dk = directorKeyForMovie(m);
-      if (seenTitle.has(tk) || seenDir.has(dk)) continue;
-      const rec = await resolveMovieFromCatalogueCandidate(m);
-      if (!rec) continue;
-      seenTitle.add(tk);
-      seenDir.add(dk);
-      excludeTmdb.add(m.tmdbId);
-      out.push(rec);
+    const PAD_BATCH = 10;
+    let pi = 0;
+    while (pi < pool.length && out.length < need) {
+      const chunk: Movie[] = [];
+      while (chunk.length < PAD_BATCH && pi < pool.length) {
+        const m = pool[pi++];
+        const tk = normalizeTitleKey(m.title);
+        const dk = directorKeyForMovie(m);
+        if (seenTitle.has(tk) || seenDir.has(dk)) continue;
+        chunk.push(m);
+      }
+      if (chunk.length === 0) continue;
+      const settled = await Promise.all(chunk.map((m) => resolveMovieFromCatalogueCandidate(m)));
+      for (let i = 0; i < chunk.length && out.length < need; i++) {
+        const rec = settled[i];
+        if (!rec) continue;
+        const m = chunk[i];
+        const tk = normalizeTitleKey(m.title);
+        const dk = directorKeyForMovie(m);
+        if (seenTitle.has(tk) || seenDir.has(dk)) continue;
+        seenTitle.add(tk);
+        seenDir.add(dk);
+        excludeTmdb.add(m.tmdbId);
+        out.push(rec);
+      }
     }
   }
 
@@ -723,6 +737,7 @@ async function resolvePicksToRecommendations(
 
   const ordered = picks.slice(0, TARGET_TOTAL_RESOLVE);
   const tResolve = Date.now();
+  // All picks resolve concurrently (each pick: title search + parallel detail/trailer/watch)
   const settled = await Promise.all(ordered.map((r) => resolveOneRecommendation(r, excludeTmdb)));
   const resolveMs = Date.now() - tResolve;
 
@@ -744,8 +759,8 @@ async function resolvePicksToRecommendations(
     const sid = opts.logCluster.sessionId;
     const short = sid.length > 16 ? `${sid.slice(0, 8)}…` : sid;
     console.log(
-      `[recs-resolve] ${short} row tmdb_au_ms=${resolveMs} ` +
-        `llm_picks=${ordered.length} resolved=${out.length}`
+      `[recs-resolve] ${short} row parallel_picks=${ordered.length} tmdb_au_ms=${resolveMs} ` +
+        `resolved=${out.length}`
     );
   }
 
@@ -761,7 +776,9 @@ export function beginRecommendationPrefetch(sessionId: string): void {
   if (chosen.length === 0) return;
 
   if (!prefetchPhase1BySession.has(sessionId)) {
-    console.log(`[prefetch] Starting taste extraction for ${sessionId} (row LLM deferred until results)`);
+    console.log(
+      `[prefetch] Starting taste extraction session=${sessionId} choices=${chosen.length} session_complete=true (mood_then_row_llm)`
+    );
     const tMood = Date.now();
     const p1 = buildPrefetchPhase1(sessionId, chosen, rejected, filters).then((phase1) => {
       logRecsTiming(sessionId, "taste_extraction", Date.now() - tMood);
@@ -1047,6 +1064,25 @@ export async function finalizeRecommendationsForSession(
   };
 }
 
+async function tryFallbackMovieSlot(m: Movie): Promise<Recommendation | null> {
+  try {
+    const [trailerUrls, watch] = await Promise.all([
+      getMovieTrailers(m.tmdbId),
+      getWatchProviders(m.tmdbId, m.title, m.year),
+    ]);
+    if (trailerUrls.length === 0 || watch.providers.length === 0) return null;
+    return {
+      movie: { ...m, listSource: "ai-recommendation" },
+      trailerUrl: trailerUrls[0] || null,
+      trailerUrls,
+      reason: "",
+      auWatchAvailable: true,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function fallbackRecommendations(chosenMovies: Movie[]): Promise<RecommendationsResponse> {
   const taste = fallbackTaste(chosenMovies);
   const allMovies = getAllMovies();
@@ -1062,20 +1098,14 @@ async function fallbackRecommendations(chosenMovies: Movie[]): Promise<Recommend
     )
   ).slice(0, 80);
 
+  const FALLBACK_BATCH = 12;
   const recs: Recommendation[] = [];
-  for (const m of pool) {
-    if (recs.length >= TARGET_TOTAL_RESOLVE) break;
-    const trailerUrls = await getMovieTrailers(m.tmdbId);
-    if (trailerUrls.length === 0) continue;
-    const watch = await getWatchProviders(m.tmdbId, m.title, m.year);
-    if (watch.providers.length === 0) continue;
-    recs.push({
-      movie: { ...m, listSource: "ai-recommendation" },
-      trailerUrl: trailerUrls[0] || null,
-      trailerUrls,
-      reason: "",
-      auWatchAvailable: true,
-    });
+  for (let i = 0; i < pool.length && recs.length < TARGET_TOTAL_RESOLVE; i += FALLBACK_BATCH) {
+    const chunk = pool.slice(i, i + FALLBACK_BATCH);
+    const settled = await Promise.all(chunk.map((m) => tryFallbackMovieSlot(m)));
+    for (const r of settled) {
+      if (r && recs.length < TARGET_TOTAL_RESOLVE) recs.push(r);
+    }
   }
 
   return {

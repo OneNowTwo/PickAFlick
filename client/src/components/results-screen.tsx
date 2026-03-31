@@ -95,6 +95,22 @@ function truncateOverview(text: string, maxLen = 120): string {
   return `${base}…`;
 }
 
+/** YouTube iframe API — parent receives onError for embed blocked / unavailable / wrong id */
+function augmentYoutubeEmbedUrl(url: string): string {
+  if (!url.includes("youtube.com/embed")) return url;
+  try {
+    const u = new URL(url);
+    u.searchParams.set("enablejsapi", "1");
+    if (typeof window !== "undefined" && !u.searchParams.get("origin")) {
+      u.searchParams.set("origin", window.location.origin);
+    }
+    return u.toString();
+  } catch {
+    const join = url.includes("?") ? "&" : "?";
+    return `${url}${join}enablejsapi=1`;
+  }
+}
+
 interface ResultsScreenProps {
   recommendations: RecommendationsResponse | null;
   isLoading: boolean;
@@ -133,6 +149,8 @@ export function ResultsScreen({
   const { toast } = useToast();
   /** Dedupes recommendation_served if this effect runs twice (e.g. React Strict Mode) */
   const recommendationServedKeyRef = useRef<string | null>(null);
+  /** Latest trailer list + index for YouTube postMessage handler */
+  const youtubeTrailerRef = useRef<{ urls: string[]; trailerIndex: number }>({ urls: [], trailerIndex: 0 });
 
   // Track when results screen loads with recommendations
   useEffect(() => {
@@ -244,6 +262,60 @@ export function ResultsScreen({
   const displayRecs = localRecs;
   const currentRec = displayRecs[currentIndex];
   const currentTmdbId = currentRec?.movie.tmdbId;
+
+  const availableTrailersForYoutube = useMemo(() => {
+    if (!currentRec) return [];
+    return currentRec.trailerUrls?.length
+      ? currentRec.trailerUrls
+      : currentRec.trailerUrl
+        ? [currentRec.trailerUrl]
+        : [];
+  }, [currentRec]);
+
+  useEffect(() => {
+    youtubeTrailerRef.current = {
+      urls: availableTrailersForYoutube,
+      trailerIndex,
+    };
+  }, [availableTrailersForYoutube, trailerIndex]);
+
+  useEffect(() => {
+    const url = availableTrailersForYoutube[trailerIndex];
+    if (!url?.includes("youtube.com/embed")) return;
+
+    const onMsg = (e: MessageEvent) => {
+      if (e.origin !== "https://www.youtube.com" && e.origin !== "https://www.youtube-nocookie.com") return;
+      let data: { event?: string } | null = null;
+      try {
+        data = typeof e.data === "string" ? JSON.parse(e.data) : (e.data as { event?: string });
+      } catch {
+        return;
+      }
+      if (data?.event !== "onError") return;
+      const { urls, trailerIndex: ti } = youtubeTrailerRef.current;
+      if (ti < urls.length - 1) {
+        setTrailerIndex(ti + 1);
+      } else {
+        setAllTrailersFailed(true);
+      }
+    };
+
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [availableTrailersForYoutube, trailerIndex]);
+
+  useEffect(() => {
+    if (!allTrailersFailed) return;
+    if (displayRecs.length < 2) return;
+    if (currentIndex >= displayRecs.length - 1) return;
+    const id = window.setTimeout(() => {
+      setCurrentIndex((i) => i + 1);
+      setTrailerIndex(0);
+      setAllTrailersFailed(false);
+      setAutoPlayTrailer(true);
+    }, 2000);
+    return () => clearTimeout(id);
+  }, [allTrailersFailed, currentIndex, displayRecs.length]);
 
   // Track wildcard badge shown when current rec changes
   useEffect(() => {
@@ -559,7 +631,7 @@ export function ResultsScreen({
   const watchNowLabel = user
     ? primaryProvider
       ? `Watch now on ${primaryProvider.name}`
-      : "Stream or rent in AU"
+      : "Where to Watch"
     : "Where to Watch";
 
   return (
@@ -614,6 +686,7 @@ export function ResultsScreen({
               
               const currentTrailerUrl = availableTrailers[trailerIndex];
               const hasMoreTrailers = trailerIndex < availableTrailers.length - 1;
+              const hasNextPick = currentIndex < totalRecs - 1;
               
               const handleTrailerError = () => {
                 if (hasMoreTrailers) {
@@ -622,16 +695,34 @@ export function ResultsScreen({
                   setAllTrailersFailed(true);
                 }
               };
+
+              if (allTrailersFailed && hasNextPick) {
+                return (
+                  <div className="relative w-full h-full bg-black flex flex-col items-center justify-center gap-3 px-6">
+                    <p className="text-white text-base md:text-lg font-medium text-center">
+                      Try next pick →
+                    </p>
+                    <p className="text-white/50 text-xs md:text-sm text-center">
+                      Moving on in a moment…
+                    </p>
+                  </div>
+                );
+              }
               
               if (currentTrailerUrl && autoPlayTrailer && !allTrailersFailed && !suppressTrailer && !authModal) {
                 const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
                 const muteParam = (isMobile && !hasInteracted) ? 1 : 0;
+                const embedBase = currentTrailerUrl.includes("youtube.com/embed")
+                  ? augmentYoutubeEmbedUrl(currentTrailerUrl)
+                  : currentTrailerUrl;
+                const sep = embedBase.includes("?") ? "&" : "?";
+                const iframeSrc = `${embedBase}${sep}autoplay=1&mute=${muteParam}&playsinline=1&rel=0`;
                 
                 return (
                   <div className="relative w-full h-full">
                     <iframe
-                      key={currentTrailerUrl}
-                      src={`${currentTrailerUrl}?autoplay=1&mute=${muteParam}&playsinline=1&rel=0&origin=${window.location.origin}`}
+                      key={`${currentTrailerUrl}-${trailerIndex}`}
+                      src={iframeSrc}
                       className="w-full h-full"
                       allow="autoplay; encrypted-media"
                       allowFullScreen

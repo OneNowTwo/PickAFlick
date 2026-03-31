@@ -212,6 +212,12 @@ export async function registerRoutes(
         return;
       }
 
+      if (updatedSession.choices.length === 5 && !updatedSession.isComplete) {
+        console.log(
+          `[prefetch] milestone session=${sessionId} rounds_completed=5/7 (taste+row prefetch runs when session completes)`
+        );
+      }
+
       // Persist vote to DB for logged-in users (fire-and-forget — don't block the response)
       if (req.isAuthenticated() && req.user) {
         const chosenMovie = chosenMovieId === currentPair.leftMovie.id
