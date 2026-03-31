@@ -2,6 +2,7 @@ import type { Movie } from "@shared/schema";
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const TMDB_BASE_URL = "https://api.themoviedb.org/3";
+const TMDB_FETCH_TIMEOUT_MS = 3000;
 
 interface TMDbSearchResult {
   id: number;
@@ -96,25 +97,31 @@ const GENRE_MAP: Record<number, string> = {
   37: "Western",
 };
 
-async function tmdbFetch<T>(endpoint: string, params: Record<string, string> = {}): Promise<T> {
+async function tmdbFetch<T>(endpoint: string, params: Record<string, string> = {}): Promise<T | null> {
   if (!TMDB_API_KEY) {
     throw new Error("TMDB_API_KEY is not set");
   }
 
   const url = new URL(`${TMDB_BASE_URL}${endpoint}`);
   url.searchParams.set("api_key", TMDB_API_KEY);
-  
+
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }
 
-  const response = await fetch(url.toString());
-  
-  if (!response.ok) {
-    throw new Error(`TMDb API error: ${response.status} ${response.statusText}`);
-  }
+  const jsonPromise = (async (): Promise<T> => {
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      throw new Error(`TMDb API error: ${response.status} ${response.statusText}`);
+    }
+    return response.json() as Promise<T>;
+  })();
 
-  return response.json();
+  const timeoutPromise = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), TMDB_FETCH_TIMEOUT_MS)
+  );
+
+  return (await Promise.race([jsonPromise, timeoutPromise])) as T | null;
 }
 
 export async function searchMovie(title: string, year?: number): Promise<TMDbSearchResult | null> {
@@ -124,8 +131,8 @@ export async function searchMovie(title: string, year?: number): Promise<TMDbSea
   }
 
   const data = await tmdbFetch<{ results: TMDbSearchResult[] }>("/search/movie", params);
-  
-  if (data.results.length === 0) {
+
+  if (!data?.results?.length) {
     return null;
   }
 
@@ -152,6 +159,10 @@ export async function getMovieDetails(tmdbId: number): Promise<Movie | null> {
       `/movie/${tmdbId}`,
       { append_to_response: "credits,keywords" }
     );
+
+    if (!data) {
+      return null;
+    }
 
     const year = data.release_date ? parseInt(data.release_date.split("-")[0]) : null;
     
@@ -218,9 +229,9 @@ export async function getMovieTrailers(tmdbId: number): Promise<string[]> {
       }
     };
 
-    if (auRes.status === "fulfilled") merge(auRes.value);
-    if (usRes.status === "fulfilled") merge(usRes.value);
-    if (defRes.status === "fulfilled") merge(defRes.value);
+    if (auRes.status === "fulfilled" && auRes.value) merge(auRes.value);
+    if (usRes.status === "fulfilled" && usRes.value) merge(usRes.value);
+    if (defRes.status === "fulfilled" && defRes.value) merge(defRes.value);
 
     const youtubeVideos = allVideos.filter((v) => v.site === "YouTube");
     const trailerUrls: string[] = [];
@@ -305,7 +316,11 @@ export async function discoverMovies(
     }
 
     const data = await tmdbFetch<{ results: TMDbSearchResult[] }>("/discover/movie", params);
-    
+
+    if (!data?.results) {
+      return [];
+    }
+
     const movies: Movie[] = [];
     for (const result of data.results) {
       const movie = await getMovieDetails(result.id);
@@ -326,7 +341,11 @@ export async function discoverMovies(
 export async function getPopularMovies(listSource: string, page: number = 1): Promise<Movie[]> {
   try {
     const data = await tmdbFetch<{ results: TMDbSearchResult[] }>("/movie/popular", { page: page.toString() });
-    
+
+    if (!data?.results) {
+      return [];
+    }
+
     const movies: Movie[] = [];
     for (const result of data.results) {
       const movie = await getMovieDetails(result.id);
@@ -347,7 +366,11 @@ export async function getPopularMovies(listSource: string, page: number = 1): Pr
 export async function getTopRatedMovies(listSource: string, page: number = 1): Promise<Movie[]> {
   try {
     const data = await tmdbFetch<{ results: TMDbSearchResult[] }>("/movie/top_rated", { page: page.toString() });
-    
+
+    if (!data?.results) {
+      return [];
+    }
+
     const movies: Movie[] = [];
     for (const result of data.results) {
       const movie = await getMovieDetails(result.id);
@@ -367,11 +390,15 @@ export async function getTopRatedMovies(listSource: string, page: number = 1): P
 
 export async function getNowPlayingMovies(listSource: string, page: number = 1): Promise<Movie[]> {
   try {
-    const data = await tmdbFetch<{ results: TMDbSearchResult[] }>("/movie/now_playing", { 
+    const data = await tmdbFetch<{ results: TMDbSearchResult[] }>("/movie/now_playing", {
       page: page.toString(),
-      region: "AU" // Focus on Australia for more relevant releases
+      region: "AU", // Focus on Australia for more relevant releases
     });
-    
+
+    if (!data?.results) {
+      return [];
+    }
+
     const movies: Movie[] = [];
     for (const result of data.results) {
       const movie = await getMovieDetails(result.id);
@@ -395,6 +422,10 @@ export async function getWatchProviders(tmdbId: number, movieTitle?: string, mov
       tmdbFetch<TMDbWatchProvidersResponse>(`/movie/${tmdbId}/watch/providers`),
       movieTitle ? import("./streaming-links").then(({ getStreamingLinksFromFlicks }) => getStreamingLinksFromFlicks(movieTitle, movieYear)) : Promise.resolve(new Map<string, string>()),
     ]);
+
+    if (!data?.results) {
+      return { link: null, providers: [] };
+    }
 
     const auData = data.results.AU;
     if (!auData) {
