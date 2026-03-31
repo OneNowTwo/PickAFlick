@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import type { Movie, Recommendation, RecommendationsResponse } from "@shared/schema";
 import { searchMovieByTitle, getMovieTrailers, getMovieDetails, getWatchProviders } from "./tmdb";
@@ -15,9 +16,15 @@ const openai = new OpenAI({
   maxRetries: 1,
 });
 
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
 /** Mood extraction only — capable model. */
 const RECOMMENDATIONS_MODEL = process.env.OPENAI_RECOMMENDATIONS_MODEL ?? "gpt-4o";
-/** 5-pick single-row recommendation LLM. */
+/** 5-pick row — Claude Sonnet (recommendation pass only). */
+const CLAUDE_REC_MODEL = process.env.ANTHROPIC_REC_MODEL ?? "claude-sonnet-4-20250514";
+/** Replacement pick LLM (OpenAI). */
 const REC_ROW_MODEL = process.env.OPENAI_REC_ROW_MODEL ?? "gpt-4o-mini";
 
 /** DB bundle persistence (parallel arrays) — not the mood-fingerprint map below. */
@@ -153,14 +160,17 @@ function ensureMoodFingerprintRegistered(fp: string): void {
 
 function rememberResolvedTitlesForMoodFingerprint(mood: SessionMoodProfile, displayTitles: string[]): void {
   const fp = moodFingerprint(mood);
+  const before = [...(recentlyRecommendedTitles.get(fp) ?? [])];
+  const added = displayTitles.map((t) => t.trim()).filter(Boolean);
   ensureMoodFingerprintRegistered(fp);
   const prev = recentlyRecommendedTitles.get(fp) ?? [];
   const merged = [...prev];
-  for (const t of displayTitles) {
-    const s = t.trim();
-    if (s) merged.push(s);
-  }
-  recentlyRecommendedTitles.set(fp, merged.slice(-MAX_TITLES_PER_MOOD_FP));
+  for (const t of added) merged.push(t);
+  const next = merged.slice(-MAX_TITLES_PER_MOOD_FP);
+  recentlyRecommendedTitles.set(fp, next);
+  console.log(
+    `[recent-titles-store] after_finalize fingerprint=${JSON.stringify(fp)} before=${JSON.stringify(before)} added=${JSON.stringify(added)} after=${JSON.stringify(next)}`
+  );
 }
 
 function moodRecentTitlesList(mood: SessionMoodProfile): string[] {
@@ -285,6 +295,26 @@ function parsePicksRowResponse(raw: Record<string, unknown>): RowLLMResult {
   return { profile_line, picks };
 }
 
+function textFromClaudeMessage(msg: Anthropic.Messages.Message): string {
+  return msg.content
+    .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("\n")
+    .trim();
+}
+
+/** Strip optional ```json fences; parse JSON object. */
+function parseJsonObjectFromLlmText(text: string): Record<string, unknown> {
+  let s = text.trim();
+  const m = /^```(?:json)?\s*([\s\S]*?)```\s*$/m.exec(s);
+  if (m) s = m[1].trim();
+  try {
+    return JSON.parse(s || "{}") as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
 async function generateRowPicks(
   chosenMovies: Movie[],
   rejectedMovies: Movie[],
@@ -292,23 +322,26 @@ async function generateRowPicks(
   promptExtra: string,
   timingSessionId?: string
 ): Promise<RowLLMResult> {
+  const fpKey = moodFingerprint(mood);
+  const storeBeforeLlm = [...(recentlyRecommendedTitles.get(fpKey) ?? [])];
+  console.log(
+    `[recent-titles-store] before_row_llm fingerprint=${JSON.stringify(fpKey)} titles_in_store=${JSON.stringify(storeBeforeLlm)}`
+  );
+
   const user = buildTenPickUserMessage(chosenMovies, rejectedMovies, mood, promptExtra);
 
   const t0 = Date.now();
-  const response = await openai.chat.completions.create({
-    model: REC_ROW_MODEL,
-    messages: [
-      { role: "system", content: TEN_PICK_SYSTEM },
-      { role: "user", content: user },
-    ],
-    response_format: { type: "json_object" },
+  const response = await anthropic.messages.create({
+    model: CLAUDE_REC_MODEL,
     max_tokens: 1200,
     temperature: 0.9,
+    system: TEN_PICK_SYSTEM,
+    messages: [{ role: "user", content: user }],
   });
   if (timingSessionId) {
-    logRecsTiming(timingSessionId, "llm_five_pick_row", Date.now() - t0);
+    logRecsTiming(timingSessionId, "llm_claude_row", Date.now() - t0);
   }
-  const raw = JSON.parse(response.choices[0]?.message?.content || "{}") as Record<string, unknown>;
+  const raw = parseJsonObjectFromLlmText(textFromClaudeMessage(response));
   return parsePicksRowResponse(raw);
 }
 
