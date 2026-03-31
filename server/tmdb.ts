@@ -230,29 +230,16 @@ export async function getMovieTrailer(tmdbId: number): Promise<string | null> {
 // Returns multiple trailer URLs for fallback when one is region-blocked
 export async function getMovieTrailers(tmdbId: number): Promise<string[]> {
   try {
-    // Fetch AU / US / default in parallel — same merge order as before (AU first, then US, then default)
-    const [auRes, usRes, defRes] = await Promise.allSettled([
-      tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`, { language: "en-AU" }),
-      tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`, { language: "en-US" }),
-      tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`),
-    ]);
+    const data = await tmdbFetch<{ results: TMDbVideoResult[] }>(`/movie/${tmdbId}/videos`, {
+      language: "en-US",
+    });
 
     const allVideos: TMDbVideoResult[] = [];
-    const seenKeys = new Set<string>();
-
-    const merge = (data: { results: TMDbVideoResult[] } | undefined) => {
-      if (!data?.results) return;
+    if (data?.results) {
       for (const v of data.results) {
-        if (!seenKeys.has(v.key)) {
-          seenKeys.add(v.key);
-          allVideos.push(v);
-        }
+        allVideos.push(v);
       }
-    };
-
-    if (auRes.status === "fulfilled" && auRes.value) merge(auRes.value);
-    if (usRes.status === "fulfilled" && usRes.value) merge(usRes.value);
-    if (defRes.status === "fulfilled" && defRes.value) merge(defRes.value);
+    }
 
     const youtubeVideos = allVideos.filter((v) => v.site === "YouTube");
     const trailerUrls: string[] = [];
