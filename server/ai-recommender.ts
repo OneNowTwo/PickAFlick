@@ -855,36 +855,6 @@ async function finalizeRecommendationsToResponse(
   });
 
   if (recommendations.length < TARGET_TOTAL_RESOLVE) {
-    const avoidList =
-      picks.length > 0
-        ? picks.map((p) => `"${p.title}" (${p.year ?? "?"})`).join(", ")
-        : "";
-    const retryExtra =
-      picks.length > 0
-        ? `CRITICAL — Second attempt: Fewer than 5 of your previous picks could be verified for streaming in Australia (wrong match, no AU watch links, missing poster, or duplicate director). Recommend exactly 5 DIFFERENT feature films with correct release years. Do not suggest any of these titles again: ${avoidList}. Each pick must be a distinct, well-known film.`
-        : "CRITICAL — Second attempt: Return exactly 5 distinct film recommendations with a release year for each. The previous response did not yield enough verified picks.";
-    logFinalize("claude_retry_underfilled", {
-      resolved_first: recommendations.length,
-      first_pick_count: picks.length,
-    });
-    const tRetry = Date.now();
-    const rawRetry = await generateRowPicks(chosen, rejected, mood, retryExtra, timingSessionId);
-    if (timingSessionId) {
-      logRecsTiming(timingSessionId, "llm_claude_row_retry", Date.now() - tRetry);
-    }
-    if (!claudeProfileLine && String(rawRetry.profile_line || "").trim()) {
-      claudeProfileLine = String(rawRetry.profile_line || "").trim();
-    }
-    const picks2 = rowPicksFromRaw(rawRetry);
-    const extraIds = new Set(recommendations.map((r) => r.movie.tmdbId));
-    const more = await resolvePicksToRecommendations(picks2, chosen, {
-      logCluster: timingSessionId ? { sessionId: timingSessionId } : undefined,
-      extraExcludeTmdbIds: extraIds,
-    });
-    recommendations = mergeRecommendationsDeduped(recommendations, more);
-  }
-
-  if (recommendations.length < TARGET_TOTAL_RESOLVE) {
     const need = TARGET_TOTAL_RESOLVE - recommendations.length;
     const topGenre = taste.topGenres?.[0]?.trim() || extractTopGenres(chosen)[0];
     logFinalize("catalog_pad_start", { need, topGenre: topGenre ?? "" });
