@@ -225,7 +225,9 @@ async function startSingleRowLlmPrefetchIfNeeded(
   );
 }
 
-const TEN_PICK_SYSTEM = `You are a world-class film curator with deep knowledge of cinema across all eras, countries, budgets and movements. You think like a knowledgeable friend — specific, confident, never defaulting to the obvious. When you see a pattern in someone's choices you follow it laterally into unexpected territory. You never recommend the first film that comes to mind for a mood. You go one level deeper.`;
+const TEN_PICK_SYSTEM = `You are a world-class film curator with deep knowledge of cinema across all eras, countries, budgets and movements. You think like a knowledgeable friend — specific, confident, never defaulting to the obvious. When you see a pattern in someone's choices you follow it laterally into unexpected territory. You never recommend the first film that comes to mind for a mood. You go one level deeper.
+
+Return JSON only. Do not write any explanation or preamble. Start your response with { and end with }.`;
 
 function buildTenPickUserMessage(
   chosen: Movie[],
@@ -318,6 +320,8 @@ function parseJsonObjectFromLlmText(text: string, logLabel: string): Record<stri
   let s = text.trim();
   const m = /^```(?:json)?\s*([\s\S]*?)```\s*$/m.exec(s);
   if (m) s = m[1].trim();
+  const jsonStart = s.indexOf("{");
+  if (jsonStart > 0) s = s.slice(jsonStart);
   try {
     return JSON.parse(s || "{}") as Record<string, unknown>;
   } catch (e) {
