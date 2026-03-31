@@ -132,25 +132,9 @@ interface RowLLMResult {
 interface PrefetchPhase1 {
   mood: SessionMoodProfile;
   taste: TasteObservationResult;
-  /** Comma-separated A/B session titles for the rec prompt only. */
-  abBanTitlesLine: string;
   chosen: Movie[];
   rejected: Movie[];
   filters: string[];
-}
-
-function formatAbBanListForPrompt(chosenMovies: Movie[], rejectedMovies: Movie[]): string {
-  const seen = new Set<string>();
-  const labels: string[] = [];
-  for (const m of [...chosenMovies, ...rejectedMovies]) {
-    const t = m.title?.trim();
-    if (!t) continue;
-    const k = t.toLowerCase().trim().replace(/^the\s+/i, "");
-    if (!k || seen.has(k)) continue;
-    seen.add(k);
-    labels.push(t);
-  }
-  return labels.join(", ") || "(none)";
 }
 
 function moodFingerprint(mood: SessionMoodProfile): string {
@@ -215,8 +199,7 @@ async function buildPrefetchPhase1(
 ): Promise<PrefetchPhase1> {
   const mood = await extractSessionMood(chosenMovies, rejectedMovies, filters);
   const taste = moodToTasteObservation(mood, chosenMovies);
-  const abBanTitlesLine = formatAbBanListForPrompt(chosenMovies, rejectedMovies);
-  return { mood, taste, abBanTitlesLine, chosen: chosenMovies, rejected: rejectedMovies, filters };
+  return { mood, taste, chosen: chosenMovies, rejected: rejectedMovies, filters };
 }
 
 async function startSingleRowLlmPrefetchIfNeeded(
@@ -230,46 +213,48 @@ async function startSingleRowLlmPrefetchIfNeeded(
 
   singleRowLlmBySessionIdentity.set(
     key,
-    generateRowPicks(phase1.chosen, phase1.rejected, phase1.mood, phase1.abBanTitlesLine, "", sessionId)
+    generateRowPicks(phase1.chosen, phase1.rejected, phase1.mood, "", sessionId)
   );
 }
 
-const TEN_PICK_SYSTEM = `You are a world-class film curator — the kind of person who has seen everything, remembers all of it, and can read exactly what someone wants tonight from the pattern of their choices. You give confident, specific recommendations like a knowledgeable friend, not a recommendation algorithm. You never play it safe. You never default to the obvious. You think laterally across decades, countries, budgets, and movements to find the five films that are genuinely right for this person tonight.`;
+const TEN_PICK_SYSTEM = `You are a world-class film curator with deep knowledge of cinema across all eras, countries, budgets and movements. You think like a knowledgeable friend — specific, confident, never defaulting to the obvious. When you see a pattern in someone's choices you follow it laterally into unexpected territory. You never recommend the first film that comes to mind for a mood. You go one level deeper.`;
 
 function buildTenPickUserMessage(
   chosen: Movie[],
   rejected: Movie[],
-  abBanTitlesLine: string,
   mood: SessionMoodProfile,
   promptExtra: string
 ): string {
   const recentList = moodRecentTitlesList(mood);
-  const recentLine = recentList.length > 0 ? recentList.join(", ") : "(none)";
+  const recentSuffix =
+    recentList.length > 0 ?
+      `\n\nThese titles were recently recommended — avoid repeating them: ${recentList.join(", ")}`
+    : "";
 
-  return `The user just completed a 7-round A/B voting session.
+  return `A user just completed a 7-round A/B movie voting session. Here is exactly what they chose and what they rejected:
 
-CHOSEN (what they picked):
+CHOSEN:
 ${formatChosenTitlesForRecPrompt(chosen)}
 
-REJECTED (what they skipped):
+REJECTED:
 ${formatRejectedTitlesForRecPrompt(rejected)}
 
-Read the contrast between chosen and rejected holistically. The rejections tell you what tone and energy they are actively avoiding tonight. Do not summarise or pre-process — reason directly from these specific films.
+Read the contrast between chosen and rejected holistically. The rejections are as important as the choices — they define what this person is actively NOT in the mood for tonight.
 
-Now recommend exactly 5 films that match what this pattern reveals.
+Recommend exactly 5 films that match what this pattern reveals. 
 
-Requirements:
+Think broadly across all of cinema — every decade, every country, every budget level. Do not default to the most famous films for this mood. Ask yourself: what are the less obvious but equally powerful films that match this exact emotional register?
+
+Rules:
 - No two films from the same director
-- Span at least 3 different decades
+- Span at least 3 different decades across the 5
 - At least 1 non-English language film
-- No sequels unless the franchise is a direct mood match
-- Think broadly — consider the full history of world cinema, not just obvious English-language titles
-- Do NOT suggest any of these titles the user already saw: ${abBanTitlesLine}
-- Do NOT suggest any of these recently recommended titles: ${recentLine}
+- No sequels or franchise entries unless the franchise itself directly matches the mood
+- Every pick must genuinely match the emotional pattern revealed by the chosen vs rejected contrast
 
 Return JSON only:
 {
-  "profile_line": "max 8 words, sounds like a friend, not a genre label",
+  "profile_line": "max 8 words, sounds like a knowledgeable friend describing tonight's mood, not a genre label",
   "picks": [
     {"title": "", "year": 0},
     {"title": "", "year": 0},
@@ -277,8 +262,7 @@ Return JSON only:
     {"title": "", "year": 0},
     {"title": "", "year": 0}
   ]
-}
-${promptExtra.trim() ? `\n\nAdditional instruction:\n${promptExtra.trim()}` : ""}`;
+}${promptExtra.trim() ? `\n\nAdditional instruction:\n${promptExtra.trim()}` : ""}${recentSuffix}`;
 }
 
 function parseTitleYearRow(o: Record<string, unknown>): AIRecommendationResult | null {
@@ -305,11 +289,10 @@ async function generateRowPicks(
   chosenMovies: Movie[],
   rejectedMovies: Movie[],
   mood: SessionMoodProfile,
-  abBanTitlesLine: string,
   promptExtra: string,
   timingSessionId?: string
 ): Promise<RowLLMResult> {
-  const user = buildTenPickUserMessage(chosenMovies, rejectedMovies, abBanTitlesLine, mood, promptExtra);
+  const user = buildTenPickUserMessage(chosenMovies, rejectedMovies, mood, promptExtra);
 
   const t0 = Date.now();
   const response = await openai.chat.completions.create({
@@ -319,7 +302,7 @@ async function generateRowPicks(
       { role: "user", content: user },
     ],
     response_format: { type: "json_object" },
-    max_tokens: 1500,
+    max_tokens: 1200,
     temperature: 0.9,
   });
   if (timingSessionId) {
@@ -794,8 +777,7 @@ async function ensureRecommendationsReady(
       taste = moodToTasteObservation(mood, chosen);
       patchSessionTasteMeta(sessionId, { mood, taste });
       const coldLlm = Date.now();
-      const abLine = formatAbBanListForPrompt(chosen, rejected);
-      raw = await generateRowPicks(chosen, rejected, mood, abLine, "", sessionId);
+      raw = await generateRowPicks(chosen, rejected, mood, "", sessionId);
       logRecsTiming(sessionId, "llm_row_cold_total", Date.now() - coldLlm);
     }
 
