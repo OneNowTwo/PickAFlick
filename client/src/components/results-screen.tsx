@@ -145,6 +145,8 @@ export function ResultsScreen({
   const [showShareCard, setShowShareCard] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [loadingProgress, setLoadingProgress] = useState(0);
+  /** Keep first loading headline/body on fallbacks for min time before taste-preview copy appears */
+  const [tastePreviewUiGateOpen, setTastePreviewUiGateOpen] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false); // Track if user has clicked anything
   const { toast } = useToast();
   /** Dedupes recommendation_served if this effect runs twice (e.g. React Strict Mode) */
@@ -193,6 +195,16 @@ export function ResultsScreen({
     if (!isLoading && recommendations) {
       setLoadingProgress(100);
     }
+  }, [isLoading, recommendations]);
+
+  useEffect(() => {
+    if (!isLoading || recommendations) {
+      setTastePreviewUiGateOpen(false);
+      return;
+    }
+    setTastePreviewUiGateOpen(false);
+    const id = window.setTimeout(() => setTastePreviewUiGateOpen(true), 2000);
+    return () => window.clearTimeout(id);
   }, [isLoading, recommendations]);
 
   const tasteAnonPayload = useMemo(
@@ -483,8 +495,9 @@ export function ResultsScreen({
     );
   }
 
-  const loadingMoodHeadline = loadingHeadlineFromPreview(tastePreview);
-  const loadingMoodBody = loadingBodyFromPreview(tastePreview);
+  const previewForLoadingUi = tastePreviewUiGateOpen ? tastePreview : undefined;
+  const loadingMoodHeadline = loadingHeadlineFromPreview(previewForLoadingUi);
+  const loadingMoodBody = loadingBodyFromPreview(previewForLoadingUi);
 
   const loadingProgressBar = (
     <div className="w-full max-w-md mx-auto bg-white/15 rounded-full h-1.5 overflow-hidden">
@@ -507,11 +520,11 @@ export function ResultsScreen({
           </h2>
           <p className="text-sm md:text-base text-white/70 leading-relaxed">{loadingMoodBody}</p>
           <p className="text-xs md:text-sm text-white/50 pt-1">
-            While we fetch your tailored picks for tonight…
+            We&apos;re fetching your tailored picks...
           </p>
         </div>
         {loadingProgressBar}
-        <p className="text-[11px] md:text-xs text-white/40">This usually only takes a moment.</p>
+        <p className="text-[11px] md:text-xs text-white/40">Sit tight — good things take a second.</p>
       </div>
     );
   }
@@ -529,11 +542,11 @@ export function ResultsScreen({
             </h2>
             <p className="text-sm md:text-base text-white/70 leading-relaxed">{loadingMoodBody}</p>
             <p className="text-xs md:text-sm text-white/50">
-              While we fetch your tailored picks for tonight…
+              We&apos;re fetching your tailored picks...
             </p>
           </div>
           {loadingProgressBar}
-          <p className="text-[11px] text-white/40 text-center">This usually only takes a moment.</p>
+          <p className="text-[11px] text-white/40 text-center">Sit tight — good things take a second.</p>
         </div>
       </div>
     );
