@@ -6,7 +6,7 @@ import type { ChoiceEntry } from "./strategic-picker";
 import { getMovieTrailer, getMovieTrailers, getWatchProviders } from "./tmdb";
 import { sessionStorage } from "./session-storage";
 import {
-  scheduleRound5RecommendationPrefetch,
+  scheduleRound3RecommendationPrefetch,
   scheduleRound7MoodRefinementIfNeeded,
   finalizeRecommendationsForSession,
   getTastePreviewForSession,
@@ -213,8 +213,8 @@ export async function registerRoutes(
         return;
       }
 
-      if (updatedSession.choices.length === 5 && !updatedSession.isComplete) {
-        scheduleRound5RecommendationPrefetch(sessionId);
+      if (updatedSession.choices.length === 3 && !updatedSession.isComplete) {
+        scheduleRound3RecommendationPrefetch(sessionId);
       }
 
       // Persist vote to DB for logged-in users (fire-and-forget — don't block the response)
@@ -359,7 +359,7 @@ export async function registerRoutes(
     }
   });
 
-  // Final recommendations — 5 picks (single row); round-5 prefetch + optional round-7 genre refinement
+  // Final recommendations — 5 picks (single row); round-3 prefetch + optional round-7 genre refinement
   app.get("/api/session/:sessionId/recommendations", async (req: Request, res: Response) => {
     try {
       const { sessionId } = req.params;

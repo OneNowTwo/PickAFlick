@@ -770,27 +770,27 @@ async function resolvePicksToRecommendations(
   return out;
 }
 
-/** After 5th choice: mood + row LLM from rounds 1–5 only (background). */
-export function scheduleRound5RecommendationPrefetch(sessionId: string): void {
-  console.log(`[prefetch] round-5 pre-fetch triggered for session ${sessionId}`);
+/** After 3rd choice: background mood + row LLM prefetch. */
+export function scheduleRound3RecommendationPrefetch(sessionId: string): void {
+  console.log(`[prefetch] round-3 pre-fetch triggered for session ${sessionId}`);
   const session = gameSessionStorage.getSession(sessionId);
-  if (!session || session.choices.length < 5) return;
+  if (!session || session.choices.length < 3) return;
   if (prefetchPhase1BySession.has(sessionId)) return;
 
   const chosen = gameSessionStorage.getChosenMovies(sessionId).slice(0, 5);
   const rejected = gameSessionStorage.getRejectedMovies(sessionId).slice(0, 5);
   const filters = gameSessionStorage.getSessionFilters(sessionId)?.genres ?? [];
-  if (chosen.length < 5) return;
+  if (chosen.length < 3) return;
 
   const tMood = Date.now();
   const p1 = buildPrefetchPhase1(sessionId, chosen, rejected, filters).then((phase1) => {
-    logRecsTiming(sessionId, "taste_extraction_round5", Date.now() - tMood);
+    logRecsTiming(sessionId, "taste_extraction_round3", Date.now() - tMood);
     return phase1;
   });
   prefetchPhase1BySession.set(sessionId, p1);
   void p1
     .then((phase1) => startSingleRowLlmPrefetchIfNeeded(sessionId, [], phase1))
-    .catch((e) => console.error("[prefetch] round-5 row prefetch chain failed", e));
+    .catch((e) => console.error("[prefetch] round-3 row prefetch chain failed", e));
 }
 
 async function runMoodShiftRefinement(sessionId: string): Promise<void> {
@@ -825,7 +825,7 @@ export function scheduleRound7MoodRefinementIfNeeded(sessionId: string): void {
   const choices1to5 = allChosen.slice(0, 5);
   const choices6to7 = allChosen.slice(5, 7);
   if (!moodShifted(choices1to5, choices6to7)) {
-    console.log(`[prefetch] round-7 check: mood stable — serving round-5 result`);
+    console.log(`[prefetch] round-7 check: mood stable — serving round-3 prefetch result`);
     return;
   }
   console.log(`[prefetch] round-7 check: mood shifted — firing refinement call`);
