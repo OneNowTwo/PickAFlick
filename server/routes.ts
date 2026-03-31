@@ -6,7 +6,8 @@ import type { ChoiceEntry } from "./strategic-picker";
 import { getMovieTrailer, getMovieTrailers, getWatchProviders } from "./tmdb";
 import { sessionStorage } from "./session-storage";
 import {
-  beginRecommendationPrefetch,
+  scheduleRound5RecommendationPrefetch,
+  scheduleRound7MoodRefinementIfNeeded,
   finalizeRecommendationsForSession,
   getTastePreviewForSession,
   generateReplacementRecommendation,
@@ -213,9 +214,7 @@ export async function registerRoutes(
       }
 
       if (updatedSession.choices.length === 5 && !updatedSession.isComplete) {
-        console.log(
-          `[prefetch] milestone session=${sessionId} rounds_completed=5/7 (taste+row prefetch runs when session completes)`
-        );
+        scheduleRound5RecommendationPrefetch(sessionId);
       }
 
       // Persist vote to DB for logged-in users (fire-and-forget — don't block the response)
@@ -257,14 +256,7 @@ export async function registerRoutes(
           });
         }
       } else {
-        const chosenTitles = sessionStorage.getChosenMovies(sessionId).map((m) => m.title);
-        const rejectedTitles = sessionStorage.getRejectedMovies(sessionId).map((m) => m.title);
-        console.log(
-          `[prefetch] triggered at round ${updatedSession.choices.length} for session ${sessionId}`
-        );
-        console.log(`[prefetch] chosen titles so far: [${chosenTitles.join(", ")}]`);
-        console.log(`[prefetch] rejected titles so far: [${rejectedTitles.join(", ")}]`);
-        beginRecommendationPrefetch(sessionId);
+        scheduleRound7MoodRefinementIfNeeded(sessionId);
       }
 
       const response: ChoiceResponse = {
@@ -367,7 +359,7 @@ export async function registerRoutes(
     }
   });
 
-  // Final recommendations — 5 picks (single row), prefetch when A/B completes
+  // Final recommendations — 5 picks (single row); round-5 prefetch + optional round-7 genre refinement
   app.get("/api/session/:sessionId/recommendations", async (req: Request, res: Response) => {
     try {
       const { sessionId } = req.params;
