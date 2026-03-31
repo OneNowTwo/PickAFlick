@@ -35,8 +35,8 @@ const TARGET_TOTAL_RESOLVE = 5;
 /** Cross-session titles already suggested for this mood fingerprint (preferred_tone + pacing). */
 const recentlyRecommendedTitles = new Map<string, string[]>();
 const moodFingerprintInsertOrder: string[] = [];
-const MAX_TITLES_PER_MOOD_FP = 20;
-const MAX_MOOD_FINGERPRINTS = 20;
+const MAX_TITLES_PER_MOOD_FP = 40;
+const MAX_MOOD_FINGERPRINTS = 30;
 
 let recsLoaded = false;
 
@@ -185,12 +185,12 @@ function moodRecentTitlesList(mood: SessionMoodProfile): string[] {
 
 function formatChosenTitlesForRecPrompt(chosen: Movie[]): string {
   if (chosen.length === 0) return "(none)";
-  return chosen.map((m) => `- "${m.title}" (${m.year ?? "?"})`).join("\n");
+  return chosen.map((m) => `- ${m.title}, ${m.year ?? "?"}`).join("\n");
 }
 
 function formatRejectedTitlesForRecPrompt(rejected: Movie[]): string {
   if (rejected.length === 0) return "(none)";
-  return rejected.map((m) => `- "${m.title}" (${m.year ?? "?"})`).join("\n");
+  return rejected.map((m) => `- ${m.title}, ${m.year ?? "?"}`).join("\n");
 }
 
 const prefetchPhase1BySession = new Map<string, Promise<PrefetchPhase1>>();
@@ -245,48 +245,37 @@ function buildTenPickUserMessage(
 ): string {
   const recentList = moodRecentTitlesList(mood);
   const recentLine = recentList.length > 0 ? recentList.join(", ") : "(none)";
-  const goDeeperBullet =
-    recentList.length > 0 ?
-      "\n- If recent titles exist: the obvious choices for this mood have already been used — go deeper and find less obvious but equally powerful matches"
-    : "";
 
-  return `A user just completed a 7-round A/B movie voting session. Here is what they chose and what they rejected:
+  return `The user just completed a 7-round A/B voting session.
 
-CHOSEN (what they wanted):
+CHOSEN (what they picked):
 ${formatChosenTitlesForRecPrompt(chosen)}
 
-REJECTED (what they didn't want tonight):
+REJECTED (what they skipped):
 ${formatRejectedTitlesForRecPrompt(rejected)}
 
-Read the pattern holistically. The rejections are as important as the choices — they tell you what tone, energy, and type of film this person is actively avoiding right now.
+Read the contrast between chosen and rejected holistically. The rejections tell you what tone and energy they are actively avoiding tonight. Do not summarise or pre-process — reason directly from these specific films.
 
-From this pattern, infer:
-- The emotional register they're after (tense, heavy, funny, warm, cerebral etc)
-- The pacing they want (slow burn, propulsive, contemplative)
-- The darkness level they can handle tonight
-- What they are clearly NOT in the mood for based on rejections
+Now recommend exactly 5 films that match what this pattern reveals.
 
-Then recommend exactly 5 films that match what this pattern reveals.
-
-Rules:
+Requirements:
 - No two films from the same director
-- Span at least 3 different decades across the 5
+- Span at least 3 different decades
 - At least 1 non-English language film
-- No sequels or franchise entries unless the franchise itself is a direct mood match
-- Do not suggest any of these titles (user already voted on them): ${abBanTitlesLine}
-- Do not suggest any of these recently recommended titles: ${recentLine}${goDeeperBullet}
-
-Each film gets exactly one line of reason — written like a knowledgeable friend recommending it, not an algorithm. Specific, confident, no hedging. Example: "Slow-burn western that turns into something genuinely horrifying — shares the survival DNA of your horror picks." NOT "We chose this because you selected The Descent."
+- No sequels unless the franchise is a direct mood match
+- Think broadly — consider the full history of world cinema, not just obvious English-language titles
+- Do NOT suggest any of these titles the user already saw: ${abBanTitlesLine}
+- Do NOT suggest any of these recently recommended titles: ${recentLine}
 
 Return JSON only:
 {
-  "profile_line": "max 8 words, friend voice, describes tonight's mood — not a genre label",
+  "profile_line": "max 8 words, sounds like a friend, not a genre label",
   "picks": [
-    {"title": "", "year": 0, "reason": "one line, friend voice, specific"},
-    {"title": "", "year": 0, "reason": "one line, friend voice, specific"},
-    {"title": "", "year": 0, "reason": "one line, friend voice, specific"},
-    {"title": "", "year": 0, "reason": "one line, friend voice, specific"},
-    {"title": "", "year": 0, "reason": "one line, friend voice, specific"}
+    {"title": "", "year": 0},
+    {"title": "", "year": 0},
+    {"title": "", "year": 0},
+    {"title": "", "year": 0},
+    {"title": "", "year": 0}
   ]
 }
 ${promptExtra.trim() ? `\n\nAdditional instruction:\n${promptExtra.trim()}` : ""}`;
@@ -298,7 +287,7 @@ function parseTitleYearRow(o: Record<string, unknown>): AIRecommendationResult |
   return {
     title,
     year: parseYearField(o.year),
-    reason: String(o.reason || "").trim(),
+    reason: "",
   };
 }
 

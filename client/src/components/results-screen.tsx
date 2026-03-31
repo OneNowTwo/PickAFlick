@@ -857,7 +857,6 @@ export function ResultsScreen({
               : null;
             const isActive = i === currentIndex;
             const isSeenThumb = seenMovies.has(rec.movie.tmdbId);
-            const reasonLine = rec.reason?.trim() ?? "";
             return (
               <div
                 key={rec.movie.tmdbId}
@@ -899,14 +898,6 @@ export function ResultsScreen({
                 </p>
                 {rec.movie.year != null ? (
                   <p className="text-[10px] text-muted-foreground leading-none">{rec.movie.year}</p>
-                ) : null}
-                {reasonLine ? (
-                  <p
-                    className="w-full text-center text-[10px] leading-snug text-muted-foreground line-clamp-3 px-0.5"
-                    title={reasonLine}
-                  >
-                    {reasonLine}
-                  </p>
                 ) : null}
               </div>
             );
