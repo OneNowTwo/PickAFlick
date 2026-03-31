@@ -75,6 +75,17 @@ export const movieCatalogueCache = pgTable("movie_catalogue_cache", {
 
 export type MovieCatalogueCache = typeof movieCatalogueCache.$inferSelect;
 
+/** Per mood_key, tracks recently served titles for Claude “avoid repeating” (trimmed >7d on each batch insert). */
+export const recentRecommendations = pgTable("recent_recommendations", {
+  id: serial("id").primaryKey(),
+  moodKey: text("mood_key").notNull(),
+  title: text("title").notNull(),
+  year: integer("year"),
+  recommendedAt: timestamp("recommended_at").defaultNow().notNull(),
+});
+
+export type RecentRecommendationRow = typeof recentRecommendations.$inferSelect;
+
 // Watchlist table for persisting liked movies (per-session isolation)
 export const watchlist = pgTable("watchlist", {
   id: serial("id").primaryKey(),

@@ -39,12 +39,6 @@ const recentlyRecommendedFeelKeys: string[] = [];
 const MAX_RECENT_TRACKED = 400;
 const TARGET_TOTAL_RESOLVE = 5;
 
-/** Cross-session titles already suggested for this mood fingerprint (preferred_tone + pacing). */
-const recentlyRecommendedTitles = new Map<string, string[]>();
-const moodFingerprintInsertOrder: string[] = [];
-const MAX_TITLES_PER_MOOD_FP = 40;
-const MAX_MOOD_FINGERPRINTS = 30;
-
 let recsLoaded = false;
 
 async function ensureRecsLoaded(): Promise<void> {
@@ -144,37 +138,24 @@ interface PrefetchPhase1 {
   filters: string[];
 }
 
-function moodFingerprint(mood: SessionMoodProfile): string {
-  return `${String(mood.preferred_tone || "").trim()}|${String(mood.pacing || "").trim()}`;
+/** Primary genre of first chosen film + preferred_tone, lowercase, no spaces — matches `recent_recommendations.mood_key`. */
+function buildMoodKeyForRecentStore(chosen: Movie[], mood: SessionMoodProfile): string {
+  const primaryGenre = (chosen[0]?.genres?.[0] ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, "");
+  const tone = String(mood.preferred_tone ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, "");
+  const key = `${primaryGenre}${tone}`;
+  return key.length > 0 ? key : "unknown";
 }
 
-function ensureMoodFingerprintRegistered(fp: string): void {
-  if (recentlyRecommendedTitles.has(fp)) return;
-  while (moodFingerprintInsertOrder.length >= MAX_MOOD_FINGERPRINTS) {
-    const evict = moodFingerprintInsertOrder.shift()!;
-    recentlyRecommendedTitles.delete(evict);
-  }
-  moodFingerprintInsertOrder.push(fp);
-  recentlyRecommendedTitles.set(fp, []);
-}
-
-function rememberResolvedTitlesForMoodFingerprint(mood: SessionMoodProfile, displayTitles: string[]): void {
-  const fp = moodFingerprint(mood);
-  const before = [...(recentlyRecommendedTitles.get(fp) ?? [])];
-  const added = displayTitles.map((t) => t.trim()).filter(Boolean);
-  ensureMoodFingerprintRegistered(fp);
-  const prev = recentlyRecommendedTitles.get(fp) ?? [];
-  const merged = [...prev];
-  for (const t of added) merged.push(t);
-  const next = merged.slice(-MAX_TITLES_PER_MOOD_FP);
-  recentlyRecommendedTitles.set(fp, next);
-  console.log(
-    `[recent-titles-store] after_finalize fingerprint=${JSON.stringify(fp)} before=${JSON.stringify(before)} added=${JSON.stringify(added)} after=${JSON.stringify(next)}`
-  );
-}
-
-function moodRecentTitlesList(mood: SessionMoodProfile): string[] {
-  return recentlyRecommendedTitles.get(moodFingerprint(mood)) ?? [];
+function sortRecommendationsPre1980Last(recs: Recommendation[]): void {
+  recs.sort((a, b) => {
+    const aOld = (a.movie.year ?? 9999) < 1980 ? 1 : 0;
+    const bOld = (b.movie.year ?? 9999) < 1980 ? 1 : 0;
+    return aOld - bOld;
+  });
 }
 
 function formatChosenTitlesForRecPrompt(chosen: Movie[]): string {
@@ -233,12 +214,12 @@ function buildTenPickUserMessage(
   chosen: Movie[],
   rejected: Movie[],
   mood: SessionMoodProfile,
-  promptExtra: string
+  promptExtra: string,
+  avoidRecentTitles: string[] = []
 ): string {
-  const recentList = moodRecentTitlesList(mood);
   const recentSuffix =
-    recentList.length > 0 ?
-      `\n\nThese titles were recently recommended — avoid repeating them: ${recentList.join(", ")}`
+    avoidRecentTitles.length > 0 ?
+      `\n\nThese titles were recently recommended — avoid repeating them: ${avoidRecentTitles.join(", ")}`
     : "";
 
   return `A user just completed a 7-round A/B movie voting session. Here is exactly what they chose and what they rejected:
@@ -337,13 +318,24 @@ async function generateRowPicks(
 ): Promise<RowLLMResult> {
   console.log(`[claude-row] ANTHROPIC_API_KEY present=${Boolean(process.env.ANTHROPIC_API_KEY?.trim())}`);
 
-  const fpKey = moodFingerprint(mood);
-  const storeBeforeLlm = [...(recentlyRecommendedTitles.get(fpKey) ?? [])];
+  const moodKey = buildMoodKeyForRecentStore(chosenMovies, mood);
+  let avoidRecentTitles: string[] = [];
+  try {
+    avoidRecentTitles = await storage.getRecentAvoidTitlesForMoodKey(moodKey, 30);
+  } catch (e) {
+    console.error("[recent_recommendations] load avoid list failed:", e);
+  }
   console.log(
-    `[recent-titles-store] before_row_llm fingerprint=${JSON.stringify(fpKey)} titles_in_store=${JSON.stringify(storeBeforeLlm)}`
+    `[recent-recommendations] before_row_llm mood_key=${JSON.stringify(moodKey)} avoid_count=${avoidRecentTitles.length}`
   );
 
-  const user = buildTenPickUserMessage(chosenMovies, rejectedMovies, mood, promptExtra);
+  const user = buildTenPickUserMessage(
+    chosenMovies,
+    rejectedMovies,
+    mood,
+    promptExtra,
+    avoidRecentTitles
+  );
 
   try {
     const t0 = Date.now();
@@ -744,8 +736,11 @@ async function resolvePicksToRecommendations(
   const ordered = picks.slice(0, TARGET_TOTAL_RESOLVE);
   const tResolve = Date.now();
   const settled: (Recommendation | null)[] = [];
-  for (const r of ordered) {
-    settled.push(await resolveOneRecommendation(r, excludeTmdb));
+  for (let i = 0; i < ordered.length; i += 2) {
+    const batch = ordered.slice(i, i + 2);
+    const batchResults = await Promise.all(batch.map((p) => resolveOneRecommendation(p, excludeTmdb)));
+    settled.push(...batchResults);
+    if (i + 2 < ordered.length) await new Promise((r) => setTimeout(r, 100));
   }
   const resolveMs = Date.now() - tResolve;
 
@@ -767,7 +762,7 @@ async function resolvePicksToRecommendations(
     const sid = opts.logCluster.sessionId;
     const short = sid.length > 16 ? `${sid.slice(0, 8)}…` : sid;
     console.log(
-      `[recs-resolve] ${short} row sequential_picks=${ordered.length} tmdb_au_ms=${resolveMs} ` +
+      `[recs-resolve] ${short} row batched_picks=${ordered.length} tmdb_au_ms=${resolveMs} ` +
         `resolved=${out.length}`
     );
   }
@@ -948,12 +943,21 @@ async function finalizeRecommendationsToResponse(
   }
 
   recommendations = recommendations.slice(0, TARGET_TOTAL_RESOLVE);
+  sortRecommendationsPre1980Last(recommendations);
 
   if (recommendations.length > 0) {
-    rememberResolvedTitlesForMoodFingerprint(
-      mood,
-      recommendations.map((r) => r.movie.title.trim()).filter(Boolean)
-    );
+    const moodKey = buildMoodKeyForRecentStore(chosen, mood);
+    try {
+      await storage.appendRecentRecommendationsForMoodKey(
+        moodKey,
+        recommendations.map((r) => ({
+          title: r.movie.title.trim(),
+          year: r.movie.year ?? null,
+        }))
+      );
+    } catch (e) {
+      console.error("[recent_recommendations] persist failed:", e);
+    }
   }
   const auResolveMs = Date.now() - tAu1;
   logFinalize("au_resolve_ms", {

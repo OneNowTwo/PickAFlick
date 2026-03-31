@@ -1,6 +1,18 @@
-import { watchlist, sharedRecommendations, movieCatalogueCache, userVotes, type WatchlistItem, type InsertWatchlistItem, type SharedRecommendation, type MovieCatalogueCache, type UserVote, type InsertUserVote } from "@shared/schema";
+import {
+  watchlist,
+  sharedRecommendations,
+  movieCatalogueCache,
+  userVotes,
+  recentRecommendations,
+  type WatchlistItem,
+  type InsertWatchlistItem,
+  type SharedRecommendation,
+  type MovieCatalogueCache,
+  type UserVote,
+  type InsertUserVote,
+} from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, lt } from "drizzle-orm";
 
 /** Bump when adding new IMDb/editorial lists - invalidates old cache so catalogue rebuilds on deploy */
 const CATALOGUE_CACHE_KEY = "catalogue_v8";
@@ -34,6 +46,13 @@ export interface IStorage {
   /** Titles + metadata fingerprints for local freshness scoring (aligned indices per served film). */
   getRecentRecommendationBundles(): Promise<RecentRecommendationBundle>;
   saveRecentRecommendationBundles(bundles: RecentRecommendationBundle): Promise<void>;
+  /** Deletes rows older than 7 days, then inserts one row per title for this mood_key. */
+  appendRecentRecommendationsForMoodKey(
+    moodKey: string,
+    rows: { title: string; year: number | null }[]
+  ): Promise<void>;
+  /** Up to `limit` distinct titles, most recent first, for the given mood_key. */
+  getRecentAvoidTitlesForMoodKey(moodKey: string, limit: number): Promise<string[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -209,6 +228,47 @@ export class DatabaseStorage implements IStorage {
     } catch (err) {
       console.error("[recent-recs] Failed to persist recommendation bundles:", err);
     }
+  }
+
+  async appendRecentRecommendationsForMoodKey(
+    moodKey: string,
+    rows: { title: string; year: number | null }[]
+  ): Promise<void> {
+    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    await db.delete(recentRecommendations).where(lt(recentRecommendations.recommendedAt, cutoff));
+    if (rows.length === 0) return;
+    await db.insert(recentRecommendations).values(
+      rows.map((r) => ({
+        moodKey,
+        title: r.title,
+        year: r.year,
+      }))
+    );
+  }
+
+  async getRecentAvoidTitlesForMoodKey(moodKey: string, limit: number): Promise<string[]> {
+    const rows = await db
+      .select({
+        title: recentRecommendations.title,
+        recommendedAt: recentRecommendations.recommendedAt,
+      })
+      .from(recentRecommendations)
+      .where(eq(recentRecommendations.moodKey, moodKey))
+      .orderBy(desc(recentRecommendations.recommendedAt))
+      .limit(Math.max(limit * 4, limit));
+
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const r of rows) {
+      const t = r.title.trim();
+      if (!t) continue;
+      const k = t.toLowerCase().replace(/^the\s+/i, "").trim();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(t);
+      if (out.length >= limit) break;
+    }
+    return out;
   }
 }
 
