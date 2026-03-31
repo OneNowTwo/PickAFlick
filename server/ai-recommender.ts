@@ -295,8 +295,19 @@ function parsePicksRowResponse(raw: Record<string, unknown>): RowLLMResult {
   return { profile_line, picks };
 }
 
+/**
+ * Extract assistant text from Claude Messages API response.
+ * Primary path: response.content[0].text when the first block is type "text"
+ * (same data as OpenAI's choices[0].message.content, different shape).
+ */
 function textFromClaudeMessage(msg: Anthropic.Messages.Message): string {
-  return msg.content
+  const blocks = msg.content;
+  if (!Array.isArray(blocks) || blocks.length === 0) return "";
+  const first = blocks[0];
+  if (first.type === "text" && "text" in first) {
+    return String((first as Anthropic.Messages.TextBlock).text).trim();
+  }
+  return blocks
     .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
     .map((b) => b.text)
     .join("\n")
@@ -304,13 +315,14 @@ function textFromClaudeMessage(msg: Anthropic.Messages.Message): string {
 }
 
 /** Strip optional ```json fences; parse JSON object. */
-function parseJsonObjectFromLlmText(text: string): Record<string, unknown> {
+function parseJsonObjectFromLlmText(text: string, logLabel: string): Record<string, unknown> {
   let s = text.trim();
   const m = /^```(?:json)?\s*([\s\S]*?)```\s*$/m.exec(s);
   if (m) s = m[1].trim();
   try {
     return JSON.parse(s || "{}") as Record<string, unknown>;
-  } catch {
+  } catch (e) {
+    console.error(`[${logLabel}] JSON.parse failed:`, e, "snippet:", s.slice(0, 600));
     return {};
   }
 }
@@ -322,6 +334,8 @@ async function generateRowPicks(
   promptExtra: string,
   timingSessionId?: string
 ): Promise<RowLLMResult> {
+  console.log(`[claude-row] ANTHROPIC_API_KEY present=${Boolean(process.env.ANTHROPIC_API_KEY?.trim())}`);
+
   const fpKey = moodFingerprint(mood);
   const storeBeforeLlm = [...(recentlyRecommendedTitles.get(fpKey) ?? [])];
   console.log(
@@ -330,19 +344,43 @@ async function generateRowPicks(
 
   const user = buildTenPickUserMessage(chosenMovies, rejectedMovies, mood, promptExtra);
 
-  const t0 = Date.now();
-  const response = await anthropic.messages.create({
-    model: CLAUDE_REC_MODEL,
-    max_tokens: 1200,
-    temperature: 0.9,
-    system: TEN_PICK_SYSTEM,
-    messages: [{ role: "user", content: user }],
-  });
-  if (timingSessionId) {
-    logRecsTiming(timingSessionId, "llm_claude_row", Date.now() - t0);
+  try {
+    const t0 = Date.now();
+    const response = await anthropic.messages.create({
+      model: CLAUDE_REC_MODEL,
+      max_tokens: 1200,
+      temperature: 0.9,
+      system: TEN_PICK_SYSTEM,
+      messages: [{ role: "user", content: user }],
+    });
+    if (timingSessionId) {
+      logRecsTiming(timingSessionId, "llm_claude_row", Date.now() - t0);
+    }
+
+    const text = textFromClaudeMessage(response);
+    if (!text) {
+      console.warn(
+        "[claude-row] No assistant text extracted; content block types:",
+        response.content?.map((c) => c.type)
+      );
+      return { profile_line: "", picks: [] };
+    }
+
+    const raw = parseJsonObjectFromLlmText(text, "claude-row");
+    const parsed = parsePicksRowResponse(raw);
+    if (!parsed.picks.length) {
+      console.warn(
+        "[claude-row] Parsed JSON has no picks; object keys:",
+        Object.keys(raw),
+        "text_preview:",
+        text.slice(0, 500)
+      );
+    }
+    return parsed;
+  } catch (err) {
+    console.error("[claude-row] Claude request or handling failed:", err);
+    return { profile_line: "", picks: [] };
   }
-  const raw = parseJsonObjectFromLlmText(textFromClaudeMessage(response));
-  return parsePicksRowResponse(raw);
 }
 
 export async function extractSessionMood(
