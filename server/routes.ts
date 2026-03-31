@@ -257,6 +257,13 @@ export async function registerRoutes(
           });
         }
       } else {
+        const chosenTitles = sessionStorage.getChosenMovies(sessionId).map((m) => m.title);
+        const rejectedTitles = sessionStorage.getRejectedMovies(sessionId).map((m) => m.title);
+        console.log(
+          `[prefetch] triggered at round ${updatedSession.choices.length} for session ${sessionId}`
+        );
+        console.log(`[prefetch] chosen titles so far: [${chosenTitles.join(", ")}]`);
+        console.log(`[prefetch] rejected titles so far: [${rejectedTitles.join(", ")}]`);
         beginRecommendationPrefetch(sessionId);
       }
 
