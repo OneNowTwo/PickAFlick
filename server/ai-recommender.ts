@@ -511,6 +511,21 @@ function directorKeyForMovie(movie: { tmdbId: number; director?: string | null }
   return d || `__anon_director_${movie.tmdbId}`;
 }
 
+function mergeRecommendationsDeduped(a: Recommendation[], b: Recommendation[]): Recommendation[] {
+  const seenT = new Set<string>();
+  const seenD = new Set<string>();
+  const out: Recommendation[] = [];
+  for (const rec of [...a, ...b]) {
+    const tk = normalizeTitleKey(rec.movie.title);
+    const dk = directorKeyForMovie(rec.movie);
+    if (seenT.has(tk) || seenD.has(dk)) continue;
+    seenT.add(tk);
+    seenD.add(dk);
+    out.push(rec);
+  }
+  return out;
+}
+
 function formatChoicesBlock(chosenMovies: Movie[]): string {
   return chosenMovies
     .map((m, i) => {
@@ -615,12 +630,95 @@ async function resolveOneRecommendation(
   }
 }
 
+/** Catalogue movie already has tmdbId — re-verify AU providers + trailers like resolveOneRecommendation. */
+async function resolveMovieFromCatalogueCandidate(movie: Movie): Promise<Recommendation | null> {
+  try {
+    const [movieDetails, tmdbTrailers, watchResult] = await Promise.all([
+      getMovieDetails(movie.tmdbId),
+      getMovieTrailers(movie.tmdbId).catch(() => [] as string[]),
+      getWatchProviders(movie.tmdbId, movie.title, movie.year ?? null),
+    ]);
+    if (!movieDetails) return null;
+    if (!movieDetails.posterPath?.trim()) return null;
+    if (!watchResult.providers.length) return null;
+    movieDetails.listSource = "ai-recommendation";
+    const urls = Array.isArray(tmdbTrailers) ? tmdbTrailers : [];
+    return {
+      movie: movieDetails,
+      trailerUrl: urls[0] ?? null,
+      trailerUrls: urls,
+      reason: "",
+      auWatchAvailable: true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function padRecommendationsFromHighRatedGenre(
+  need: number,
+  topGenre: string | undefined,
+  chosen: Movie[],
+  existing: Recommendation[],
+  shortSid: string | undefined
+): Promise<Recommendation[]> {
+  if (need <= 0) return [];
+  const excludeTmdb = new Set<number>([
+    ...chosen.map((m) => m.tmdbId),
+    ...existing.map((r) => r.movie.tmdbId),
+  ]);
+  const seenTitle = new Set(existing.map((r) => normalizeTitleKey(r.movie.title)));
+  const seenDir = new Set(existing.map((r) => directorKeyForMovie(r.movie)));
+  const out: Recommendation[] = [];
+  const genreNorm = topGenre?.toLowerCase().trim() || "";
+  const minRatings = [7.0, 6.5, 6.0];
+
+  for (const minR of minRatings) {
+    if (out.length >= need) break;
+    const all = getAllMovies();
+    let pool = all.filter(
+      (m) =>
+        !excludeTmdb.has(m.tmdbId) &&
+        (m.rating ?? 0) >= minR &&
+        m.posterPath?.trim() &&
+        (!genreNorm || m.genres.some((g) => g.toLowerCase() === genreNorm))
+    );
+    if (pool.length < need * 2 && genreNorm) {
+      pool = all.filter(
+        (m) => !excludeTmdb.has(m.tmdbId) && (m.rating ?? 0) >= minR && m.posterPath?.trim()
+      );
+    }
+    pool.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+
+    for (const m of pool) {
+      if (out.length >= need) break;
+      const tk = normalizeTitleKey(m.title);
+      const dk = directorKeyForMovie(m);
+      if (seenTitle.has(tk) || seenDir.has(dk)) continue;
+      const rec = await resolveMovieFromCatalogueCandidate(m);
+      if (!rec) continue;
+      seenTitle.add(tk);
+      seenDir.add(dk);
+      excludeTmdb.add(m.tmdbId);
+      out.push(rec);
+    }
+  }
+
+  if (shortSid) {
+    console.log(`[recs-finalize] ${shortSid} catalog_pad need=${need} added=${out.length}`);
+  }
+  return out;
+}
+
 async function resolvePicksToRecommendations(
   picks: AIRecommendationResult[],
   chosenMovies: Movie[],
-  opts: { logCluster?: { sessionId: string } } = {}
+  opts: { logCluster?: { sessionId: string }; extraExcludeTmdbIds?: Set<number> } = {}
 ): Promise<Recommendation[]> {
   const excludeTmdb = new Set(chosenMovies.map((m) => m.tmdbId));
+  if (opts.extraExcludeTmdbIds) {
+    for (const id of opts.extraExcludeTmdbIds) excludeTmdb.add(id);
+  }
 
   const ordered = picks.slice(0, TARGET_TOTAL_RESOLVE);
   const tResolve = Date.now();
@@ -708,6 +806,7 @@ function rowPicksFromRaw(raw: RowLLMResult | null): AIRecommendationResult[] {
 
 async function finalizeRecommendationsToResponse(
   chosen: Movie[],
+  rejected: Movie[],
   taste: TasteObservationResult,
   rawFromPrefetch: RowLLMResult | null,
   timingSessionId: string | undefined,
@@ -723,13 +822,66 @@ async function finalizeRecommendationsToResponse(
     console.log(`[recs-finalize] ${shortSid} row ${msg}${tail}`);
   };
 
-  const picks = rowPicksFromRaw(rawFromPrefetch);
-  const rowCopy = rawFromPrefetch;
+  let picks = rowPicksFromRaw(rawFromPrefetch);
+  let claudeProfileLine = String(rawFromPrefetch?.profile_line || "").trim();
 
   const tAu1 = Date.now();
-  const recommendations = await resolvePicksToRecommendations(picks, chosen, {
+  let recommendations = await resolvePicksToRecommendations(picks, chosen, {
     logCluster: timingSessionId ? { sessionId: timingSessionId } : undefined,
   });
+
+  if (recommendations.length < TARGET_TOTAL_RESOLVE) {
+    const avoidList =
+      picks.length > 0
+        ? picks.map((p) => `"${p.title}" (${p.year ?? "?"})`).join(", ")
+        : "";
+    const retryExtra =
+      picks.length > 0
+        ? `CRITICAL — Second attempt: Fewer than 5 of your previous picks could be verified for streaming in Australia (wrong match, no AU watch links, missing poster, or duplicate director). Recommend exactly 5 DIFFERENT feature films with correct release years. Do not suggest any of these titles again: ${avoidList}. Each pick must be a distinct, well-known film.`
+        : "CRITICAL — Second attempt: Return exactly 5 distinct film recommendations with a release year for each. The previous response did not yield enough verified picks.";
+    logFinalize("claude_retry_underfilled", {
+      resolved_first: recommendations.length,
+      first_pick_count: picks.length,
+    });
+    const tRetry = Date.now();
+    const rawRetry = await generateRowPicks(chosen, rejected, mood, retryExtra, timingSessionId);
+    if (timingSessionId) {
+      logRecsTiming(timingSessionId, "llm_claude_row_retry", Date.now() - tRetry);
+    }
+    if (!claudeProfileLine && String(rawRetry.profile_line || "").trim()) {
+      claudeProfileLine = String(rawRetry.profile_line || "").trim();
+    }
+    const picks2 = rowPicksFromRaw(rawRetry);
+    const extraIds = new Set(recommendations.map((r) => r.movie.tmdbId));
+    const more = await resolvePicksToRecommendations(picks2, chosen, {
+      logCluster: timingSessionId ? { sessionId: timingSessionId } : undefined,
+      extraExcludeTmdbIds: extraIds,
+    });
+    recommendations = mergeRecommendationsDeduped(recommendations, more);
+  }
+
+  if (recommendations.length < TARGET_TOTAL_RESOLVE) {
+    const need = TARGET_TOTAL_RESOLVE - recommendations.length;
+    const topGenre = taste.topGenres?.[0]?.trim() || extractTopGenres(chosen)[0];
+    logFinalize("catalog_pad_start", { need, topGenre: topGenre ?? "" });
+    const padded = await padRecommendationsFromHighRatedGenre(
+      need,
+      topGenre,
+      chosen,
+      recommendations,
+      shortSid
+    );
+    recommendations = mergeRecommendationsDeduped(recommendations, padded);
+  }
+
+  if (recommendations.length < TARGET_TOTAL_RESOLVE) {
+    logFinalize("fallback_row_fill", { have: recommendations.length });
+    const fb = await fallbackRecommendations(chosen);
+    recommendations = mergeRecommendationsDeduped(recommendations, fb.recommendations);
+  }
+
+  recommendations = recommendations.slice(0, TARGET_TOTAL_RESOLVE);
+
   if (recommendations.length > 0) {
     rememberResolvedTitlesForMoodFingerprint(
       mood,
@@ -753,17 +905,15 @@ async function finalizeRecommendationsToResponse(
     );
   }
 
-  const profileLine = (rowCopy?.profile_line || "").trim();
-  const headline = profileLine || taste.headline;
-
   return {
     recommendations,
     preferenceProfile: {
       topGenres: taste.topGenres || [],
       themes: taste.themes || [],
       preferredEras: taste.preferredEras || [],
-      headline,
-      patternSummary: "",
+      headline: taste.headline,
+      profileLine: claudeProfileLine || undefined,
+      patternSummary: taste.patternSummary || "",
       tagline: "",
     },
   };
@@ -853,7 +1003,7 @@ async function ensureRecommendationsReady(
     }
 
     const finalizeT0 = Date.now();
-    const res = await finalizeRecommendationsToResponse(chosen, taste, raw, sessionId, mood);
+    const res = await finalizeRecommendationsToResponse(chosen, rejected, taste, raw, sessionId, mood);
     logRecsTiming(sessionId, "finalize_row", Date.now() - finalizeT0);
 
     mergeRecBundleIntoCache(sessionId, anonFp, res);
@@ -928,13 +1078,13 @@ async function fallbackRecommendations(chosenMovies: Movie[]): Promise<Recommend
   }
 
   return {
-    recommendations: recs,
+    recommendations: recs.slice(0, TARGET_TOTAL_RESOLVE),
     preferenceProfile: {
       topGenres: taste.topGenres,
       themes: [],
       preferredEras: [],
       headline: taste.headline,
-      patternSummary: "",
+      patternSummary: taste.patternSummary || "",
       tagline: "",
     },
   };

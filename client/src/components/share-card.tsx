@@ -18,7 +18,7 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
   const [isSharing, setIsSharing] = useState(false);
   const { toast } = useToast();
 
-  const topMovies = recommendations.slice(0, 6);
+  const topMovies = recommendations.slice(0, 5);
 
   const handleCopyLink = async () => {
     if (!shareUrl) return;

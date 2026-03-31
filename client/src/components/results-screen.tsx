@@ -180,10 +180,10 @@ export function ResultsScreen({
     staleTime: 60_000,
   });
 
-  // Initialize local recs from recommendations
+  // Initialize local recs from recommendations (authoritative row is always 5 from API)
   useEffect(() => {
     if (recommendations?.recommendations) {
-      setLocalRecs([...recommendations.recommendations]);
+      setLocalRecs([...recommendations.recommendations].slice(0, 5));
     }
   }, [recommendations]);
 
@@ -468,8 +468,8 @@ export function ResultsScreen({
 
   const { preferenceProfile, hasPersonalisation } = recommendations;
   const totalRecs = displayRecs.length;
-  const profileLine = preferenceProfile?.headline?.trim() ?? "";
-  const headline = profileLine || tasteHeadline(preferenceProfile);
+  const apiProfileLine = preferenceProfile?.profileLine?.trim() ?? "";
+  const topHeadline = preferenceProfile?.headline?.trim() || tasteHeadline(preferenceProfile);
   const patternSummary =
     preferenceProfile?.patternSummary?.trim() || preferenceProfile?.tagline?.trim();
   const profileOnly = !patternSummary;
@@ -551,18 +551,16 @@ export function ResultsScreen({
 
   return (
     <div className="flex flex-col items-center gap-1 md:gap-2 w-full max-w-7xl mx-auto px-2 md:px-4 pt-4 md:pt-2 pb-4 md:pb-6">
-      {/* Profile line (LLM) + optional longer taste copy */}
+      {/* Taste headline + optional longer copy (Claude 8-word line sits above the trailer) */}
       <div className="text-center max-w-xl md:max-w-3xl px-3 pt-1 pb-2">
         <h2
           className={
-            profileLine
-              ? "text-xl md:text-2xl lg:text-3xl font-semibold text-white tracking-tight leading-snug normal-case"
-              : profileOnly
-                ? "text-xl md:text-2xl lg:text-3xl font-semibold text-white tracking-tight leading-snug"
-                : "text-2xl md:text-4xl lg:text-[2.75rem] font-bold text-white uppercase tracking-[0.06em] leading-[1.15]"
+            profileOnly
+              ? "text-xl md:text-2xl lg:text-3xl font-semibold text-white tracking-tight leading-snug"
+              : "text-2xl md:text-4xl lg:text-[2.75rem] font-bold text-white uppercase tracking-[0.06em] leading-[1.15]"
           }
         >
-          {headline}
+          {topHeadline}
         </h2>
         {patternSummary && (
           <p
@@ -580,6 +578,13 @@ export function ResultsScreen({
           Based on your taste profile
         </p>
       )}
+
+      {/* Claude mood line — above video */}
+      {apiProfileLine ? (
+        <p className="w-full max-w-7xl text-center text-sm md:text-base lg:text-lg font-semibold text-white uppercase tracking-[0.14em] leading-snug px-3 mt-0.5 mb-0">
+          {apiProfileLine}
+        </p>
+      ) : null}
 
       {/* Trailer card with nav - row on desktop, stacked on mobile */}
       <div className="flex flex-col md:flex-row md:items-stretch gap-2 md:gap-3 w-full max-w-7xl mt-1">
@@ -871,7 +876,7 @@ export function ResultsScreen({
                     setCurrentIndex(i);
                     setAutoPlayTrailer(true);
                   }}
-                  className={`w-12 h-12 md:w-14 md:h-14 rounded-lg overflow-hidden border-2 transition-all ${
+                  className={`w-12 md:w-14 aspect-[2/3] shrink-0 rounded-lg overflow-hidden border-2 transition-all flex items-center justify-center bg-black/50 ${
                     isActive
                       ? "border-primary ring-2 ring-primary/30 scale-105"
                       : "border-transparent opacity-70 hover:opacity-100"
@@ -880,7 +885,11 @@ export function ResultsScreen({
                   type="button"
                 >
                   {thumbUrl ? (
-                    <img src={thumbUrl} alt={rec.movie.title} className="w-full h-full object-cover" />
+                    <img
+                      src={thumbUrl}
+                      alt={rec.movie.title}
+                      className="w-full h-full object-contain object-center"
+                    />
                   ) : (
                     <div className="w-full h-full bg-muted flex items-center justify-center">
                       <Film className="w-5 h-5 text-muted-foreground" />

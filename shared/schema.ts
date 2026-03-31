@@ -208,8 +208,10 @@ const preferenceProfileSchema = z.object({
   preferredEras: z.array(z.string()).optional(),
   visualStyle: z.string().optional(),
   mood: z.string().optional(),
-  /** Short LLM headline above results (human mood line) */
+  /** Taste / mood headline (e.g. tone line from session mood) */
   headline: z.string().optional(),
+  /** Claude 8-word profile line — show above trailer */
+  profileLine: z.string().optional(),
   /** Two-sentence "You leaned… So these picks…" pattern copy */
   patternSummary: z.string().optional(),
   /** @deprecated use patternSummary */

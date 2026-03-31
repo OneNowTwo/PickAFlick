@@ -197,6 +197,12 @@ export default function SharePage() {
             </div>
           )}
 
+          {preferenceProfile.profileLine?.trim() ? (
+            <p className="w-full max-w-7xl text-center text-sm md:text-base font-semibold text-white uppercase tracking-[0.14em] leading-snug px-3">
+              {preferenceProfile.profileLine.trim()}
+            </p>
+          ) : null}
+
           {/* Trailer card with nav */}
           <div className="flex flex-col md:flex-row md:items-stretch gap-2 md:gap-3 w-full max-w-7xl">
             {/* Previous - desktop only */}
@@ -385,7 +391,7 @@ export default function SharePage() {
                   </span>
                   <button
                     onClick={() => { setCurrentIndex(i); setAutoPlayTrailer(true); }}
-                    className={`w-12 h-[72px] md:w-14 md:h-[84px] rounded-lg overflow-hidden border-2 transition-all ${
+                    className={`w-12 md:w-14 aspect-[2/3] shrink-0 rounded-lg overflow-hidden border-2 transition-all flex items-center justify-center bg-black/50 ${
                       isActive
                         ? "border-primary ring-2 ring-primary/30 scale-105"
                         : "border-transparent opacity-70 hover:opacity-100"
@@ -393,7 +399,11 @@ export default function SharePage() {
                     data-testid={`thumbnail-${i}`}
                   >
                     {thumbUrl ? (
-                      <img src={thumbUrl} alt={rec.movie.title} className="w-full h-full object-cover" />
+                      <img
+                        src={thumbUrl}
+                        alt={rec.movie.title}
+                        className="w-full h-full object-contain object-center"
+                      />
                     ) : (
                       <div className="w-full h-full bg-muted flex items-center justify-center">
                         <Film className="w-5 h-5 text-muted-foreground" />
