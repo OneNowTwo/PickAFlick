@@ -1,7 +1,7 @@
 import type { RecommendationsResponse, Recommendation } from "@shared/schema";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Copy, Check, Share2, Film, Sparkles } from "lucide-react";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Copy, Check, Share2 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -19,17 +19,24 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
   const { toast } = useToast();
 
   const topMovies = recommendations.slice(0, 5);
+  const profileLine =
+    preferenceProfile.profileLine?.trim() ||
+    preferenceProfile.headline?.trim() ||
+    "Tonight’s picks";
+
+  const buildShareText = () => {
+    return `${profileLine}\n\n${shareUrl ?? ""}`.trim();
+  };
 
   const handleCopyLink = async () => {
     if (!shareUrl) return;
     try {
-      const fullText = `${buildShareText()}\n${shareUrl}`;
-      await navigator.clipboard.writeText(fullText);
+      await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
-      if (typeof window !== 'undefined' && window.posthog) {
+      if (typeof window !== "undefined" && window.posthog) {
         window.posthog.capture("share_clicked", { method: "copy_link" });
       }
-      toast({ title: "Copied!", description: "Paste it anywhere to share your picks" });
+      toast({ title: "Copied!", description: "Link copied to clipboard" });
       setTimeout(() => {
         setCopied(false);
         onClose();
@@ -39,22 +46,15 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
     }
   };
 
-  const buildShareText = () => {
-    const movieLines = topMovies
-      .map((rec, i) => `${i + 1}. ${rec.movie.title} (${rec.movie.year})`)
-      .join("\n");
-    return `My picks tonight (easy watches + deeper cuts):\n${movieLines}\n\nSee them all 👆`;
-  };
-
   const handleNativeShare = async () => {
     if (!shareUrl) return;
     setIsSharing(true);
     try {
-      if (typeof window !== 'undefined' && window.posthog) {
+      if (typeof window !== "undefined" && window.posthog) {
         window.posthog.capture("share_clicked", { method: "native_share" });
       }
       await navigator.share({
-        title: "My WhatWeWatching Picks",
+        title: "WhatWeWatching",
         text: buildShareText(),
         url: shareUrl,
       });
@@ -66,68 +66,96 @@ export function ShareCard({ isOpen, onClose, recommendations, preferenceProfile,
     }
   };
 
-  const canNativeShare = typeof navigator !== 'undefined' && !!navigator.share;
+  const canNativeShare = typeof navigator !== "undefined" && !!navigator.share;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[92vw] max-w-sm p-0 overflow-hidden border border-white/10 bg-[#0d0d0d]">
-        {/* Header */}
-        <div className="px-5 pt-5 pb-4 border-b border-white/8">
-          <div className="flex items-center gap-2 mb-2">
-            <Share2 className="w-3.5 h-3.5 text-primary" />
-            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">Share Your Picks</span>
-          </div>
-          <h2 className="text-base font-bold text-white leading-snug">Your top movies tonight</h2>
-          {preferenceProfile.topGenres.length > 0 && (
-            <p className="text-xs text-white/40 mt-1">
-              {preferenceProfile.topGenres.slice(0, 3).join(" · ")}
-            </p>
-          )}
-        </div>
-
-        {/* Movie list */}
-        <div className="px-5 py-4 space-y-3">
-          {topMovies.map((rec, i) => (
-            <div key={rec.movie.tmdbId} className="flex items-start gap-3">
-              <span className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
-                {i + 1}
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-white leading-snug break-words">{rec.movie.title}</p>
-                <p className="text-xs text-white/40 mt-0.5">
-                  {rec.movie.year}{rec.movie.genres.length > 0 && ` · ${rec.movie.genres.slice(0, 2).join(", ")}`}
-                </p>
-              </div>
+      <DialogContent
+        hideCloseButton
+        className="w-[min(92vw,380px)] max-w-[min(92vw,380px)] translate-x-[-50%] translate-y-[-50%] border-0 bg-transparent p-0 shadow-none gap-0 overflow-visible"
+      >
+        <div className="flex flex-col items-stretch gap-5">
+          <DialogTitle className="sr-only">Share your picks</DialogTitle>
+          {/* Story-style card — screenshot-friendly */}
+          <div className="rounded-3xl bg-[#1a0a0a] px-5 pt-8 pb-7 shadow-2xl ring-1 ring-white/[0.06]">
+            <div className="flex justify-center mb-6">
+              <img
+                src="/logo.png"
+                alt="WhatWeWatching"
+                className="h-7 md:h-8 w-auto object-contain object-center opacity-95"
+              />
             </div>
-          ))}
-        </div>
 
-        {/* Share actions */}
-        <div className="px-5 pb-5 pt-2 space-y-2 border-t border-white/8">
-          {canNativeShare && (
+            <p className="text-center text-white font-bold text-xl md:text-2xl leading-snug tracking-tight px-1 mb-7 text-balance">
+              <span className="text-white/55 font-semibold">&ldquo;</span>
+              {profileLine}
+              <span className="text-white/55 font-semibold">&rdquo;</span>
+            </p>
+
+            <div className="flex flex-row justify-center gap-1.5 sm:gap-2 w-full">
+              {topMovies.map((rec) => {
+                const thumbUrl = rec.movie.posterPath
+                  ? rec.movie.posterPath.startsWith("http")
+                    ? rec.movie.posterPath
+                    : `https://image.tmdb.org/t/p/w185${rec.movie.posterPath}`
+                  : null;
+                return (
+                  <div
+                    key={rec.movie.tmdbId}
+                    className="flex-1 min-w-0 aspect-[2/3] rounded-md overflow-hidden bg-black/40 flex items-center justify-center ring-1 ring-white/[0.08]"
+                  >
+                    {thumbUrl ? (
+                      <img
+                        src={thumbUrl}
+                        alt=""
+                        className="w-full h-full object-contain object-center"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-white/5" aria-hidden />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <p className="text-center text-[10px] sm:text-[11px] tracking-[0.14em] text-red-800/55 mt-6 font-medium">
+              whatwewatching.com.au
+            </p>
+          </div>
+
+          {/* Actions below the card */}
+          <div className="flex flex-col gap-2.5 px-1">
+            {canNativeShare && (
+              <Button
+                onClick={handleNativeShare}
+                disabled={isSharing || !shareUrl}
+                className="w-full gap-2 h-11 font-semibold bg-white text-[#1a0a0a] hover:bg-white/90"
+                data-testid="button-native-share"
+              >
+                <Share2 className="w-4 h-4" />
+                {isSharing ? "Sharing..." : "Share via..."}
+              </Button>
+            )}
             <Button
-              onClick={handleNativeShare}
-              disabled={isSharing || !shareUrl}
-              className="w-full gap-2"
-              data-testid="button-native-share"
+              onClick={handleCopyLink}
+              disabled={!shareUrl || copied}
+              variant="outline"
+              className="w-full gap-2 h-11 font-semibold border-white/25 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+              data-testid="button-copy-link"
             >
-              <Share2 className="w-4 h-4" />
-              {isSharing ? "Sharing..." : "Share via..."}
+              {copied ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4" />
+                  Copy Link
+                </>
+              )}
             </Button>
-          )}
-          <Button
-            onClick={handleCopyLink}
-            disabled={!shareUrl || copied}
-            variant={canNativeShare ? "outline" : "default"}
-            className="w-full gap-2"
-            data-testid="button-copy-link"
-          >
-            {copied ? <><Check className="w-4 h-4" />Copied!</> : <><Copy className="w-4 h-4" />Copy Link</>}
-          </Button>
-          <p className="text-center text-white/25 text-xs pt-1 flex items-center justify-center gap-1">
-            <Film className="w-3 h-3" />
-            whatwewatching.com.au
-          </p>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
