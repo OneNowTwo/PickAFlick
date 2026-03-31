@@ -258,6 +258,7 @@ Think broadly across all of cinema — every decade, every country, every budget
 Rules:
 - No two films from the same director
 - Span at least 3 different decades across the 5
+- No more than 1 film from before 1980 across the 5 picks
 - At least 1 non-English language film
 - No sequels or franchise entries unless the franchise itself directly matches the mood
 - Every pick must genuinely match the emotional pattern revealed by the chosen vs rejected contrast

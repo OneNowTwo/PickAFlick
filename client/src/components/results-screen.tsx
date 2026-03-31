@@ -79,6 +79,22 @@ function loadingBodyFromPreview(p: TastePreview | undefined): string {
   return "We’re lining up films that match how you voted.";
 }
 
+/** Claude profile_line embedded in a sentence — first character lowercased for sentence case */
+function moodFragmentForSentence(profileLine: string): string {
+  const t = profileLine.trim();
+  if (!t) return "a film that fits your picks";
+  return t.charAt(0).toLowerCase() + t.slice(1);
+}
+
+function truncateOverview(text: string, maxLen = 120): string {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (t.length <= maxLen) return t;
+  const cut = t.slice(0, maxLen - 1).trimEnd();
+  const lastSpace = cut.lastIndexOf(" ");
+  const base = lastSpace > 40 ? cut.slice(0, lastSpace) : cut;
+  return `${base}…`;
+}
+
 interface ResultsScreenProps {
   recommendations: RecommendationsResponse | null;
   isLoading: boolean;
@@ -470,9 +486,6 @@ export function ResultsScreen({
   const totalRecs = displayRecs.length;
   const apiProfileLine = preferenceProfile?.profileLine?.trim() ?? "";
   const topHeadline = preferenceProfile?.headline?.trim() || tasteHeadline(preferenceProfile);
-  const patternSummary =
-    preferenceProfile?.patternSummary?.trim() || preferenceProfile?.tagline?.trim();
-  const profileOnly = !patternSummary;
   const isCurrentSeen = currentRec ? seenMovies.has(currentRec.movie.tmdbId) : false;
 
   const handleNext = () => {
@@ -551,25 +564,10 @@ export function ResultsScreen({
 
   return (
     <div className="flex flex-col items-center gap-1 md:gap-2 w-full max-w-7xl mx-auto px-2 md:px-4 pt-4 md:pt-2 pb-4 md:pb-6">
-      {/* Taste headline + optional longer copy (Claude 8-word line sits above the trailer) */}
       <div className="text-center max-w-xl md:max-w-3xl px-3 pt-1 pb-2">
-        <h2
-          className={
-            profileOnly
-              ? "text-xl md:text-2xl lg:text-3xl font-semibold text-white tracking-tight leading-snug"
-              : "text-2xl md:text-4xl lg:text-[2.75rem] font-bold text-white uppercase tracking-[0.06em] leading-[1.15]"
-          }
-        >
+        <h2 className="text-2xl md:text-4xl lg:text-[2.75rem] font-bold text-white uppercase tracking-[0.06em] leading-[1.15]">
           {topHeadline}
         </h2>
-        {patternSummary && (
-          <p
-            className="text-sm md:text-base text-white/65 mt-3 md:mt-4 leading-relaxed max-w-2xl mx-auto"
-            data-testid="taste-profile"
-          >
-            {supportCopyYouVoice(patternSummary)}
-          </p>
-        )}
       </div>
 
       {/* Personalisation indicator — only visible for logged-in users with history */}
@@ -579,12 +577,9 @@ export function ResultsScreen({
         </p>
       )}
 
-      {/* Claude mood line — above video */}
-      {apiProfileLine ? (
-        <p className="w-full max-w-7xl text-center text-sm md:text-base lg:text-lg font-semibold text-white uppercase tracking-[0.14em] leading-snug px-3 mt-0.5 mb-0">
-          {apiProfileLine}
-        </p>
-      ) : null}
+      <p className="w-full max-w-3xl mx-auto text-center text-sm md:text-base text-white/90 leading-relaxed px-3 mt-0.5 mb-0 normal-case">
+        Looks like you&apos;re in the mood for {moodFragmentForSentence(apiProfileLine)}. Here are our picks:
+      </p>
 
       {/* Trailer card with nav - row on desktop, stacked on mobile */}
       <div className="flex flex-col md:flex-row md:items-stretch gap-2 md:gap-3 w-full max-w-7xl mt-1">
@@ -731,6 +726,14 @@ export function ResultsScreen({
                 </Button>
               ) : null}
             </div>
+            {currentRec.movie.overview?.trim() ? (
+              <p
+                className="text-foreground/70 text-sm leading-snug mt-2 max-w-prose"
+                data-testid="text-movie-overview"
+              >
+                {truncateOverview(currentRec.movie.overview)}
+              </p>
+            ) : null}
             {currentRec.reason?.trim() ? (
               <p className="text-foreground/75 text-sm leading-snug mt-2 max-w-prose" data-testid="text-movie-reason">
                 <span className="font-medium text-foreground/90">Why this fits your picks:</span>{" "}
