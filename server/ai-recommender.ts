@@ -175,6 +175,27 @@ function rowPrefetchKey(sessionId: string, anonFp: string): string {
   return `${sessionId}\t${anonFp}`;
 }
 
+/** Prefer round-3 prefetch lane (`none`), then client anon key, then any row LLM promise for this session. */
+function resolveRowLlmPromise(
+  sessionId: string,
+  anonFp: string
+): { promise: Promise<RowLLMResult>; lane: "primary" | "none-fallback" | "scan" } | null {
+  const noneKey = rowPrefetchKey(sessionId, "none");
+  const rowKey = rowPrefetchKey(sessionId, anonFp);
+  const noneLane = singleRowLlmBySessionIdentity.get(noneKey);
+  if (noneLane) {
+    const lane: "primary" | "none-fallback" = rowKey === noneKey ? "primary" : "none-fallback";
+    return { promise: noneLane, lane };
+  }
+  const primary = singleRowLlmBySessionIdentity.get(rowKey);
+  if (primary) return { promise: primary, lane: "primary" };
+  const prefix = `${sessionId}\t`;
+  for (const [k, pr] of singleRowLlmBySessionIdentity) {
+    if (k.startsWith(prefix)) return { promise: pr, lane: "scan" };
+  }
+  return null;
+}
+
 function clearRowPrefetchForSession(sessionId: string): void {
   const prefix = `${sessionId}\t`;
   Array.from(singleRowLlmBySessionIdentity.keys()).forEach((k) => {
@@ -460,26 +481,6 @@ export async function buildTasteObservation(
 const sessionTasteMeta = new Map<string, { taste?: TasteObservationResult; mood?: SessionMoodProfile }>();
 const sessionRecBundleCache = new Map<string, RecommendationsResponse>();
 const recInflight = new Map<string, Promise<RecommendationsResponse>>();
-/** Bumped when mood shifts at round 7 so in-flight recommendation work does not merge/cache over refinement. */
-const sessionRecMergeGeneration = new Map<string, number>();
-
-function bumpSessionRecMergeGeneration(sessionId: string): void {
-  sessionRecMergeGeneration.set(sessionId, (sessionRecMergeGeneration.get(sessionId) ?? 0) + 1);
-}
-
-function clearRecBundleKeysForSession(sessionId: string): void {
-  const prefix = `${sessionId}::`;
-  for (const k of Array.from(sessionRecBundleCache.keys())) {
-    if (k.startsWith(prefix)) sessionRecBundleCache.delete(k);
-  }
-}
-
-/** Any genre in rounds 6–7 that never appeared in rounds 1–5 chosen films → mood shift. */
-export function moodShifted(choices1to5: Movie[], choices6to7: Movie[]): boolean {
-  const genres1to5 = new Set(choices1to5.flatMap((m) => m.genres ?? []));
-  const genres6to7 = choices6to7.flatMap((m) => m.genres ?? []);
-  return genres6to7.some((g) => !genres1to5.has(g));
-}
 
 function recBundleKey(sessionId: string, anonFp: string): string {
   return `${sessionId}::${anonFp}`;
@@ -793,45 +794,6 @@ export function scheduleRound3RecommendationPrefetch(sessionId: string): void {
     .catch((e) => console.error("[prefetch] round-3 row prefetch chain failed", e));
 }
 
-async function runMoodShiftRefinement(sessionId: string): Promise<void> {
-  bumpSessionRecMergeGeneration(sessionId);
-  prefetchPhase1BySession.delete(sessionId);
-  clearRowPrefetchForSession(sessionId);
-  clearRecBundleKeysForSession(sessionId);
-
-  const chosen = gameSessionStorage.getChosenMovies(sessionId);
-  const rejected = gameSessionStorage.getRejectedMovies(sessionId);
-  const filters = gameSessionStorage.getSessionFilters(sessionId)?.genres ?? [];
-  if (chosen.length === 0) return;
-
-  const tMood = Date.now();
-  const p1 = buildPrefetchPhase1(sessionId, chosen, rejected, filters).then((phase1) => {
-    logRecsTiming(sessionId, "taste_extraction_refine", Date.now() - tMood);
-    return phase1;
-  });
-  prefetchPhase1BySession.set(sessionId, p1);
-  try {
-    const phase1 = await p1;
-    await startSingleRowLlmPrefetchIfNeeded(sessionId, [], phase1);
-  } catch (e) {
-    console.error("[prefetch] mood-shift refinement failed", e);
-  }
-}
-
-/** After 7th choice: refine prefetch only if rounds 6–7 introduce a new genre vs rounds 1–5. */
-export function scheduleRound7MoodRefinementIfNeeded(sessionId: string): void {
-  const allChosen = gameSessionStorage.getChosenMovies(sessionId);
-  if (allChosen.length < 7) return;
-  const choices1to5 = allChosen.slice(0, 5);
-  const choices6to7 = allChosen.slice(5, 7);
-  if (!moodShifted(choices1to5, choices6to7)) {
-    console.log(`[prefetch] round-7 check: mood stable — serving round-3 prefetch result`);
-    return;
-  }
-  console.log(`[prefetch] round-7 check: mood shifted — firing refinement call`);
-  void runMoodShiftRefinement(sessionId);
-}
-
 export async function getTastePreviewForSession(
   sessionId: string,
   clientAnonMemory: AnonymousRecMemoryEntry[] = []
@@ -1009,7 +971,7 @@ async function ensureRecommendationsReady(
   const lk = recInflightKey(sessionId, anonFp);
   const inflight = recInflight.get(lk);
   if (inflight) {
-    console.log(`[prefetch] cache MISS for session ${sessionId} — awaiting in-flight row`);
+    console.log(`[prefetch] awaiting in-flight pre-fetch for session ${sessionId}`);
     const r = await inflight;
     logRecsTiming(sessionId, "rec_row_inflight_wait", Date.now() - totalStart);
     return r;
@@ -1018,7 +980,6 @@ async function ensureRecommendationsReady(
   console.log(`[prefetch] cache MISS for session ${sessionId} — running fresh`);
 
   const work = (async (): Promise<RecommendationsResponse> => {
-    const mergeGenAtStart = sessionRecMergeGeneration.get(sessionId) ?? 0;
     const chosen = gameSessionStorage.getChosenMovies(sessionId);
     const rejected = gameSessionStorage.getRejectedMovies(sessionId);
     const filters = gameSessionStorage.getSessionFilters(sessionId)?.genres ?? [];
@@ -1036,8 +997,6 @@ async function ensureRecommendationsReady(
       prefetchPhase1BySession.set(sessionId, p1);
     }
 
-    const rowKey = rowPrefetchKey(sessionId, anonFp);
-
     let mood: SessionMoodProfile;
     let taste: TasteObservationResult;
     let raw: RowLLMResult | null = null;
@@ -1054,18 +1013,18 @@ async function ensureRecommendationsReady(
       mood = phase1.mood;
       taste = phase1.taste;
       patchSessionTasteMeta(sessionId, { mood, taste });
-      await startSingleRowLlmPrefetchIfNeeded(sessionId, clientAnonMemory, phase1);
+      await startSingleRowLlmPrefetchIfNeeded(sessionId, [], phase1);
 
-      let rowPromise = singleRowLlmBySessionIdentity.get(rowKey);
-      if (!rowPromise && anonFp !== "none") {
-        rowPromise = singleRowLlmBySessionIdentity.get(rowPrefetchKey(sessionId, "none"));
-      }
-      if (!rowPromise) {
+      const resolved = resolveRowLlmPromise(sessionId, anonFp);
+      if (!resolved) {
         throw new Error("row_llm_not_started");
+      }
+      if (resolved.lane === "none-fallback" || resolved.lane === "scan") {
+        console.log(`[prefetch] awaiting in-flight pre-fetch for session ${sessionId}`);
       }
 
       const rowWait = Date.now();
-      raw = await rowPromise.catch((e) => {
+      raw = await resolved.promise.catch((e) => {
         console.error("[prefetch] five-pick row LLM failed", e);
         return emptyRow();
       });
@@ -1085,12 +1044,6 @@ async function ensureRecommendationsReady(
     const finalizeT0 = Date.now();
     const res = await finalizeRecommendationsToResponse(chosen, rejected, taste, raw, sessionId, mood);
     logRecsTiming(sessionId, "finalize_row", Date.now() - finalizeT0);
-
-    if ((sessionRecMergeGeneration.get(sessionId) ?? 0) !== mergeGenAtStart) {
-      console.log(`[prefetch] superseded recommendation build — skip cache merge for session ${sessionId}`);
-      logRecsTiming(sessionId, "rec_row_total", Date.now() - totalStart);
-      return res;
-    }
 
     mergeRecBundleIntoCache(sessionId, anonFp, res);
     recordRecommendedRow(res.recommendations);

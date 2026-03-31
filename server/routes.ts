@@ -7,7 +7,6 @@ import { getMovieTrailer, getMovieTrailers, getWatchProviders } from "./tmdb";
 import { sessionStorage } from "./session-storage";
 import {
   scheduleRound3RecommendationPrefetch,
-  scheduleRound7MoodRefinementIfNeeded,
   finalizeRecommendationsForSession,
   getTastePreviewForSession,
   generateReplacementRecommendation,
@@ -255,8 +254,6 @@ export async function registerRoutes(
             rightMovie: pair[1],
           });
         }
-      } else {
-        scheduleRound7MoodRefinementIfNeeded(sessionId);
       }
 
       const response: ChoiceResponse = {
@@ -359,7 +356,7 @@ export async function registerRoutes(
     }
   });
 
-  // Final recommendations — 5 picks (single row); round-3 prefetch + optional round-7 genre refinement
+  // Final recommendations — 5 picks (single row); round-3 prefetch
   app.get("/api/session/:sessionId/recommendations", async (req: Request, res: Response) => {
     try {
       const { sessionId } = req.params;

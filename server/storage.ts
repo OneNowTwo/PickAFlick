@@ -244,6 +244,10 @@ export class DatabaseStorage implements IStorage {
         year: r.year,
       }))
     );
+    const wrote = rows.map((r) => r.title.trim()).filter(Boolean);
+    console.log(
+      `[recent-recs] WRITE mood_key=${JSON.stringify(moodKey)} wrote=${JSON.stringify(wrote)}`
+    );
   }
 
   async getRecentAvoidTitlesForMoodKey(moodKey: string, limit: number): Promise<string[]> {
@@ -268,6 +272,9 @@ export class DatabaseStorage implements IStorage {
       out.push(t);
       if (out.length >= limit) break;
     }
+    console.log(
+      `[recent-recs] READ mood_key=${JSON.stringify(moodKey)} titles=${JSON.stringify(out)}`
+    );
     return out;
   }
 }
