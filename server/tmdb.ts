@@ -97,6 +97,12 @@ const GENRE_MAP: Record<number, string> = {
   37: "Western",
 };
 
+function tmdbUrlForLog(fullUrl: URL): string {
+  const u = new URL(fullUrl.toString());
+  if (u.searchParams.has("api_key")) u.searchParams.set("api_key", "***");
+  return `${u.pathname}${u.search}`;
+}
+
 async function tmdbFetch<T>(endpoint: string, params: Record<string, string> = {}): Promise<T | null> {
   if (!TMDB_API_KEY) {
     throw new Error("TMDB_API_KEY is not set");
@@ -109,19 +115,34 @@ async function tmdbFetch<T>(endpoint: string, params: Record<string, string> = {
     url.searchParams.set(key, value);
   }
 
+  const urlForLog = tmdbUrlForLog(url);
+  const t0 = Date.now();
+  let timedOut = false;
+
   const jsonPromise = (async (): Promise<T> => {
     const response = await fetch(url.toString());
     if (!response.ok) {
       throw new Error(`TMDb API error: ${response.status} ${response.statusText}`);
     }
-    return response.json() as Promise<T>;
+    const data = (await response.json()) as T;
+    const ms = Date.now() - t0;
+    if (!timedOut) {
+      console.log(`[tmdb] fetch completed url=${urlForLog} ms=${ms}`);
+    }
+    return data;
   })();
 
   const timeoutPromise = new Promise<null>((resolve) =>
     setTimeout(() => resolve(null), TMDB_FETCH_TIMEOUT_MS)
   );
 
-  return (await Promise.race([jsonPromise, timeoutPromise])) as T | null;
+  const out = await Promise.race([jsonPromise, timeoutPromise]);
+  if (out === null) {
+    timedOut = true;
+    console.log(`[tmdb] fetch TIMEOUT url=${urlForLog}`);
+    return null;
+  }
+  return out as T;
 }
 
 export async function searchMovie(title: string, year?: number): Promise<TMDbSearchResult | null> {

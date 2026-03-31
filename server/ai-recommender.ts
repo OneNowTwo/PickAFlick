@@ -138,16 +138,12 @@ interface PrefetchPhase1 {
   filters: string[];
 }
 
-/** Primary genre of first chosen film + preferred_tone, lowercase, no spaces — matches `recent_recommendations.mood_key`. */
-function buildMoodKeyForRecentStore(chosen: Movie[], mood: SessionMoodProfile): string {
+/** First chosen film's primary genre only, lowercased, no spaces — `recent_recommendations.mood_key` (shared avoid pool per genre). */
+function buildMoodKeyForRecentStore(chosen: Movie[]): string {
   const primaryGenre = (chosen[0]?.genres?.[0] ?? "")
     .toLowerCase()
     .replace(/\s+/g, "");
-  const tone = String(mood.preferred_tone ?? "")
-    .toLowerCase()
-    .replace(/\s+/g, "");
-  const key = `${primaryGenre}${tone}`;
-  return key.length > 0 ? key : "unknown";
+  return primaryGenre.length > 0 ? primaryGenre : "unknown";
 }
 
 function sortRecommendationsPre1980Last(recs: Recommendation[]): void {
@@ -339,7 +335,7 @@ async function generateRowPicks(
 ): Promise<RowLLMResult> {
   console.log(`[claude-row] ANTHROPIC_API_KEY present=${Boolean(process.env.ANTHROPIC_API_KEY?.trim())}`);
 
-  const moodKey = buildMoodKeyForRecentStore(chosenMovies, mood);
+  const moodKey = buildMoodKeyForRecentStore(chosenMovies);
   let avoidRecentTitles: string[] = [];
   try {
     avoidRecentTitles = await storage.getRecentAvoidTitlesForMoodKey(moodKey, 30);
@@ -878,7 +874,7 @@ async function finalizeRecommendationsToResponse(
   sortRecommendationsPre1980Last(recommendations);
 
   if (recommendations.length > 0) {
-    const moodKey = buildMoodKeyForRecentStore(chosen, mood);
+    const moodKey = buildMoodKeyForRecentStore(chosen);
     try {
       await storage.appendRecentRecommendationsForMoodKey(
         moodKey,
