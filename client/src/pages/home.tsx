@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type {
@@ -59,7 +59,10 @@ const MOOD_OPTIONS = [
   { id: "top", label: "Top Picks", genres: [] }, // Special case - top rated/popular
 ];
 
-export default function Home() {
+/** Prevents duplicate auto-start under React Strict Mode; reset on play-again, /home, and session 404. */
+let playFirstSessionLock = false;
+
+function HomeInner({ playFirst = false }: { playFirst?: boolean }) {
   const { user, loading: authLoading, login, logout } = useAuth();
   const [gameState, setGameState] = useState<GameState>("start");
 
@@ -79,48 +82,9 @@ export default function Home() {
   const [showMoreGenres, setShowMoreGenres] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [, navigate] = useLocation();
-
-
-  useEffect(() => {
-    const saved = sessionStorage.getItem("homeState");
-    if (!saved) return;
-
-    try {
-      const parsed = JSON.parse(saved) as {
-        gameState?: GameState | string;
-        sessionId?: string | null;
-        recommendations?: RecommendationsResponse | null;
-        selectedMoods?: string[];
-      };
-
-      // Only restore states where we have meaningful data to show.
-      // "instructions" is a transient step tied to a live server session — if the
-      // server restarted (Render cold start / idle shutdown) the session is gone and
-      // the user would be stuck. Always re-enter from "start" in that case.
-      const restorableStates: GameState[] = ["playing", "results"];
-      if ((parsed.gameState as string) === "pick-lane") {
-        setGameState("start");
-        return;
-      }
-      let gs: GameState | undefined =
-        (parsed.gameState as string) === "loading-recommendations"
-          ? "results"
-          : (parsed.gameState as GameState | undefined);
-      if (gs && restorableStates.includes(gs)) {
-        setGameState(gs);
-        setSessionId(parsed.sessionId ?? null);
-        setSelectedMoods(parsed.selectedMoods ?? []);
-        if (gs === "results" && parsed.sessionId && parsed.recommendations) {
-          queryClient.setQueryData(
-            ["/api/session", parsed.sessionId, "recommendations-bundle"],
-            parsed.recommendations
-          );
-        }
-      }
-    } catch {
-      // ignore corrupted state
-    }
-  }, []);
+  const playFirstRef = useRef(playFirst);
+  playFirstRef.current = playFirst;
+  const handleStartRef = useRef<(surpriseMe?: boolean) => void>(() => {});
 
   const toggleMood = useCallback((moodId: string) => {
     setSelectedMoods(prev => 
@@ -206,6 +170,10 @@ export default function Home() {
         sessionStorage.removeItem("homeState");
         setGameState("start");
         setSessionId(null);
+        if (playFirstRef.current) {
+          playFirstSessionLock = false;
+          queueMicrotask(() => handleStartRef.current(false));
+        }
         throw new Error("Session expired");
       }
       if (!res.ok) throw new Error("Failed to get round");
@@ -248,7 +216,58 @@ export default function Home() {
       }
     }
     startSessionMutation.mutate(surpriseMe ? { surpriseMe: true } : undefined);
-  }, [startSessionMutation, user, tasteSummary]);
+  }, [startSessionMutation, user, tasteSummary, selectedMoods]);
+
+  handleStartRef.current = handleStart;
+
+  useEffect(() => {
+    if (!playFirst) playFirstSessionLock = false;
+  }, [playFirst]);
+
+  useEffect(() => {
+    let restoredActiveSession = false;
+    const saved = sessionStorage.getItem("homeState");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as {
+          gameState?: GameState | string;
+          sessionId?: string | null;
+          recommendations?: RecommendationsResponse | null;
+          selectedMoods?: string[];
+        };
+
+        const restorableStates: GameState[] = ["playing", "results"];
+        if ((parsed.gameState as string) === "pick-lane") {
+          setGameState("start");
+        } else {
+          let gs: GameState | undefined =
+            (parsed.gameState as string) === "loading-recommendations"
+              ? "results"
+              : (parsed.gameState as GameState | undefined);
+          if (gs && restorableStates.includes(gs)) {
+            restoredActiveSession = true;
+            setGameState(gs);
+            setSessionId(parsed.sessionId ?? null);
+            setSelectedMoods(parsed.selectedMoods ?? []);
+            if (gs === "results" && parsed.sessionId && parsed.recommendations) {
+              queryClient.setQueryData(
+                ["/api/session", parsed.sessionId, "recommendations-bundle"],
+                parsed.recommendations
+              );
+            }
+          }
+        }
+      } catch {
+        // ignore corrupted state
+      }
+    }
+
+    if (playFirst && !restoredActiveSession) {
+      if (playFirstSessionLock) return;
+      playFirstSessionLock = true;
+      handleStart(false);
+    }
+  }, [playFirst, handleStart]);
 
   const handleChoice = useCallback(
     (chosenMovieId: number) => {
@@ -305,8 +324,9 @@ export default function Home() {
     }
     setSessionId(null);
     setSelectedMoods([]);
+    if (playFirst) playFirstSessionLock = false;
     setGameState("start");
-  }, [sessionId]);
+  }, [sessionId, playFirst]);
 
   const handleStartPlaying = useCallback(() => {
     setGameState("playing");
@@ -326,6 +346,13 @@ export default function Home() {
             <img src="/logo.png" alt="WhatWeWatching" className="w-48 md:w-64 h-auto" />
           </button>
           <div className="flex items-center gap-1">
+            {playFirst && (
+              <Link href="/home">
+                <Button variant="ghost" className="gap-2" data-testid="link-marketing-home">
+                  <span className="hidden sm:inline">Home</span>
+                </Button>
+              </Link>
+            )}
             <Link href="/contact">
               <Button variant="ghost" className="gap-2" data-testid="button-contact">
                 <Mail className="w-4 h-4" />
@@ -411,80 +438,115 @@ export default function Home() {
       >
         {gameState === "start" && (
           <div className="relative">
-            {/* ── ABOVE THE FOLD ── fills viewport height minus nav */}
-            <div
-              className="flex flex-col items-center justify-center text-center w-full max-w-xl mx-auto"
-              style={{ minHeight: "calc(100vh - 4rem - 4rem)" }}
-            >
-              {(() => {
-                const isReturning = !!user && !!tasteSummary?.topGenre;
-                const firstName = user?.displayName?.split(" ")[0] ?? "";
-                return (
-                  <div className="flex flex-col items-center gap-6 px-4">
-                    {/* Headline */}
-                    <div>
-                      <h2 className="text-4xl sm:text-5xl md:text-6xl font-bold text-white drop-shadow-lg leading-tight">
-                        {isReturning
-                          ? `Welcome back ${firstName} —`
-                          : "Stop searching."}
-                      </h2>
-                      <h2 className="text-4xl sm:text-5xl md:text-6xl font-bold text-white drop-shadow-lg leading-tight">
-                        {isReturning ? "ready to find tonight\u2019s movie?" : "Start watching."}
-                      </h2>
-                      {isReturning && tasteSummary?.topGenre ? (
-                        <p className="text-sm text-white/50 mt-3">Your top genre: {tasteSummary.topGenre}</p>
-                      ) : (
-                        <p className="text-lg sm:text-xl text-white/70 mt-3">Find something worth watching in seconds.</p>
-                      )}
-                    </div>
-
-                    {/* Primary CTA — goes straight into voting, no genre selector */}
+            {playFirst ? (
+              <div
+                className="flex flex-col items-center justify-center text-center gap-6 px-4 w-full max-w-xl mx-auto"
+                style={{ minHeight: "calc(100vh - 4rem - 4rem)" }}
+              >
+                {startSessionMutation.isError ? (
+                  <>
+                    <p className="text-destructive bg-black/50 px-4 py-2 rounded text-sm">
+                      Movies are still loading. Please wait a moment and try again.
+                    </p>
                     <Button
-                      size="lg"
-                      onClick={() => handleStart(false)}
-                      disabled={startSessionMutation.isPending}
-                      className="min-w-[220px] px-10 h-14 text-lg font-bold gap-2 shadow-[0_0_28px_rgba(220,38,38,0.5)] hover:-translate-y-1 active:scale-95 transition-all duration-200"
-                      data-testid="button-start-picking"
+                      onClick={() => {
+                        playFirstSessionLock = false;
+                        startSessionMutation.reset();
+                        handleStart(false);
+                      }}
+                      data-testid="button-play-first-retry"
                     >
-                      {startSessionMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Film className="w-5 h-5" />}
-                      Start Picking →
+                      Try again
                     </Button>
-
-                    {/* Scroll hint arrow */}
-                    <div className="flex flex-col items-center gap-1 mt-2 animate-bounce">
-                      <ChevronDown className="w-5 h-5 text-white/20" />
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* ── BELOW THE FOLD ── */}
-            <div className="flex flex-col items-center gap-10 w-full max-w-2xl mx-auto pb-12 pt-4 px-4">
-
-              {startSessionMutation.isError && (
-                <p className="text-destructive bg-black/50 px-4 py-2 rounded text-sm text-center">
-                  Movies are still loading. Please wait a moment and try again.
-                </p>
-              )}
-
-              {/* User counter */}
-              <div className="flex items-center justify-center gap-2.5 px-5 py-3 rounded-full bg-black/50 border border-white/10">
-                <Users className="w-4 h-4 text-primary flex-shrink-0" />
-                <span className="text-sm text-white/70">
-                  <span className="font-bold text-white text-base">43,000+</span> Australians have used WhatWeWatching
-                </span>
+                    <Link href="/home">
+                      <Button variant="outline">View marketing home</Button>
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <Loader2 className="w-12 h-12 animate-spin text-primary" />
+                    <p className="text-muted-foreground">Getting your picks…</p>
+                  </>
+                )}
               </div>
+            ) : (
+              <>
+                {/* ── ABOVE THE FOLD ── fills viewport height minus nav */}
+                <div
+                  className="flex flex-col items-center justify-center text-center w-full max-w-xl mx-auto"
+                  style={{ minHeight: "calc(100vh - 4rem - 4rem)" }}
+                >
+                  {(() => {
+                    const isReturning = !!user && !!tasteSummary?.topGenre;
+                    const firstName = user?.displayName?.split(" ")[0] ?? "";
+                    return (
+                      <div className="flex flex-col items-center gap-6 px-4">
+                        {/* Headline */}
+                        <div>
+                          <h2 className="text-4xl sm:text-5xl md:text-6xl font-bold text-white drop-shadow-lg leading-tight">
+                            {isReturning
+                              ? `Welcome back ${firstName} —`
+                              : "Stop searching."}
+                          </h2>
+                          <h2 className="text-4xl sm:text-5xl md:text-6xl font-bold text-white drop-shadow-lg leading-tight">
+                            {isReturning ? "ready to find tonight\u2019s movie?" : "Start watching."}
+                          </h2>
+                          {isReturning && tasteSummary?.topGenre ? (
+                            <p className="text-sm text-white/50 mt-3">Your top genre: {tasteSummary.topGenre}</p>
+                          ) : (
+                            <p className="text-lg sm:text-xl text-white/70 mt-3">Find something worth watching in seconds.</p>
+                          )}
+                        </div>
 
-              {/* Testimonials */}
-              <TestimonialsSection />
-            </div>
+                        {/* Primary CTA — goes straight into voting, no genre selector */}
+                        <Button
+                          size="lg"
+                          onClick={() => handleStart(false)}
+                          disabled={startSessionMutation.isPending}
+                          className="min-w-[220px] px-10 h-14 text-lg font-bold gap-2 shadow-[0_0_28px_rgba(220,38,38,0.5)] hover:-translate-y-1 active:scale-95 transition-all duration-200"
+                          data-testid="button-start-picking"
+                        >
+                          {startSessionMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Film className="w-5 h-5" />}
+                          Start Picking →
+                        </Button>
 
-            {/* How to Play — full width */}
-            <HowToPlaySection />
+                        {/* Scroll hint arrow */}
+                        <div className="flex flex-col items-center gap-1 mt-2 animate-bounce">
+                          <ChevronDown className="w-5 h-5 text-white/20" />
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
 
-            {/* FAQ */}
-            <FAQSection />
+                {/* ── BELOW THE FOLD ── */}
+                <div className="flex flex-col items-center gap-10 w-full max-w-2xl mx-auto pb-12 pt-4 px-4">
+
+                  {startSessionMutation.isError && (
+                    <p className="text-destructive bg-black/50 px-4 py-2 rounded text-sm text-center">
+                      Movies are still loading. Please wait a moment and try again.
+                    </p>
+                  )}
+
+                  {/* User counter */}
+                  <div className="flex items-center justify-center gap-2.5 px-5 py-3 rounded-full bg-black/50 border border-white/10">
+                    <Users className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span className="text-sm text-white/70">
+                      <span className="font-bold text-white text-base">43,000+</span> Australians have used WhatWeWatching
+                    </span>
+                  </div>
+
+                  {/* Testimonials */}
+                  <TestimonialsSection />
+                </div>
+
+                {/* How to Play — full width */}
+                <HowToPlaySection />
+
+                {/* FAQ */}
+                <FAQSection />
+              </>
+            )}
           </div>
         )}
 
@@ -689,4 +751,12 @@ export default function Home() {
 
     </div>
   );
+}
+
+export function PlayEntryHome(_props: object) {
+  return <HomeInner playFirst />;
+}
+
+export default function MarketingHome(_props: object) {
+  return <HomeInner />;
 }
